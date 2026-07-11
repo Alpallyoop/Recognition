@@ -1,0 +1,9 @@
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","kdf":"PBKDF2-SHA256","encrypted":true,"cipher":"AES-256-GCM","action":"init","ts_utc":"2026-07-11T04:35:36.336Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","name_hmac":"4601ef757529542db7df57edf1fdc6cec44a4d575063e968151f9466d8b3f2d6","encrypted":true,"action":"put","ts_utc":"2026-07-11T04:35:36.483Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","plaintext_persisted":false,"name_hmac":"4601ef757529542db7df57edf1fdc6cec44a4d575063e968151f9466d8b3f2d6","encrypted":true,"action":"get","ts_utc":"2026-07-11T04:35:36.583Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","all_authenticated":true,"encrypted":true,"item_count":1,"action":"verify","ts_utc":"2026-07-11T04:35:36.688Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","name_hmac":"4601ef757529542db7df57edf1fdc6cec44a4d575063e968151f9466d8b3f2d6","encrypted":true,"action":"put","ts_utc":"2026-07-11T04:35:36.793Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","name_hmac":"a9c9142e2056fa3d6fc9c39f016dc1704ea476adb2f2c7cd98bed33d702e1207","encrypted":true,"action":"put","ts_utc":"2026-07-11T04:35:36.893Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","all_authenticated":true,"encrypted":true,"item_count":2,"action":"verify","ts_utc":"2026-07-11T04:35:37.290Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","action":"rekey","encrypted":true,"ts_utc":"2026-07-11T04:35:37.462Z"}
+{"schema":"recognition.encrypted_profile.receipt.v2","profile_id":"selftest-profile-v2","all_authenticated":true,"encrypted":true,"item_count":2,"action":"verify","ts_utc":"2026-07-11T04:35:37.573Z"}

@@ -1,0 +1,2 @@
+{"schema":"recognition.crypto.selftest.receipt.v2","checks_passed":19,"cipher":"AES-256-GCM","kdf":"PBKDF2-SHA256","ts_utc":"2026-07-11T04:33:39.866Z"}
+{"schema":"recognition.crypto.selftest.receipt.v2","checks_passed":19,"cipher":"AES-256-GCM","kdf":"PBKDF2-SHA256","ts_utc":"2026-07-11T04:35:36.167Z"}
