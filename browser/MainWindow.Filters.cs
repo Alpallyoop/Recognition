@@ -42,6 +42,8 @@ namespace Recognition.Browser
             public int Rules { get; set; }
         }
         private readonly Dictionary<string, ListState> _listState = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _listLast = new(StringComparer.Ordinal);   // what the last update of each list did (this session)
+        private DateTime _listProgressUtc = DateTime.MinValue;
         private string _customRules = "";
         private bool _filtersBuilding, _filtersDirty;
 
@@ -292,16 +294,19 @@ namespace Recognition.Browser
                 if (resp.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps) return (false, "redirected away from https; refused");
                 if (resp.Content.Headers.ContentLength is long cl && cl > MaxListBytes) return (false, "list is larger than the " + (MaxListBytes >> 20) + " MB limit");
                 using var ms = new MemoryStream();
+                long expected = resp.Content.Headers.ContentLength ?? 0;
                 using (var net = await resp.Content.ReadAsStreamAsync())
                 {
                     var buf = new byte[81920]; int n;
                     while ((n = await net.ReadAsync(buf, 0, buf.Length)) > 0)
                     {
                         ms.Write(buf, 0, n);
+                        if ((DateTime.UtcNow - _listProgressUtc).TotalMilliseconds > 120) { _listProgressUtc = DateTime.UtcNow; PostToShieldPage(new { type = "progress", id, phase = "downloading", received = ms.Length, total = expected }); }
                         if (ms.Length > MaxListBytes) return (false, "list is larger than the " + (MaxListBytes >> 20) + " MB limit");
                     }
                 }
                 var bytes = ms.ToArray();
+                PostToShieldPage(new { type = "progress", id, phase = "checking", received = bytes.Length, total = bytes.Length });
                 var text = Encoding.UTF8.GetString(bytes);
                 var probe = new FilterEngine(); probe.AddList(text, id);
                 int rules = probe.NetworkRules + probe.CosmeticRules;
@@ -346,7 +351,7 @@ namespace Recognition.Browser
                 fpSession = _fpTotals,
                 fpPage = Active?.Fp,
                 lists = _listState.OrderBy(kv => kv.Key.StartsWith("custom-") ? 1 : 0).ThenBy(kv => kv.Key)
-                    .Select(kv => new { id = kv.Key, name = kv.Value.Name, url = kv.Value.Url, license = kv.Value.License, enabled = kv.Value.Enabled, updated = kv.Value.Updated, sha = kv.Value.Sha256, bytes = kv.Value.Bytes, rules = kv.Value.Rules, custom = kv.Key.StartsWith("custom-") }).ToList(),
+                    .Select(kv => new { id = kv.Key, name = kv.Value.Name, url = kv.Value.Url, license = kv.Value.License, enabled = kv.Value.Enabled, updated = kv.Value.Updated, sha = kv.Value.Sha256, bytes = kv.Value.Bytes, rules = kv.Value.Rules, custom = kv.Key.StartsWith("custom-"), last = _listLast.TryGetValue(kv.Key, out var lastText) ? lastText : "" }).ToList(),
                 customRules = _customRules
             });
         }
@@ -456,7 +461,13 @@ namespace Recognition.Browser
         {
             if (!ValidListId(id) || !_listState.ContainsKey(id)) return;
             PostToShieldPage(new { type = "action", ok = true, text = "downloading " + _listState[id].Name + " …" });
+            PostToShieldPage(new { type = "progress", id, phase = "connecting", received = 0, total = 0 });
+            int before = _listState[id].Rules; var started = DateTime.UtcNow;
             var (ok, message) = await DownloadFilterListAsync(id);
+            var secs = (DateTime.UtcNow - started).TotalSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+            int after = _listState.TryGetValue(id, out var cur) ? cur.Rules : 0;
+            _listLast[id] = ok ? ("Updated at " + DateTime.Now.ToString("h:mm tt") + " in " + secs + " s: " + after.ToString("N0") + " rules" + (before > 0 ? " (" + (after - before >= 0 ? "+" : "") + (after - before).ToString("N0") + " since the old copy)" : "")) : ("Failed after " + secs + " s: " + message);
+            PostToShieldPage(new { type = "progress", id, phase = "done", received = 0, total = 0 });
             PostToShieldPage(new { type = "action", ok, text = ok ? "updated. " + message : "not updated: " + message });
             if (ok) RebuildFiltersAsync();
             SendShieldSnapshot();
@@ -467,7 +478,7 @@ namespace Recognition.Browser
         private string ShieldHtml()
         {
             var sb = new StringBuilder(PageHead);
-            sb.Append(@"<title>Shield</title><h1>Shield</h1>
+            sb.Append(@"<style>.bartrack{height:6px;background:#242933;border-radius:4px;overflow:hidden;margin-top:6px}.barfill{height:100%;background:#4c9bf0}</style><title>Shield</title><h1>Shield</h1>
 <div class='muted'>Two protections: <b>ad and tracker filtering</b> (network requests are blocked, page elements are hidden) and a <b>fingerprint shield</b> (makes the values trackers use to recognise your device unstable or less distinctive). Both run on your computer; nothing here sends data anywhere. The only network use is the list updater, and only when you press Update.</div>
 <div id='msg' class='u' style='min-height:18px;margin:8px 0'></div>
 <div id='stats' class='row' style='display:block'></div>
@@ -528,6 +539,7 @@ function saveCustom(){send('flt-custom:'+enc($('custom').value))}
 function testReq(){send('flt-test:'+enc(JSON.stringify({url:$('tu').value.trim(),page:$('tp').value.trim(),type:$('tt').value})))}
 function btn(t,cmd,ghost){var a=el('a',t,'btn'+(ghost?' ghost':''));a.style.marginLeft='6px';a.onclick=function(){send(cmd)};return a}
 function fmt(n){return Number(n).toLocaleString()}
+function prog(m){var tr=$('pb_'+m.id),pt=$('pt_'+m.id);if(!tr||!pt)return;if(m.phase==='done'){tr.style.display='none';pt.textContent='';return}tr.style.display='block';var f=tr.firstChild;var pct=m.total>0?Math.min(100,100*m.received/m.total):(m.phase==='connecting'?3:50);f.style.width=pct+'%';pt.textContent=m.phase==='connecting'?'Connecting...':m.phase==='checking'?'Checking the list ('+Math.round(m.received/1024)+' KB)...':'Downloading '+Math.round(m.received/1024)+' KB'+(m.total>0?' of '+Math.round(m.total/1024)+' KB':'')}
 function render(m){
   var s=m.stats;$('stats').textContent='';
   var l1=el('div','Blocking is '+(m.blockingEnabled?'ON':'OFF')+(m.building?'  (loading lists…)':''),'t');$('stats').appendChild(l1);
@@ -545,7 +557,7 @@ function render(m){
   m.lists.forEach(function(x){var r=el('div',null,'row');var d=el('div');
     d.appendChild(el('div',x.name+(x.enabled?'':'  (off)'),'t'));
     d.appendChild(el('div',(x.rules?fmt(x.rules)+' rules · '+Math.round(x.bytes/1024)+' KB · updated '+x.updated.slice(0,10)+' · sha256 '+x.sha.slice(0,12)+'…':'not downloaded')+'  ·  licence: '+x.license,'u'));
-    d.appendChild(el('div',x.url,'u'));r.appendChild(d);
+    d.appendChild(el('div',x.url,'u'));if(x.last){var lt=el('div',x.last,'u');lt.style.color=x.last.indexOf('Failed')==0?'#e0a0a0':'#7fd6a0';d.appendChild(lt)}var tr=el('div',null,'bartrack');tr.id='pb_'+x.id;tr.style.display='none';var fl=el('div',null,'barfill');tr.appendChild(fl);d.appendChild(tr);var pt=el('div',null,'u');pt.id='pt_'+x.id;d.appendChild(pt);r.appendChild(d);
     var b=el('div',null,'ts');b.appendChild(btn(x.rules?'Update':'Download','flt-update:'+x.id));
     if(x.rules)b.appendChild(btn(x.enabled?'Turn off':'Turn on','flt-toggle:'+x.id,true));
     if(x.rules||x.custom)b.appendChild(btn('Remove','flt-remove:'+x.id,true));
@@ -555,6 +567,7 @@ function render(m){
   (m.exempt||[]).forEach(function(h){var r=el('div',null,'row');r.appendChild(el('div',h,'t'));var b=el('div',null,'ts');b.appendChild(btn('Re-enable blocking','flt-site:'+h+':inherit',true));r.appendChild(b);ex.appendChild(r)})}
 window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!m)return;
   if(m.type==='snapshot')render(m);
+  else if(m.type==='progress')prog(m);
   else if(m.type==='action')$('msg').textContent=m.text;
   else if(m.type==='test')$('tres').textContent=m.blocked?('BLOCKED by '+m.rule+'  ('+m.list+')'):(m.rule?('allowed by exception '+m.rule+'  ('+m.list+')'):'allowed (no rule matches)')});
 send('flt-state');

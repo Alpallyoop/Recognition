@@ -1,6 +1,7 @@
 <Window x:Class="Recognition.Browser.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Recognition.Browser"
         Title="Recognition — Governed Browser" Height="820" Width="1280"
         WindowStartupLocation="CenterScreen"
         Background="#111318"
@@ -8,6 +9,7 @@
         PreviewKeyDown="Window_PreviewKeyDown">
   <Window.CommandBindings>
     <CommandBinding Command="ApplicationCommands.New" Executed="NewTabCmd_Executed"/>
+    <CommandBinding Command="{x:Static local:MainWindow.PrivateTab}" Executed="PrivateTabCmd_Executed"/>
   </Window.CommandBindings>
   <Grid>
     <Grid.RowDefinitions>
@@ -68,14 +70,26 @@
             <ContextMenu>
               <MenuItem Header="New tab"          Click="MenuNewTab_Click"     InputGestureText="Ctrl+T"/>
               <MenuItem Header="New private tab"  Click="MenuNewPrivate_Click" InputGestureText="Ctrl+Shift+N"/>
+              <MenuItem Header="Reopen closed tab" Click="MenuReopenTab_Click" InputGestureText="Ctrl+Shift+T"/>
               <MenuItem Header="Home"             Click="MenuHome_Click"       InputGestureText="Alt+Home"/>
               <MenuItem Header="Set home to current page" Click="MenuSetHome_Click"/>
               <Separator/>
+              <MenuItem Header="Overview"  Click="MenuOverview_Click"/>
               <MenuItem Header="Bookmarks" Click="MenuBookmarks_Click"/>
               <MenuItem Header="History"   Click="MenuHistory_Click"/>
               <MenuItem Header="Downloads" Click="MenuDownloads_Click"/>
+              <MenuItem Header="Bookmark options">
+                <MenuItem Header="Show or hide bookmarks bar" Click="MenuBookmarksBar_Click" InputGestureText="Ctrl+Shift+B"/>
+                <MenuItem Header="Import bookmarks..." Click="MenuImportBookmarks_Click"/>
+              </MenuItem>
+              <Separator/>
               <MenuItem Header="Find in page" Click="MenuFind_Click"  InputGestureText="Ctrl+F"/>
               <MenuItem Header="Page tools">
+                <MenuItem Header="Reader mode" Click="MenuReader_Click"/>
+                <MenuItem Header="Picture-in-picture (video)" Click="MenuPip_Click"/>
+                <MenuItem Header="Translate this page..." Click="MenuTranslate_Click"/>
+                <MenuItem Header="Close split view" Click="MenuCloseSplit_Click"/>
+                <Separator/>
                 <MenuItem Header="Save page snapshot (.mhtml + evidence)" Click="MenuSnapshotPage_Click"/>
                 <MenuItem Header="Print..."        Click="MenuPrint_Click"/>
                 <MenuItem Header="Save page as PDF..." Click="MenuSavePdf_Click"/>
@@ -91,20 +105,24 @@
                 <MenuItem Header="Open file (PDF, image, code)..." Click="MenuOpenFile_Click"/>
                 <MenuItem Header="File tools (PDF and image)" Click="MenuTools_Click"/>
               </MenuItem>
+              <MenuItem Header="Zoom">
+                <MenuItem Header="Zoom in"    Click="MenuZoomIn_Click"  InputGestureText="Ctrl++"/>
+                <MenuItem Header="Zoom out"   Click="MenuZoomOut_Click" InputGestureText="Ctrl+-"/>
+                <MenuItem Header="Reset zoom" Click="MenuZoomReset_Click" InputGestureText="Ctrl+0"/>
+              </MenuItem>
               <Separator/>
-              <MenuItem Header="Zoom in"    Click="MenuZoomIn_Click"  InputGestureText="Ctrl++"/>
-              <MenuItem Header="Zoom out"   Click="MenuZoomOut_Click" InputGestureText="Ctrl+-"/>
-              <MenuItem Header="Reset zoom" Click="MenuZoomReset_Click" InputGestureText="Ctrl+0"/>
-              <Separator/>
-              <MenuItem Header="Tools (PDF, images, page tools)" Click="MenuTools_Click"/>
-              <MenuItem Header="VPN / proxy" Click="Vpn_Click"/>
-              <MenuItem Header="Network"   Click="MenuNetwork_Click"/>
-              <MenuItem Header="Passwords" Click="MenuPasswords_Click"/>
-              <MenuItem Header="Shield (ads, trackers, fingerprinting)" Click="MenuShield_Click"/>
-              <MenuItem Header="Passkeys" Click="MenuPasskeys_Click"/>
+              <MenuItem Header="Privacy and security">
+                <MenuItem Header="Shield (ads, trackers, fingerprinting)" Click="MenuShield_Click"/>
+                <MenuItem Header="Passwords" Click="MenuPasswords_Click"/>
+                <MenuItem Header="Passkeys" Click="MenuPasskeys_Click"/>
+                <MenuItem Header="VPN / proxy" Click="Vpn_Click"/>
+                <MenuItem Header="Network"   Click="MenuNetwork_Click"/>
+                <MenuItem Header="SoteriaVault link" Click="MenuSoteria_Click"/>
+              </MenuItem>
               <MenuItem Header="Extensions" Click="MenuExtensions_Click"/>
-              <MenuItem Header="SoteriaVault link" Click="MenuSoteria_Click"/>
+              <MenuItem Header="Tools (PDF, images)" Click="MenuTools_Click"/>
               <MenuItem Header="Setup snapshot" Click="MenuSetup_Click"/>
+              <Separator/>
               <MenuItem Header="Settings"  Click="MenuSettings_Click"/>
               <MenuItem Header="Export Session (governed packet)" Click="Export_Click"/>
             </ContextMenu>
@@ -117,6 +135,29 @@
 
     <!-- Tab strip + find bar over a persistent web host -->
     <DockPanel Grid.Row="1" LastChildFill="True">
+      <Border x:Name="SideBar" DockPanel.Dock="Left" Width="46" Background="#15181D" BorderBrush="#2A2E36" BorderThickness="0,0,1,0">
+        <DockPanel LastChildFill="False">
+          <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe UI Emoji" FontSize="15" Margin="5,2" Width="34" Height="34" Content="&#x1F576;" ToolTip="New private tab (Ctrl+Shift+N)" Click="MenuPrivateBtn_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE80F;" ToolTip="Home" Click="MenuHome_Click"/>
+            <Border Height="1" Margin="9,6" Background="#2A2E36"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe UI Emoji" FontSize="15" Margin="5,2" Width="34" Height="34" Content="&#x1F4CA;" ToolTip="Overview: stats, cookies, trackers" Click="MenuOverview_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE734;" ToolTip="Bookmarks" Click="MenuBookmarks_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE81C;" ToolTip="History" Click="MenuHistory_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE896;" ToolTip="Downloads" Click="MenuDownloads_Click"/>
+            <Border Height="1" Margin="9,6" Background="#2A2E36"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xEA18;" ToolTip="Shield (ads, trackers, fingerprinting)" Click="MenuShield_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE72E;" ToolTip="Passwords" Click="MenuPasswords_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE774;" ToolTip="VPN / proxy" Click="Vpn_Click"/>
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE90F;" ToolTip="Tools (PDF, images, page tools)" Click="MenuTools_Click"/>
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,8">
+            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE713;" ToolTip="Settings" Click="MenuSettings_Click"/>
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <TabControl x:Name="Tabs" DockPanel.Dock="Top" Background="#15181D" BorderThickness="0"
                   SelectionChanged="Tabs_SelectionChanged">
         <TabControl.Template>
@@ -126,6 +167,9 @@
               <!-- tabs, then a "+" right after the last tab (like every mainstream browser) -->
               <StackPanel Orientation="Horizontal" Margin="4,4,4,0">
                 <TabPanel IsItemsHost="True"/>
+                <Button Command="{x:Static local:MainWindow.PrivateTab}" Content="&#x1F576;" ToolTip="New private tab (Ctrl+Shift+N)" FontFamily="Segoe UI Emoji"
+                        Width="30" Height="28" Margin="2,2,0,0" VerticalAlignment="Center"
+                        Background="Transparent" Foreground="#C7CCD4" BorderThickness="0" FontSize="14" Cursor="Hand"/>
                 <Button Command="ApplicationCommands.New" Content="+" ToolTip="New tab (Ctrl+T)"
                         Width="30" Height="28" Margin="4,2,0,0" VerticalAlignment="Center"
                         Background="Transparent" Foreground="#C7CCD4" BorderThickness="0"
@@ -135,6 +179,12 @@
           </ControlTemplate>
         </TabControl.Template>
       </TabControl>
+
+      <Border x:Name="BookmarksBar" DockPanel.Dock="Top" Background="#1B1E24" BorderBrush="#2A2E36" BorderThickness="0,0,0,1" Height="32">
+        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="BookmarksBarItems" Orientation="Horizontal" Margin="6,0"/>
+        </ScrollViewer>
+      </Border>
 
       <Border x:Name="FindBar" DockPanel.Dock="Top" Background="#1B1E24" BorderBrush="#2A2E36"
               BorderThickness="0,0,0,1" Visibility="Collapsed" Padding="8,5">
@@ -151,7 +201,9 @@
         </StackPanel>
       </Border>
 
-      <Grid x:Name="WebHost" Background="#1E1F22"/>
+      <Grid x:Name="WebHost" Background="#1E1F22">
+        <GridSplitter x:Name="SplitBar" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#2A2E36" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Visibility="Collapsed" Panel.ZIndex="5"/>
+      </Grid>
     </DockPanel>
 
     <!-- Status strip -->

@@ -1064,6 +1064,169 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(StartBackground.HomeUrl(@"C:\pages\home.html", p => false) == null, "home: a missing local file is refused");
 }
 
+// ---- everyday browser features (BrowserFeel) ----
+{
+    Check(SearchEngines.Get(null).Id == "duckduckgo" && SearchEngines.Get("nope").Id == "duckduckgo" && SearchEngines.Get(" BRAVE ").Id == "brave", "search: unknown or empty falls back to DuckDuckGo, ids are case-insensitive");
+    Check(SearchEngines.Url("duckduckgo", "a b&c") == "https://duckduckgo.com/?q=a%20b%26c", "search: the query is percent-encoded");
+    Check(SearchEngines.Url("google", "cats") == "https://www.google.com/search?q=cats" && SearchEngines.Url("brave", "x") == "https://search.brave.com/search?q=x", "search: engine templates");
+    Check(SearchEngines.Url("duckduckgo", "x\"><script>&q=") .IndexOfAny(new[] { '"', '<', '>', ' ' }) < 0, "search: quotes, brackets and spaces never reach the address");
+    foreach (var seE in SearchEngines.All)
+    {
+        Check(seE.Template.StartsWith("https://") && seE.Template.IndexOf("{q}") == seE.Template.LastIndexOf("{q}") && seE.Template.Contains("{q}"), "search: " + seE.Id + " uses https and one query slot");
+        Check(SearchEngines.Prefix(seE.Id) + "zz" == SearchEngines.Url(seE.Id, "zz"), "search: " + seE.Id + " prefix + query equals the full address");
+        Check(SearchEngines.Home(seE.Id).StartsWith("https://") && SearchEngines.Home(seE.Id).EndsWith("/") && !SearchEngines.Home(seE.Id).Contains("?"), "search: " + seE.Id + " home address");
+    }
+    Check(SearchEngines.Normalize("GOOGLE") == "google" && SearchEngines.Normalize("x;y") == "duckduckgo", "search: normalize");
+
+    var biHtml = "<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>\n<DT><H3>Folder</H3><DL><p>\n" +
+        "<DT><A HREF=\"https://example.com/a?x=1&amp;y=2\" ADD_DATE=\"1\">Example &amp; Co</A>\n" +
+        "<DT><a href='http://plain.test/'>Single quotes</a>\n" +
+        "<DT><A HREF=\"javascript:alert(1)\">bad js</A>\n<DT><A HREF=\"file:///C:/x.html\">bad file</A>\n" +
+        "<DT><A HREF=\"https://example.com/a?x=1&amp;y=2\">duplicate</A>\n<DT><A HREF=\"https://user@evil.test/\">bad userinfo</A>\n" +
+        "<DT><A HREF=\"https://tags.test/\"><b>Bold</b> title</A>\n</DL><p></DL>";
+    var biList = BookmarkImport.Parse(biHtml);
+    Check(biList.Count == 3, "import: three good bookmarks found (" + biList.Count + ")");
+    Check(biList.Count == 3 && biList[0].Url == "https://example.com/a?x=1&y=2" && biList[0].Title == "Example & Co", "import: entities decoded in address and title");
+    Check(biList.Count == 3 && biList[1].Url == "http://plain.test/" && biList[1].Title == "Single quotes", "import: single-quoted attributes and lower-case tags work");
+    Check(biList.Count == 3 && biList[2].Url == "https://tags.test/" && biList[2].Title == "Bold title", "import: tags inside a title are dropped");
+    Check(!biList.Any(b => b.Url.StartsWith("javascript") || b.Url.StartsWith("file") || b.Url.Contains("evil.test")), "import: javascript:, file: and user-name addresses are refused");
+    Check(BookmarkImport.Parse(null).Count == 0 && BookmarkImport.Parse("").Count == 0 && BookmarkImport.Parse("no links here").Count == 0, "import: empty and link-free input give nothing");
+    Check(BookmarkImport.Parse("<A HREF=\"https://t.test/\">a\u0001b</A>")[0].Title == "ab", "import: control characters are removed from titles");
+    Check(BookmarkImport.Parse("<A HREF=\"https://t.test/\">" + new string('x', 300) + "</A>")[0].Title.Length == 200, "import: titles are cut to 200 characters");
+    var biBig = new System.Text.StringBuilder(); for (int biI = 0; biI < 6000; biI++) biBig.Append("<A HREF=\"https://h" + biI + ".test/\">t</A>\n");
+    Check(BookmarkImport.Parse(biBig.ToString()).Count == BookmarkImport.MaxItems, "import: at most 5000 bookmarks are taken");
+    Check(BookmarkImport.Parse(new string('<', 100000) + "<a href=\"https://t.test/\">x</a>").Count <= 1, "import: hostile input does not hang or throw");
+
+    var tsV = new (string, string)[]
+    {
+        ("https://www.site-a.test/x", "A page"), ("https://site-a.test/", "Site A Home"), ("https://site-a.test/y", "Y"), ("https://site-b.test/", "B"),
+        ("http://site-c.test/", "C"), ("https://site-c.test/z", "C2"), ("ftp://x.test/", "F"), ("https://u@evil.test/", "E"), ("javascript:1", "J"), ("garbage", "G"), ("", "")
+    };
+    var tsA = TopSites.Pick(tsV, 8);
+    Check(tsA.Count == 3 && tsA[0].Host == "site-a.test" && tsA[1].Host == "site-c.test" && tsA[2].Host == "site-b.test", "top sites: ordered by visits, www merged, other schemes and user-name addresses skipped");
+    Check(tsA[0].Visits == 3 && tsA[0].Url == "https://site-a.test/" && tsA[0].Title == "Site A Home", "top sites: a tile opens the site's home and uses its home page title");
+    Check(TopSites.Pick(tsV, 2).Count == 2 && TopSites.Pick(tsV, 2)[1].Host == "site-c.test", "top sites: the limit is respected");
+    Check(TopSites.Pick(tsV, 8, new HashSet<string> { "site-a.test" }).Select(t => t.Host).SequenceEqual(new[] { "site-c.test", "site-b.test" }), "top sites: hidden sites are left out");
+    var tsT = TopSites.Pick(new (string, string)[] { ("https://one.test/", ""), ("https://two.test/", "") }, 8);
+    Check(tsT[0].Host == "two.test" && tsT[1].Host == "one.test" && tsT[0].Title == "two.test", "top sites: ties go to the most recent; no title falls back to the host");
+    Check(TopSites.Pick(null, 8).Count == 0 && TopSites.Pick(tsV, 0).Count == 0 && TopSites.Pick(new (string, string)[0], 8).Count == 0, "top sites: nothing in, nothing out");
+    Check(TopSites.Pick(new (string, string)[] { ("https://t.test/", new string('y', 200)) }, 1)[0].Title.Length == 60, "top sites: long titles are cut");
+
+    Check(SiteBadge.Letter("www.example.com") == "E" && SiteBadge.Letter("123.test") == "1" && SiteBadge.Letter("") == "?" && SiteBadge.Letter("--") == "?" && SiteBadge.Letter(null) == "?", "badge: first letter or digit of the site");
+    Check(System.Text.RegularExpressions.Regex.IsMatch(SiteBadge.CssColor("example.com"), "^#[0-9a-f]{6}$"), "badge: colour is a plain #rrggbb value");
+    Check(SiteBadge.CssColor("Example.COM") == SiteBadge.CssColor("example.com"), "badge: the same site always gets the same colour");
+    Check(SiteBadge.CssColor("a.test") != SiteBadge.CssColor("b.test") && SiteBadge.CssColor("example.com") != SiteBadge.CssColor("github.com"), "badge: different sites get different colours");
+    Check(SiteBadge.CssColor(null) == SiteBadge.CssColor(""), "badge: no site still gives a colour");
+    Check(Counts.Pretty(0) == "0" && Counts.Pretty(1234567) == "1,234,567" && Counts.Pretty(-5) == "0", "counts: thousands separators, never negative");
+}
+
+// ---- workspace: tab groups, session, tiles, translate, sync ----
+{
+    Check(TabGroups.CleanName("  Work   stuff <b>!  ") == "Work stuff b" && TabGroups.CleanName(null) == "" && TabGroups.CleanName(new string('a', 40)).Length == 24, "groups: names are cleaned and cut to 24 characters");
+    Check(TabGroups.CleanName("a\u0001b\n") == "ab" && TabGroups.CleanName("<script>") == "script", "groups: control characters and markup characters are dropped");
+    Check(TabGroups.ValidColor("#4C9BF0") == "#4c9bf0" && TabGroups.ValidColor("red") == TabGroups.Palette[0] && TabGroups.ValidColor("url(x)") == TabGroups.Palette[0], "groups: only palette colours are accepted");
+    Check(TabGroups.NextColor(new string[0]) == TabGroups.Palette[0] && TabGroups.NextColor(new[] { TabGroups.Palette[0] }) == TabGroups.Palette[1] && TabGroups.NextColor(TabGroups.Palette) == TabGroups.Palette[0], "groups: the next unused colour is chosen, then it cycles");
+    Check(TabGroups.NextId(new string[0]) == "g1" && TabGroups.NextId(new[] { "g1", "g2" }) == "g3" && TabGroups.NextId(new[] { "g2" }) == "g1", "groups: ids fill the first free number");
+    var gaItems = new List<TabGroups.ArrangeItem>
+    {
+        new(0, null, false), new(1, "g1", false), new(2, null, false), new(3, "g2", false), new(4, "g1", false), new(5, null, true), new(6, "g2", false), new(7, "g9", true)
+    };
+    Check(string.Join(",", TabGroups.Arrange(gaItems)) == "5,7,0,1,4,2,3,6", "groups: pinned first, group members pulled together at the group's first tab, the rest keep their order");
+    Check(TabGroups.Arrange(new List<TabGroups.ArrangeItem>()).Count == 0, "groups: no tabs, no order");
+    var gaOnce = TabGroups.Arrange(gaItems); Check(gaOnce.Distinct().Count() == gaItems.Count && gaOnce.Count == gaItems.Count, "groups: every tab appears exactly once");
+    var gaAgain = gaOnce.Select(k => gaItems.First(x => x.Key == k)).ToList();
+    Check(TabGroups.Arrange(gaAgain).SequenceEqual(gaOnce), "groups: arranging an already arranged list changes nothing");
+
+    var seData = new SessionData(
+        new List<SessionTab> { new("https://a.test/", true, null), new("https://b.test/x?y=1", false, "g1"), new("http://c.test/", false, null), new("https://d.test/", false, "g1") },
+        new List<SessionGroup> { new("g1", "Work", "#e5736b", true) }, 3);
+    var seJson = SessionRules.Serialize(seData); var seBack = SessionRules.Parse(seJson);
+    Check(seBack != null && seBack.Tabs.Count == 4 && seBack.Groups.Count == 1 && seBack.Active == 3 && seBack.Tabs[1].Group == "g1" && seBack.Tabs[0].Pinned && seBack.Groups[0].Collapsed && seBack.Groups[0].Name == "Work", "session: a session survives a round trip");
+    Check(seBack != null && seBack.Tabs[1].Url == "https://b.test/x?y=1" && seBack.Tabs[2].Url == "http://c.test/", "session: addresses are kept exactly");
+    foreach (var seBad in new[] { "", "   ", "not json", "[]", "{}", "{\"schema\":\"other\"}", "{\"schema\":\"recognition.session.v1\"}", "{\"schema\":\"recognition.session.v1\",\"tabs\":[]}", "{\"schema\":\"recognition.session.v1\",\"tabs\":[{\"url\":\"javascript:alert(1)\"}]}" })
+        Check(SessionRules.Parse(seBad) == null, "session: refused '" + (seBad.Length > 30 ? seBad.Substring(0, 30) : seBad) + "'");
+    Check(SessionRules.Parse(null) == null && SessionRules.Parse(new string(' ', 2_000_000)) == null, "session: null and oversized input are refused");
+    var seMixed = SessionRules.Parse("{\"schema\":\"recognition.session.v1\",\"active\":99,\"groups\":[{\"id\":\"g1\",\"name\":\"<b>x</b>\",\"color\":\"url(x)\"},{\"id\":\"bad id\",\"name\":\"n\"},{\"id\":\"g1\",\"name\":\"dup\"},{\"id\":\"g2\",\"name\":\"unused\"}]," +
+        "\"tabs\":[{\"url\":\"https://ok.test/\",\"group\":\"g1\"},{\"url\":\"https://u@evil.test/\"},{\"url\":\"file:///C:/x.html\"},{\"url\":\"https://p.test/\",\"pinned\":true,\"group\":\"g1\"},{\"url\":\"https://q.test/\",\"group\":\"g404\"},7,null]}");
+    Check(seMixed != null && seMixed.Tabs.Count == 3 && seMixed.Active == 2, "session: bad tabs are dropped, an out-of-range active index is clamped");
+    Check(seMixed != null && seMixed.Tabs[0].Group == "g1" && seMixed.Tabs[1].Group == null && seMixed.Tabs[1].Pinned && seMixed.Tabs[2].Group == null, "session: pinned tabs and tabs in unknown groups lose their group");
+    Check(seMixed != null && seMixed.Groups.Count == 1 && seMixed.Groups[0].Id == "g1" && seMixed.Groups[0].Name == "bxb" && seMixed.Groups[0].Color == TabGroups.Palette[0], "session: group names are cleaned, bad colours replaced, duplicate, invalid and unused groups dropped");
+    var seMany = "{\"schema\":\"recognition.session.v1\",\"tabs\":[" + string.Join(",", Enumerable.Range(0, 200).Select(i => "{\"url\":\"https://h" + i + ".test/\"}")) + "]}";
+    Check(SessionRules.Parse(seMany)!.Tabs.Count == SessionRules.MaxTabs, "session: at most 60 tabs are restored");
+
+    Check(TileRules.HostOf("https://www.Example.com/a") == "example.com" && TileRules.HostOf("ftp://x.test") == null && TileRules.HostOf("garbage") == null && TileRules.HostOf(null) == null, "tiles: host of an address");
+    Check(TileRules.NormalizeNew("example.com") == "https://example.com/" && TileRules.NormalizeNew("recognition:start") == null && TileRules.NormalizeNew("javascript:1") == null && TileRules.NormalizeNew("") == null && TileRules.NormalizeNew("a b.com") == null, "tiles: what you type becomes a web address or is refused");
+    var tlCustom = new List<(string Url, string Title)>(); var tlHidden = new HashSet<string>();
+    Check(TileRules.AddCustom(tlCustom, tlHidden, "news.test", out var tlErr) && tlCustom.Count == 1 && tlCustom[0].Url == "https://news.test/" && tlErr == "", "tiles: a site is added");
+    Check(TileRules.AddCustom(tlCustom, tlHidden, "https://www.news.test/other", out _) && tlCustom.Count == 1, "tiles: the same site is not added twice");
+    Check(!TileRules.AddCustom(tlCustom, tlHidden, "nonsense words", out var tlErr2) && tlErr2.Length > 0, "tiles: nonsense is refused with a reason");
+    for (int tlI = 0; tlI < 20; tlI++) TileRules.AddCustom(tlCustom, tlHidden, "s" + tlI + ".test", out _);
+    Check(tlCustom.Count == TileRules.MaxCustom && !TileRules.AddCustom(tlCustom, tlHidden, "one-more.test", out var tlErr3) && tlErr3.Contains("12"), "tiles: at most 12 added sites");
+    var tlTop = new List<TopSite> { new("https://a.test/", "a.test", "A", 9), new("https://b.test/", "b.test", "B", 5), new("https://news.test/", "news.test", "News again", 4) };
+    var tlOne = new List<(string Url, string Title)> { ("https://mine.test/", "Mine") };
+    var tlB = TileRules.Build(tlOne, tlTop, new HashSet<string> { "a.test" }, 8);
+    Check(string.Join(",", tlB.Select(t => t.Host)) == "mine.test,b.test,news.test" && tlB[0].Custom && !tlB[1].Custom, "tiles: your sites first, then most visited, hidden sites left out");
+    Check(string.Join(",", TileRules.Build(tlOne, tlTop, null, 2).Select(t => t.Host)) == "mine.test,a.test", "tiles: the limit is respected");
+    Check(TileRules.Build(new List<(string Url, string Title)> { ("https://a.test/", "Mine") }, tlTop, null, 8).Count(t => t.Host == "a.test") == 1, "tiles: a site you added is not shown twice");
+    TileRules.Remove(tlOne, tlHidden, "mine.test"); Check(tlOne.Count == 0 && !tlHidden.Contains("mine.test"), "tiles: removing a site you added forgets it");
+    TileRules.Remove(tlOne, tlHidden, "b.test"); Check(tlHidden.Contains("b.test"), "tiles: removing a most-visited site hides it");
+    TileRules.Remove(tlOne, tlHidden, "bad host;<"); Check(!tlHidden.Any(h => h.Contains("<")), "tiles: a bad host is ignored");
+    Check(TileRules.AddCustom(tlOne, tlHidden, "b.test", out _) && !tlHidden.Contains("b.test"), "tiles: adding a hidden site shows it again");
+    var tlJson = TileRules.ToJson(new List<(string Url, string Title)> { ("https://x.test/", "X") }, new HashSet<string> { "y.test", "z.test" });
+    using (var tlDoc = JsonDocument.Parse(tlJson))
+    {
+        var tlC2 = new List<(string Url, string Title)>(); var tlH2 = new HashSet<string>();
+        TileRules.Load(tlDoc.RootElement.GetProperty("custom"), tlDoc.RootElement.GetProperty("hidden"), tlC2, tlH2);
+        Check(tlC2.Count == 1 && tlC2[0].Url == "https://x.test/" && tlC2[0].Title == "X" && tlH2.SetEquals(new[] { "y.test", "z.test" }), "tiles: saved tiles load back");
+    }
+    using (var tlBad = JsonDocument.Parse("{\"custom\":[{\"url\":\"javascript:1\"},{\"url\":\"https://ok.test/\",\"title\":\"\"},5,{\"url\":\"https://ok.test/again\"}],\"hidden\":[\"ok.test\",\"BAD HOST\",\"<x>\",3,\"fine.test\"]}"))
+    {
+        var tlC3 = new List<(string Url, string Title)>(); var tlH3 = new HashSet<string>();
+        TileRules.Load(tlBad.RootElement.GetProperty("custom"), tlBad.RootElement.GetProperty("hidden"), tlC3, tlH3);
+        Check(tlC3.Count == 1 && tlC3[0].Title == "ok.test" && tlH3.SetEquals(new[] { "ok.test", "fine.test" }), "tiles: hostile saved tiles are dropped one by one");
+    }
+    TileRules.Load(null, null, new List<(string Url, string Title)>(), new HashSet<string>());
+
+    Check(TranslateRules.Url("google", "de", "https://example.com/a?x=1&y=2") == "https://translate.google.com/translate?sl=auto&tl=de&u=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1%26y%3D2", "translate: Google address");
+    Check(TranslateRules.Url("bing", "zh-CN", "https://example.com/") == "https://www.translatetheweb.com/?from=&to=zh-Hans&a=https%3A%2F%2Fexample.com%2F", "translate: Microsoft address, Chinese uses its own code");
+    Check(TranslateRules.Url("nope", "xx", "https://example.com/") == "https://translate.google.com/translate?sl=auto&tl=en&u=https%3A%2F%2Fexample.com%2F", "translate: unknown service and language fall back to Google and English");
+    foreach (var trBad in new[] { "", "recognition:start", "javascript:alert(1)", "file:///C:/x.html", "https://u@evil.test/", "ftp://x.test/" })
+        Check(TranslateRules.Url("google", "en", trBad) == null, "translate: refused page '" + trBad + "'");
+    Check(TranslateRules.Url("google", "en", null) == null, "translate: no page, no link");
+    Check(TranslateRules.Languages.All(l => TranslateRules.NormalizeLang(l.Code) == l.Code) && TranslateRules.NormalizeLang("DE") == "de" && TranslateRules.NormalizeLang("../x") == "en", "translate: language codes come from a fixed list");
+    Check(TranslateRules.ServiceName("bing") == "Microsoft Translator" && TranslateRules.ServiceHost("google") == "translate.google.com" && TranslateRules.LangName("fr") == "French", "translate: names for the confirmation text");
+    Check(TranslateRules.Languages.Select(l => TranslateRules.Url("google", l.Code, "https://e.test/")).All(u => u != null && u.StartsWith("https://translate.google.com/translate?sl=auto&tl=")), "translate: every language builds an address");
+
+    var syBm = new List<(string Url, string Title)> { ("https://a.test/", "A"), ("https://b.test/", "B") };
+    var syTiles = new List<(string Url, string Title)> { ("https://t.test/", "T") };
+    var syCats = SyncRules.Categories(syBm, syTiles, new HashSet<string> { "h.test" }, "https://home.test/", "brave", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc), "Laptop 1");
+    var syPayload = SetupPayload.Build("abcdef0123456789", DateTime.UtcNow, DateTime.UtcNow.AddDays(400), syCats);
+    var syD = SyncRules.Parse(syPayload);
+    Check(syD != null && syD.Bookmarks.Count == 2 && syD.Tiles.Count == 1 && syD.Hidden.SequenceEqual(new[] { "h.test" }) && syD.Home == "https://home.test/" && syD.Engine == "brave" && syD.Device == "Laptop 1" && syD.PrefsUtc.Year == 2026, "sync: a payload round-trips");
+    var syCode = SetupCode.Generate(); var syBlob = SetupBlob.Seal(syPayload, syCode, 100_000);
+    var syOpen = SetupBlob.Open(syBlob, syCode, DateTime.UtcNow);
+    Check(syOpen.Ok && SyncRules.Parse(syOpen.PayloadJson)!.Bookmarks.Count == 2, "sync: the encrypted file opens with its code and not without it");
+    Check(!SetupBlob.Open(syBlob, SetupCode.Generate(), DateTime.UtcNow).Ok, "sync: a wrong code does not open the file");
+    Check(!syBlob.Contains("a.test") && !syBlob.Contains("brave"), "sync: the file does not contain readable bookmarks or settings");
+    Check(SyncRules.Parse("{}") == null && SyncRules.Parse("not json") == null && SyncRules.Parse(null) == null && SyncRules.Parse("{\"categories\":{\"bookmarks\":[]}}") == null, "sync: a payload without the sync part is refused");
+    var syHostile = SyncRules.Parse("{\"categories\":{\"bookmarks\":[{\"url\":\"javascript:alert(1)\",\"title\":\"x\"},{\"url\":\"https://ok.test/\",\"title\":\"<b>ok</b>\\u0001\"},{\"url\":\"https://ok.test/\",\"title\":\"dup\"},{\"url\":\"https://u@evil.test/\"},7],\"sync\":{\"tiles\":[{\"url\":\"file:///x\"}],\"hidden\":[\"<x>\"],\"home_url\":\"javascript:1\",\"search_engine\":\"evil;engine\",\"prefs_utc\":\"yesterday\",\"device\":\"<script>alert(1)</script>\"}}}");
+    Check(syHostile != null && syHostile.Bookmarks.Count == 1 && syHostile.Tiles.Count == 0 && syHostile.Hidden.Count == 0 && syHostile.Home == null && syHostile.Engine == "duckduckgo" && syHostile.PrefsUtc == DateTime.MinValue && !syHostile.Device.Contains("<"), "sync: hostile contents are dropped or neutralised");
+    var syMerged = SyncRules.MergeByUrl(syBm, new List<(string Url, string Title)> { ("https://b.test/", "B2"), ("https://c.test/", "C") }, out var syAdded);
+    Check(syMerged.Count == 3 && syAdded == 1 && syMerged[1].Title == "B" && syMerged[2].Url == "https://c.test/", "sync: merging adds what is missing and keeps what you have");
+    Check(SyncRules.MergeByUrl(syBm, syBm, out var syNone).Count == 2 && syNone == 0, "sync: merging the same data changes nothing");
+    Check(SyncRules.RemoteIsNewer(DateTime.UtcNow.AddHours(-1), DateTime.UtcNow) && !SyncRules.RemoteIsNewer(DateTime.UtcNow, DateTime.UtcNow.AddHours(-1)) && !SyncRules.RemoteIsNewer(DateTime.MinValue, DateTime.MinValue), "sync: the later settings change wins");
+}
+
+{
+    // ---- bookmark folders ----
+    Check(BookmarkFolders.Clean("  Work   stuff ") == "Work stuff" && BookmarkFolders.Clean("A<b>\"c'&d") == "Abcd" && BookmarkFolders.Clean("x\u0001y") == "xy" && BookmarkFolders.Clean(null) == "" && BookmarkFolders.Clean(new string('a', 80)).Length == 30, "folders: names are cleaned and cut to 30 characters");
+    var bfNames = BookmarkFolders.Names(new string?[] { "work", "Work", "", null, "Banks", "  news " });
+    Check(string.Join("|", bfNames) == "Banks|news|work", "folders: folders in use, each once, alphabetical, case ignored");
+    Check(BookmarkFolders.Resolve(new string?[] { "Work" }, "work") == "Work" && BookmarkFolders.Resolve(new string?[] { "Work" }, "Play") == "Play" && BookmarkFolders.Resolve(null, "  ") == null, "folders: an existing spelling is reused, a new name is cleaned, an empty name is refused");
+    var bfMany = Enumerable.Range(0, 50).Select(i => "f" + i).Cast<string?>().ToList();
+    Check(BookmarkFolders.Resolve(bfMany, "extra") == null && BookmarkFolders.Resolve(bfMany, "F7") == "f7", "folders: at most 50 folders, but an existing one can always be used");
+}
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }

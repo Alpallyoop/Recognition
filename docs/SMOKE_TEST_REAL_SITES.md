@@ -89,3 +89,35 @@ Expected honest result: lower than Brave on list breadth and cosmetic coverage u
 3. With a VPN app connected (any), the toolbar globe says "VPN" in green and the VPN page names the adapter. Disconnect it: both go back to "No VPN".
 4. VPN page, Check my public address opens the address-check page in a new tab (only when pressed).
 
+## J. Everyday browser features (v1.3.5)
+
+1. Bookmark two pages with the star: they appear on the bar under the tabs. Middle-click one: it opens in a new tab. Right-click: Remove bookmark works. Ctrl+Shift+B hides and shows the bar.
+2. Settings, Import bookmarks: choose an HTML bookmarks export from Chrome, Edge, Brave or Opera: the bar fills; importing the same file again says they were already saved.
+3. Right-click a tab: Pin moves it to the left and removes its close button; Unpin returns it. Mute shows a muted mark; play a video and the tab shows a speaker. Duplicate, Close other tabs, Close tabs to the right all work, pinned tabs stay. Close a tab, then Ctrl+Shift+T brings it back.
+4. Settings, Search engine: pick Brave Search, search from the address bar and from the start page: both use it. Pick DuckDuckGo to go back.
+5. Visit three sites a few times, open a new tab: the most-visited tiles show with coloured letters, and the counters show the blocked totals. Restart: the counters keep their values.
+6. The side bar buttons open Bookmarks, History, Downloads, Passwords, Shield, VPN, Tools and Settings. Settings, Side bar, Off hides it.
+
+## K. Workspace features (v1.3.6)
+
+1. Right-click a tab, Add to group, New group, name it. Add a second tab to it: both show the coloured group mark and sit together. Collapse hides the second tab; Close group closes both.
+2. Right-click a tab, Split view with, pick another tab: both pages show side by side. Click each side: the address bar follows. Drag the bar to resize. Close split view returns to one page.
+3. Settings, Continue where I left off. Open three sites, pin one, close Recognition, start it again: the tabs return, only the last active one loads at once, the others load when clicked. Private tabs are not restored. Open my home page turns it off.
+4. Start page: hover a tile and press the cross; add a site; Settings, Reset tiles brings the defaults back.
+5. Open a news article, Menu, Page tools, Reader mode: clean text; A+/A-, themes, Esc closes. On a page with no article it says so.
+6. Play a video, Menu, Page tools, Picture-in-picture: a floating window opens; again closes it.
+7. Translate this page: a question names the service; No does nothing; Yes opens a translated copy in a new tab.
+8. Sync: on device A, Settings, Device sync, Turn on, pick a synced folder, note the code. On device B, Join with the same folder and code. A bookmark added on A appears on B after Sync now (and the reverse). Wrong code says so and changes nothing.
+
+## L. Library, downloads, overview (v1.3.7)
+
+1. Bookmarks page: Rename changes the name on the page and the bar; Private tab opens it in a private tab; Copy puts the address on the clipboard. Right-click a bar bookmark: same actions.
+2. The private-tab button beside "+", the side bar button and the start page button each open a private tab.
+3. Downloads page: Change... a folder, download a file: it lands there. Turn on Ask each time: a Save As window appears. A large file shows a progress bar; Pause and Resume work; Show in folder selects the file; Open is missing for .exe files.
+4. History: entries have times and day headings. Clear the last hour: only recent entries go. Restart: remaining history loads (the chain still verifies).
+5. Overview: numbers rise as you browse a news site; cookies list sites; Delete removes one site's cookies; Clear browsing data with a range works for each box.
+6. Shield, Update all: each list shows a bar, then a result line with time and rules.
+7. Bookmarks: press Folder on a bookmark, New folder, name it: the bookmark moves under a folder heading and the bar shows a folder chip that lists it. Rename and Delete folder work (delete keeps the bookmarks).
+8. Start a large download with the Downloads page open: the bar and size update smoothly with no page reload or flicker.
+9. Open a site in a private tab, then Overview: a card shows cookies in private tabs with a count and no site names.
+

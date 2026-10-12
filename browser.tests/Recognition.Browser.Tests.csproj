@@ -38,6 +38,8 @@
     <Compile Include="..\browser\ProxyRules.cs" Link="ProxyRules.cs" />
     <Compile Include="..\browser\VpnDetect.cs" Link="VpnDetect.cs" />
     <Compile Include="..\browser\StartBackground.cs" Link="StartBackground.cs" />
+    <Compile Include="..\browser\BrowserFeel.cs" Link="BrowserFeel.cs" />
+    <Compile Include="..\browser\Workspace.cs" Link="Workspace.cs" />
     <!-- Pinned. PDFsharp is MIT-licensed and has no native or Windows-only dependencies. -->
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

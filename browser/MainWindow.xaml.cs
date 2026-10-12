@@ -89,6 +89,8 @@ document.addEventListener('keydown',function(e){
   if(!e.isTrusted)return;
   var k=(e.key||'').toLowerCase(); var m=null;
   if(e.ctrlKey&&e.shiftKey&&k==='n')m='newprivate';
+  else if(e.ctrlKey&&e.shiftKey&&k==='t')m='reopentab';
+  else if(e.ctrlKey&&e.shiftKey&&k==='b')m='togglebar';
   else if(e.ctrlKey&&k==='t')m='newtab';
   else if(e.ctrlKey&&k==='w')m='closetab';
   else if(e.ctrlKey&&k==='l')m='focusaddr';
@@ -115,6 +117,11 @@ document.addEventListener('keydown',function(e){
             public string CurrentTitle = "New tab";
             public bool Ready;
             public bool Private;
+            public bool Pinned, Muted, Audible;   // tab menu: pinned tabs sit at the left; muted/audible show in the title
+            public Button CloseBtn = null!;
+            public string? Group;            // tab group id (g1...) or null
+            public string? PendingUrl;       // restored tab that has not loaded its page yet
+            public TextBlock GroupMark = null!;
             public int Blocked;
             public string Internal = "start";
             public bool IsInternal => Internal.Length > 0;
@@ -137,8 +144,10 @@ document.addEventListener('keydown',function(e){
 
         private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            SaveSession();
             RecordNetworkEnd();
             StopPasskeyServer();
+            SaveSettings();   // keeps the lifetime counters
             CleanupExtensionsOnExit();
             CleanupViewerAll();
             foreach (var t in _tabs) { if (t.Private) { try { t.Web.Dispose(); } catch { } } }
@@ -185,6 +194,7 @@ document.addEventListener('keydown',function(e){
                 LoadBookmarks();
                 LoadDownloads();
                 LoadSettings();
+                ApplyLayout(); RebuildBookmarksBar();
                 LoadBlocklist();
                 InitFilters();
                 LoadNetworkConfig();
@@ -221,7 +231,7 @@ document.addEventListener('keydown',function(e){
                     return;
                 }
 
-                await OpenNewTabAsync();
+                await OpenStartupTabsAsync();
                 _startupDone = true;
                 await DrainOutsideUrlsAsync();
                 App.HideSplash();
@@ -330,12 +340,16 @@ document.addEventListener('keydown',function(e){
                 ToolTip = "Close tab (Ctrl+W)", Cursor = Cursors.Hand, FontSize = 11
             };
             close.Click += (_, __) => CloseTab(tab);
+            var gmark = new TextBlock { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 6, 0), FontSize = 11, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            tab.GroupMark = gmark;
+            panel.Children.Add(gmark);
             panel.Children.Add(fav);
             panel.Children.Add(hdr);
             panel.Children.Add(close);
-            tab.Header = hdr;
+            tab.Header = hdr; tab.CloseBtn = close;
 
             tab.Item = new TabItem { Header = panel, Tag = tab };
+            AttachTabMenu(tab);
             _tabs.Add(tab);
             Tabs.Items.Add(tab.Item);
 
@@ -380,6 +394,7 @@ document.addEventListener('keydown',function(e){
             web.CoreWebView2.NavigationStarting   += (o, ev) => OnNavStarting(tab, ev);
             web.CoreWebView2.SourceChanged        += (o, ev) => OnSourceChanged(tab);
             web.CoreWebView2.NavigationCompleted  += (o, ev) => OnNavCompleted(tab, ev);
+            web.CoreWebView2.IsDocumentPlayingAudioChanged += (o, ev) => { try { tab.Audible = web.CoreWebView2.IsDocumentPlayingAudio; SetHeader(tab, ""); } catch { } };
             web.CoreWebView2.DocumentTitleChanged += (o, ev) => { if (!tab.IsInternal) SetHeader(tab, web.CoreWebView2.DocumentTitle); };
             web.CoreWebView2.WebMessageReceived   += (o, ev) => OnWebMessage(tab, ev);
             web.CoreWebView2.DownloadStarting     += (o, ev) => OnDownloadStarting(ev);
@@ -427,6 +442,8 @@ document.addEventListener('keydown',function(e){
         private void CloseTab(BrowserTab tab)
         {
             int idx = _tabs.IndexOf(tab);
+            if (ReferenceEquals(tab, _splitA) || ReferenceEquals(tab, _splitB)) { _splitA = _splitB = null; _splitTimer?.Stop(); }
+            RememberClosedTab(tab);
             CleanupViewer(tab);
             _tabs.Remove(tab);
             Tabs.Items.Remove(tab.Item);
@@ -436,13 +453,15 @@ document.addEventListener('keydown',function(e){
             if (_tabs.Count == 0) { if (_preflightOk) _ = OpenNewTabAsync(); return; }
             if (Tabs.SelectedItem == null) Tabs.SelectedItem = _tabs[Math.Min(idx, _tabs.Count - 1)].Item;
             ShowActiveWebView();
+            RefreshTabsUi();
         }
 
         private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
+            if (!ReferenceEquals(e.OriginalSource, Tabs) || _reordering) return;
             ShowActiveWebView();
             var a = Active; if (a == null) return;
+            LoadPending(a);
             SetAddress(a); UpdateStar(a); UpdateShield(); UpdateVpn();
             Status(a.IsInternal ? ("recognition:" + a.Internal)
                                 : $"{a.CurrentTitle}  ({a.Visits.Count} visit(s) this tab)");
@@ -455,7 +474,7 @@ document.addEventListener('keydown',function(e){
             var a = Active;
             foreach (var t in _tabs)
             {
-                bool on = ReferenceEquals(t, a);
+                bool on = ReferenceEquals(t, a) || ReferenceEquals(t, SplitPartner(a));
                 t.Web.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
                 if (!t.Ready) continue;
                 try
@@ -465,6 +484,7 @@ document.addEventListener('keydown',function(e){
                 }
                 catch { }
             }
+            ApplySplitLayout(a, SplitPartner(a));
         }
         // Background tabs ask the engine to keep a low memory target (it trims caches and discards decoded images) on top of being
         // suspended. Set through reflection so an engine SDK without the property can never stop the browser from compiling or starting.
@@ -487,12 +507,13 @@ document.addEventListener('keydown',function(e){
         {
             if (!tab.IsInternal && !string.IsNullOrWhiteSpace(title)) tab.CurrentTitle = title;
             var label = tab.IsInternal && tab.Internal != "viewer" ? InternalTitle(tab.Internal) : tab.CurrentTitle;
-            tab.Header.Text = (tab.Private ? "🕶 " : "") + label;
+            tab.Header.Text = (tab.Pinned ? "📌 " : "") + (tab.Private ? "🕶 " : "") + (tab.Muted ? "🔇 " : (tab.Audible ? "🔊 " : "")) + label;
         }
 
         private static string InternalTitle(string name) => name switch
         {
             "start" => "New tab",
+            "overview" => "Overview",
             "history" => "History",
             "downloads" => "Downloads",
             "bookmarks" => "Bookmarks",
@@ -558,7 +579,8 @@ document.addEventListener('keydown',function(e){
                 var verdict = _filters.Match(e.Request.Uri, pageUrl, rtype);
                 if (!verdict.Blocked) return;
                 e.Response = tab.Web.CoreWebView2.Environment.CreateWebResourceResponse(null, 403, "Blocked by Recognition", "");   // the tab's own environment (private and test tabs use different ones)
-                tab.Blocked++; _blockedSession++;
+                tab.Blocked++; _blockedSession++; _statsBlocked++;
+                try { var bh = TryHost(e.Request.Uri); if (!string.IsNullOrEmpty(bh) && (_blockedByHost.Count < 3000 || _blockedByHost.ContainsKey(bh))) _blockedByHost[bh] = (_blockedByHost.TryGetValue(bh, out var bn) ? bn : 0) + 1; } catch { }
                 if (ReferenceEquals(tab, Active)) UpdateShield();
             }
             catch { }
@@ -864,7 +886,21 @@ document.addEventListener('keydown',function(e){
                 if (r.TryGetProperty("tracking_level", out var tl) && tl.ValueKind == JsonValueKind.String && tl.GetString() is "off" or "basic" or "balanced" or "strict") _trackingLevel = tl.GetString()!;
                 if (r.TryGetProperty("soteria_root", out var sr) && sr.ValueKind == JsonValueKind.String && SoteriaBridge.IsSafeRoot(sr.GetString())) _soteriaRoot = sr.GetString()!.Trim();
                 if (r.TryGetProperty("start_bg", out var sbg) && sbg.ValueKind == JsonValueKind.String) _startBg = StartBackground.Normalize(sbg.GetString());
+                if (r.TryGetProperty("search_engine", out var se) && se.ValueKind == JsonValueKind.String) _searchEngine = SearchEngines.Normalize(se.GetString());
+                if (r.TryGetProperty("bookmarks_bar", out var bb) && (bb.ValueKind == JsonValueKind.True || bb.ValueKind == JsonValueKind.False)) _bookmarksBarOn = bb.GetBoolean();
+                if (r.TryGetProperty("sidebar", out var sdb) && (sdb.ValueKind == JsonValueKind.True || sdb.ValueKind == JsonValueKind.False)) _sideBarOn = sdb.GetBoolean();
+                if (r.TryGetProperty("stats_blocked", out var sbl) && sbl.ValueKind == JsonValueKind.Number && sbl.TryGetInt64(out var sblv) && sblv >= 0) _statsBlocked = sblv;
+                if (r.TryGetProperty("stats_stripped", out var ssp) && ssp.ValueKind == JsonValueKind.Number && ssp.TryGetInt64(out var sspv) && sspv >= 0) _statsStripped = sspv;
                 if (r.TryGetProperty("home_url", out var hu)) { var s = StartBackground.HomeUrl(hu.GetString(), File.Exists); if (s != null) _homeUrl = s; }
+                if (r.TryGetProperty("download_dir", out var ddr) && ddr.ValueKind == JsonValueKind.String && SoteriaBridge.IsSafeRoot(ddr.GetString())) _downloadDir = ddr.GetString()!.Trim();
+                if (r.TryGetProperty("download_ask", out var dak) && (dak.ValueKind == JsonValueKind.True || dak.ValueKind == JsonValueKind.False)) _downloadAsk = dak.GetBoolean();
+                if (r.TryGetProperty("startup_mode", out var sm) && sm.ValueKind == JsonValueKind.String && sm.GetString() is "start" or "restore") _startupMode = sm.GetString()!;
+                if (r.TryGetProperty("translate_lang", out var tlg) && tlg.ValueKind == JsonValueKind.String) _translateLang = TranslateRules.NormalizeLang(tlg.GetString());
+                if (r.TryGetProperty("translate_service", out var tsv) && tsv.ValueKind == JsonValueKind.String) _translateService = TranslateRules.NormalizeService(tsv.GetString());
+                if (r.TryGetProperty("tiles", out var tls) && tls.ValueKind == JsonValueKind.Object)
+                    TileRules.Load(tls.TryGetProperty("custom", out var tc) ? tc : (JsonElement?)null, tls.TryGetProperty("hidden", out var th) ? th : (JsonElement?)null, _tilesCustom, _tilesHidden);
+                if (r.TryGetProperty("prefs_utc", out var pu) && pu.ValueKind == JsonValueKind.String && DateTime.TryParse(pu.GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind, out var puv)) _prefsChangedUtc = puv.ToUniversalTime();
+                LoadSyncSettings(r);
                 if (r.TryGetProperty("appearance", out var ap) && ap.ValueKind == JsonValueKind.Object) _appearance.FromJson(ap);
             }
             catch { }
@@ -877,7 +913,7 @@ document.addEventListener('keydown',function(e){
                 Directory.CreateDirectory(Path.GetDirectoryName(p)!);
                 File.WriteAllText(p, "{" + J("blocking_enabled") + ":" + (_blockingEnabled ? "true" : "false") + "," +
                                           J("strip_tracking") + ":" + (_stripTracking ? "true" : "false") + "," + J("send_gpc") + ":" + (_sendGpc ? "true" : "false") + "," + J("shield_level") + ":" + J(_shieldLevel) + "," + J("passkeys_level") + ":" + J(_passkeyLevel) + "," + J("tracking_level") + ":" + J(_trackingLevel) + "," +
-                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
+                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("search_engine") + ":" + J(_searchEngine) + "," + J("bookmarks_bar") + ":" + (_bookmarksBarOn ? "true" : "false") + "," + J("sidebar") + ":" + (_sideBarOn ? "true" : "false") + "," + J("stats_blocked") + ":" + _statsBlocked + "," + J("stats_stripped") + ":" + _statsStripped + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("download_dir") + ":" + J(_downloadDir) + "," + J("download_ask") + ":" + (_downloadAsk ? "true" : "false") + "," + J("startup_mode") + ":" + J(_startupMode) + "," + J("translate_lang") + ":" + J(_translateLang) + "," + J("translate_service") + ":" + J(_translateService) + "," + J("tiles") + ":" + TileRules.ToJson(_tilesCustom, _tilesHidden) + "," + J("prefs_utc") + ":" + J(_prefsChangedUtc.ToString("o")) + "," + SyncSettingsJson() + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
             }
             catch { }
         }
@@ -1098,6 +1134,8 @@ document.addEventListener('keydown',function(e){
             bool alt  = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
             string? m = null;
             if (ctrl && (Keyboard.Modifiers & ModifierKeys.Shift) != 0 && e.Key == Key.N) m = "newprivate";
+            else if (ctrl && (Keyboard.Modifiers & ModifierKeys.Shift) != 0 && e.Key == Key.T) m = "reopentab";
+            else if (ctrl && (Keyboard.Modifiers & ModifierKeys.Shift) != 0 && e.Key == Key.B) m = "togglebar";
             else if (ctrl && e.Key == Key.T) m = "newtab";
             else if (ctrl && e.Key == Key.W) m = "closetab";
             else if (ctrl && e.Key == Key.L) m = "focusaddr";
@@ -1121,6 +1159,8 @@ document.addEventListener('keydown',function(e){
             {
                 case "newtab": await OpenNewTabAsync(); break;
                 case "newprivate": await OpenNewPrivateTabAsync(); break;
+                case "reopentab": await ReopenClosedTabAsync(); break;
+                case "togglebar": _bookmarksBarOn = !_bookmarksBarOn; SaveSettings(); ApplyLayout(); break;
                 case "closetab": if (a != null) CloseTab(a); break;
                 case "focusaddr": AddressBar.Focus(); AddressBar.SelectAll(); break;
                 case "reload": Reload_Click(this, new RoutedEventArgs()); break;
@@ -1196,7 +1236,7 @@ document.addEventListener('keydown',function(e){
 
         // ---- bookmarks ----------------------------------------------------------
 
-        private sealed class Bookmark { public string Url = ""; public string Title = ""; public string Ts = ""; }
+        private sealed class Bookmark { public string Url = ""; public string Title = ""; public string Ts = ""; public string Folder = ""; }
 
         private void LoadBookmarks()
         {
@@ -1209,7 +1249,7 @@ document.addEventListener('keydown',function(e){
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 try { using var d = JsonDocument.Parse(line); var r = d.RootElement;
-                      _bookmarks.Add(new Bookmark { Url = Get(r, "url"), Title = Get(r, "title"), Ts = Get(r, "ts_utc") }); }
+                      _bookmarks.Add(new Bookmark { Url = Get(r, "url"), Title = Get(r, "title"), Ts = Get(r, "ts_utc"), Folder = BookmarkFolders.Clean(Get(r, "folder")) }); }
                 catch { }
             }
             if (migrated) { SaveBookmarks(); try { File.Delete(legacy); } catch { } }   // encrypt-in-place, drop plaintext
@@ -1220,8 +1260,9 @@ document.addEventListener('keydown',function(e){
             var sb = new StringBuilder();
             foreach (var b in _bookmarks)
                 sb.Append("{" + J("schema") + ":" + J("recognition.bookmark.v1") + "," + J("ts_utc") + ":" + J(b.Ts) + "," +
-                          J("url") + ":" + J(b.Url) + "," + J("title") + ":" + J(b.Title) + "}\n");
+                          J("url") + ":" + J(b.Url) + "," + J("title") + ":" + J(b.Title) + "," + J("folder") + ":" + J(b.Folder ?? "") + "}\n");
             WriteSecure(BookmarksPath(), sb.ToString());
+            RebuildBookmarksBar();
         }
         private bool IsBookmarked(string url) => _bookmarks.Any(b => b.Url == url);
         private void Star_Click(object sender, RoutedEventArgs e) => ToggleBookmark();
@@ -1322,6 +1363,7 @@ document.addEventListener('keydown',function(e){
             if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); }
             string html = name switch
             {
+                "overview"  => OverviewHtml(),
                 "history"   => HistoryHtml(),
                 "downloads" => DownloadsHtml(),
                 "bookmarks" => BookmarksHtml(),
@@ -1459,8 +1501,8 @@ if(/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)){location.href=v;}
 else if(v.indexOf('.')>-1&&v.indexOf(' ')===-1){location.href='https://'+v;}
 else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 </script></body></html>";
-            var bg = StartBackgroundCss();
-            return bg.Length == 0 ? html : html.Replace("</style></head>", "</style><style>" + bg + "</style></head>");
+            html = html.Replace("https://duckduckgo.com/?q=", SearchEngines.Prefix(_searchEngine)).Replace("<div class='facts'>", StartExtraHtml() + "<div class='facts'>");
+            return html.Replace("</style></head>", "</style><style>" + StartExtraCss + StartBackgroundCss() + "</style></head>");
         }
 
         private string PrivateStartPageHtml()
@@ -1499,51 +1541,7 @@ if(/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)){location.href=v;}
 else if(v.indexOf('.')>-1&&v.indexOf(' ')===-1){location.href='https://'+v;}
 else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 </script></body></html>";
-            return head;
-        }
-
-        private string HistoryHtml()
-        {
-            var sb = new StringBuilder(PageHead);
-            sb.Append("<title>History</title><h1>History</h1>");
-            sb.Append("<div class='muted'>Governed, append-only, hash-chained &mdash; " + _history.Items.Count +
-                      " entr" + (_history.Items.Count == 1 ? "y" : "ies") +
-                      ". <a class='btn ghost' onclick=\"send('clear-history')\">Clear history</a></div>");
-            if (_history.Items.Count == 0) sb.Append("<div class='empty'>No history yet.</div>");
-            else
-                foreach (var h in Enumerable.Reverse(_history.Items).Take(500))
-                    sb.Append("<div class='row'><div><a class='t' href='" + Attr(h.Url) + "'>" + Esc(string.IsNullOrEmpty(h.Title) ? h.Url : h.Title) +
-                              "</a><div class='u'>" + Esc(h.Url) + "</div></div><div class='ts'>" + Esc(h.Ts) + "</div></div>");
-            sb.Append(SendScript()).Append(PageFoot);
-            return sb.ToString();
-        }
-
-        private string BookmarksHtml()
-        {
-            var sb = new StringBuilder(PageHead);
-            sb.Append("<title>Bookmarks</title><h1>Bookmarks</h1><div class='muted'>Encrypted at rest in runtime\\bookmarks.v1.enc (DPAPI) &mdash; " +
-                      _bookmarks.Count + " saved.</div>");
-            if (_bookmarks.Count == 0) sb.Append("<div class='empty'>No bookmarks yet. Click the &#9734; in the address bar to save a page.</div>");
-            else
-                foreach (var b in Enumerable.Reverse(_bookmarks))
-                    sb.Append("<div class='row'><div><a class='t' href='" + Attr(b.Url) + "'>" + Esc(string.IsNullOrEmpty(b.Title) ? b.Url : b.Title) +
-                              "</a><div class='u'>" + Esc(b.Url) + "</div></div>" +
-                              "<div class='ts'><a class='btn ghost' onclick=\"send('rmbookmark:" + Attr(b.Url) + "')\">Remove</a></div></div>");
-            sb.Append(SendScript()).Append(PageFoot);
-            return sb.ToString();
-        }
-
-        private string DownloadsHtml()
-        {
-            var sb = new StringBuilder(PageHead);
-            sb.Append("<title>Downloads</title><h1>Downloads</h1><div class='muted'>Encrypted at rest in runtime\\downloads.v1.enc (DPAPI).</div>");
-            if (_downloads.Count == 0) sb.Append("<div class='empty'>No downloads yet.</div>");
-            else
-                foreach (var d in Enumerable.Reverse(_downloads).Take(500))
-                    sb.Append("<div class='row'><div><div class='t'>" + Esc(Path.GetFileName(d.Path)) + "  <span class='u'>[" + Esc(d.State) + "]</span></div>" +
-                              "<div class='u'>" + Esc(d.Path) + "</div><div class='u'>" + Esc(d.Url) + "</div></div><div class='ts'>" + Esc(d.Ts) + "</div></div>");
-            sb.Append(SendScript()).Append(PageFoot);
-            return sb.ToString();
+            return head.Replace("https://duckduckgo.com/?q=", SearchEngines.Prefix(_searchEngine)).Replace("Search DuckDuckGo", "Search " + SearchEngines.Get(_searchEngine).Name);
         }
 
         private string SettingsHtml()
@@ -1582,6 +1580,10 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             sb.Append(AppearanceSectionHtml());
 
             sb.Append(StartSettingsHtml());
+            sb.Append(FeelSettingsHtml());
+            sb.Append(DownloadsSettingsHtml());
+            sb.Append(WorkspaceSettingsHtml());
+            sb.Append(SyncSettingsHtml());
             sb.Append("<h1 style='font-size:16px'>Network / VPN</h1>");
             bool netWarn = _netMode == "proxy" && !string.IsNullOrWhiteSpace(_netProxy) && _netProxyDown;
             if (netWarn)
@@ -1672,6 +1674,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             }
 
             sb.Append("<h1 style='font-size:16px'>Updates</h1>");
+            sb.Append(UpdateAllHtmlRow());
             sb.Append("<div class='kv'><div class='k'>Installed version</div><div class='v'>" + Esc(InstalledVersion()) + "</div></div>");
             sb.Append("<div class='muted' style='margin:6px 0 10px'>Recognition never checks for or downloads updates on its own. Choose an update package folder you obtained yourself: it is applied only if its signature verifies against the pinned trust root, every file hash matches, no path escapes the install or touches <code>runtime\\</code> / the trust root, and the version is strictly newer (no downgrade). Replaced files are backed up and rolled back automatically on any failure.</div>");
             sb.Append("<div style='margin:0 0 18px;display:flex;gap:10px;flex-wrap:wrap'>" +
@@ -1716,6 +1719,9 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                       "<a class='btn ghost' onclick=\"send('open-profile')\">Open profile folder</a>" +
                       "<a class='btn ghost' onclick=\"send('open-packets')\">Open packets folder</a>" +
                       "<a class='btn ghost' onclick=\"send('clear-history')\">Clear history</a></div>");
+            sb.Append("<script>(function(){var hs=document.querySelectorAll('h1');if(hs.length<4)return;var nav=document.createElement('div');nav.style.cssText='position:sticky;top:0;background:#191c22;padding:8px 0;margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;z-index:5;border-bottom:1px solid #262b34';" +
+                      "hs.forEach(function(h,i){if(i===0)return;h.id='sec'+i;var a=document.createElement('a');a.textContent=h.textContent;a.href='#sec'+i;a.style.cssText='font-size:12px;color:#aab1bd;border:1px solid #333844;border-radius:999px;padding:3px 10px;text-decoration:none';a.onclick=function(e){e.preventDefault();h.scrollIntoView({behavior:'smooth',block:'start'})};nav.appendChild(a)});" +
+                      "hs[0].parentNode.insertBefore(nav,hs[0].nextSibling.nextSibling||hs[0].nextSibling)})();</script>");
             sb.Append(SendScript()).Append(PageFoot);
             return sb.ToString();
         }
@@ -1811,6 +1817,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 case "export-session": Export_Click(this, new RoutedEventArgs()); break;
                 case "verify-exit": if (!string.IsNullOrWhiteSpace(_netExitCheckUrl)) NavigateTab(tab, _netExitCheckUrl); break;
                 case "default-browser": OpenDefaultAppsSettings(); break;
+                case "update-all": RunUpdateAll(); break;
                 case "open-profile": OpenFolder(Path.Combine(_repoRoot, "runtime", "browser_profile")); break;
                 case "open-packets": OpenFolder(Path.Combine(_repoRoot, "packets")); break;
                 case "vpn-off": SetVpnOff(); break;
@@ -1857,6 +1864,14 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             else if (msg.StartsWith("exp-") && tab.Internal == "export") HandleExportMessage(msg);
             else if (msg.StartsWith("exit-") && tab.Internal == "vpn") HandleVpnMessage(msg);
             else if ((msg.StartsWith("home-set:") || msg.StartsWith("bg-")) && tab.Internal == "settings") HandleStartPageMessage(tab, msg);
+            else if (msg.StartsWith("feel-") && (tab.Internal == "settings" || tab.Internal == "bookmarks")) HandleFeelMessage(tab, msg);
+            else if (msg.StartsWith("bm-") && tab.Internal == "bookmarks") HandleBookmarkMessage(tab, msg);
+            else if (msg.StartsWith("dl-") && (tab.Internal == "downloads" || tab.Internal == "settings")) HandleDownloadMessage(tab, msg);
+            else if (msg.StartsWith("hist-clear:") && tab.Internal == "history") HandleHistoryMessage(tab, msg);
+            else if (msg.StartsWith("ov-") && tab.Internal == "overview") HandleOverviewMessage(tab, msg);
+            else if (msg.StartsWith("tile-") && (tab.Internal == "start" || tab.Internal == "settings")) HandleTileMessage(tab, msg);
+            else if (msg.StartsWith("ws-") && tab.Internal == "settings") HandleWorkspaceMessage(tab, msg);
+            else if (msg.StartsWith("sync-") && tab.Internal == "settings") HandleSyncMessage(tab, msg);
             else if (msg.StartsWith("appearance-set:"))
             {
                 var parts = msg.Substring("appearance-set:".Length).Split(new[] { ':' }, 2);
@@ -1994,7 +2009,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 
         // ---- downloads ----------------------------------------------------------
 
-        private sealed class DownloadRec { public string Url = ""; public string Path = ""; public string State = ""; public string Ts = ""; }
+        private sealed class DownloadRec { public string Url = ""; public string Path = ""; public string State = ""; public string Ts = ""; public long Received, Total; public CoreWebView2DownloadOperation? Op; }
 
         private void OnDownloadStarting(CoreWebView2DownloadStartingEventArgs e)
         {
@@ -2017,14 +2032,16 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                     }
                     _actions?.Append("download.risky_allowed", op.Uri);
                 }
+                if (!ApplyDownloadLocation(e)) return;
                 var rec = new DownloadRec { Url = op.Uri, Path = op.ResultFilePath, State = op.State.ToString(), Ts = Iso(DateTime.UtcNow) };
                 _downloads.Add(rec);
+                TrackDownload(rec, op);
                 SaveDownloads();
                 _actions?.Append("download.start", op.Uri);
                 Status("download started: " + System.IO.Path.GetFileName(rec.Path));
                 op.StateChanged += (o, __) => Dispatcher.Invoke(() =>
                 {
-                    rec.State = op.State.ToString(); rec.Path = op.ResultFilePath; SaveDownloads();
+                    rec.State = op.State.ToString(); rec.Path = op.ResultFilePath; if (op.State == CoreWebView2DownloadState.Completed && rec.Total <= 0) { try { rec.Total = new FileInfo(rec.Path).Length; } catch { } } SaveDownloads();
                     if (op.State == CoreWebView2DownloadState.Completed) _actions?.Append("download.complete", op.Uri);
                     else if (op.State == CoreWebView2DownloadState.Interrupted) _actions?.Append("download.interrupted", op.Uri);
                     var a = Active; if (a != null && a.Internal == "downloads") LoadInternal(a, "downloads");
@@ -2045,7 +2062,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 try { using var d = JsonDocument.Parse(line); var r = d.RootElement;
-                      _downloads.Add(new DownloadRec { Url = Get(r, "url"), Path = Get(r, "path"), State = Get(r, "state"), Ts = Get(r, "ts_utc") }); }
+                      _downloads.Add(new DownloadRec { Url = Get(r, "url"), Path = Get(r, "path"), State = Get(r, "state") == "InProgress" ? "Interrupted" : Get(r, "state"), Ts = Get(r, "ts_utc"), Total = r.TryGetProperty("bytes", out var by) && by.ValueKind == JsonValueKind.Number && by.TryGetInt64(out var byv) && byv > 0 ? byv : 0 }); }
                 catch { }
             }
             if (migrated) { SaveDownloads(); try { File.Delete(legacy); } catch { } }
@@ -2056,7 +2073,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             var sb = new StringBuilder();
             foreach (var r in _downloads)
                 sb.Append("{" + J("schema") + ":" + J("recognition.download.v1") + "," + J("ts_utc") + ":" + J(r.Ts) + "," +
-                          J("url") + ":" + J(r.Url) + "," + J("path") + ":" + J(r.Path) + "," + J("state") + ":" + J(r.State) + "}\n");
+                          J("url") + ":" + J(r.Url) + "," + J("path") + ":" + J(r.Path) + "," + J("state") + ":" + J(r.State) + "," + J("bytes") + ":" + r.Total + "}\n");
             WriteSecure(DownloadsPath(), sb.ToString());
         }
 
@@ -2087,7 +2104,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 var clean = PrivacyRules.StripTrackingParams(e.Uri, out var nStripped);
                 if (nStripped > 0)
                 {
-                    e.Cancel = true; _paramsStripped += nStripped;
+                    e.Cancel = true; _paramsStripped += nStripped; _statsStripped += nStripped;
                     if (!tab.Private) _actions?.Append("privacy.strip_params", e.Uri);   // private tabs leave no persisted trace
                     try { tab.Web.CoreWebView2.Navigate(clean); } catch { }
                     return;
@@ -2136,20 +2153,20 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             if (input.StartsWith("recognition:", StringComparison.OrdinalIgnoreCase))
             {
                 var name = input.Substring("recognition:".Length).ToLowerInvariant();
-                LoadInternal(tab, name is "history" or "downloads" or "bookmarks" or "settings" or "network" or "setup" or "passwords" or "tools" or "shield" or "passkeys" or "extensions" or "soteria" or "vpn" or "export" or "start" ? name : "start");
+                LoadInternal(tab, name is "overview" or "history" or "downloads" or "bookmarks" or "settings" or "network" or "setup" or "passwords" or "tools" or "shield" or "passkeys" or "extensions" or "soteria" or "vpn" or "export" or "start" ? name : "start");
                 return;
             }
             tab.Internal = "";
             try { tab.Web.CoreWebView2.Navigate(ToUrl(input)); } catch (Exception ex) { Status("nav error: " + ex.Message); }
         }
 
-        private static string ToUrl(string input)
+        private string ToUrl(string input)
         {
             input = (input ?? "").Trim();
-            if (input.Length == 0) return "https://duckduckgo.com/";
+            if (input.Length == 0) return SearchEngines.Home(_searchEngine);
             if (Regex.IsMatch(input, @"^[a-zA-Z][a-zA-Z0-9+.\-]*://")) return input;
             if (input.Contains('.') && !input.Contains(' ')) return "https://" + input;
-            return "https://duckduckgo.com/?q=" + Uri.EscapeDataString(input);
+            return SearchUrl(input);
         }
 
         private void Back_Click(object sender, RoutedEventArgs e){ var a=Active; if(a!=null && a.Ready && a.Web.CoreWebView2.CanGoBack) a.Web.CoreWebView2.GoBack(); }
@@ -2182,7 +2199,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             var list = new List<Suggestion>();
             bool looksUrl = Regex.IsMatch(q, @"^[a-zA-Z][a-zA-Z0-9+.\-]*://") || (q.Contains('.') && !q.Contains(' '));
             if (looksUrl) list.Add(new Suggestion { Icon = "→", Primary = q, Secondary = "Open site", Target = q });
-            list.Add(new Suggestion { Icon = "\U0001F50D", Primary = q, Secondary = "Search DuckDuckGo", Target = "ddg:" + q });
+            list.Add(new Suggestion { Icon = "\U0001F50D", Primary = q, Secondary = "Search " + SearchEngines.Get(_searchEngine).Name, Target = "ddg:" + q });
 
             var seen = new HashSet<string>();
             foreach (var b in _bookmarks)
@@ -2209,7 +2226,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
         {
             HideSuggest();
             var a = Active; if (a == null) return;
-            if (s.Target.StartsWith("ddg:")) NavigateTab(a, "https://duckduckgo.com/?q=" + Uri.EscapeDataString(s.Target.Substring(4)));
+            if (s.Target.StartsWith("ddg:")) NavigateTab(a, SearchUrl(s.Target.Substring(4)));
             else NavigateTab(a, s.Target);
         }
 
@@ -2453,6 +2470,23 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 var sb = new StringBuilder();
                 foreach (var l in _lines) { sb.Append(l); sb.Append('\n'); }
                 WriteSecure(_path, sb.ToString());
+            }
+
+            // Removes the newest entries (everything at or after the cutoff). What is left is the start of the same chain, so it still verifies.
+            public int ClearSince(DateTime cutoffUtc)
+            {
+                int first = Items.FindIndex(i => DateTime.TryParse(i.Ts, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var t) && t.ToUniversalTime() >= cutoffUtc);
+                if (first < 0) return 0;
+                int removed = Items.Count - first;
+                Items.RemoveRange(first, removed); _lines.RemoveRange(first, removed);
+                _head = new string('0', 64);
+                if (_lines.Count > 0)
+                {
+                    try { using var d = JsonDocument.Parse(_lines[_lines.Count - 1]); _head = d.RootElement.GetProperty("hash").GetString() ?? _head; } catch { }
+                    Save();
+                }
+                else Clear();
+                return removed;
             }
 
             public void Clear()

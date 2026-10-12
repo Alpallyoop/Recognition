@@ -60,6 +60,22 @@ $sb = Get-Content -LiteralPath (Join-Path $bdir "SoteriaBridge.cs") -Raw
 $sw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Soteria.cs") -Raw
 if($sb -match 'HttpClient|WebClient|WebRequest|TcpClient|UdpClient|Process\.Start|ProcessStartInfo|Assembly\.Load|Activator\.Create|System\.Text\.RegularExpressions|File\.Write|File\.Delete|Directory\.Delete'){ $bad += "SoteriaBridge.cs must stay pure: no network, processes, writes, deletes or regex" }
 if($sw -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo|File\.Write|File\.Delete|Directory\.Delete|File\.Copy|File\.Move|PasswordVault|Decrypt|Unprotect'){ $bad += "MainWindow.Soteria.cs may only read the two contract files: no processes, writes, network or secret handling" }
+# Everyday features: pure rules stay pure; settings messages only from internal pages; no web requests from the feature code.
+$bfe = Get-Content -LiteralPath (Join-Path $bdir "BrowserFeel.cs") -Raw
+$mfe = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Feel.cs") -Raw
+$mwf = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml.cs") -Raw
+if($bfe -match 'HttpClient|WebClient|WebRequest|Process\.Start|File\.|Directory\.'){ $bad += "BrowserFeel.cs must stay pure: no network, processes or files" }
+if($mfe -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo'){ $bad += "MainWindow.Feel.cs must not make web requests or start processes" }
+if($mwf -notmatch 'StartsWith\("feel-"\) && \(tab\.Internal == "settings" \|\| tab\.Internal == "bookmarks"\)'){ $bad += "feel- settings messages must only be accepted from the settings and bookmarks pages" }
+if($bfe -notmatch 'LaunchArgs\.Parse'){ $bad += "bookmark import must validate addresses with LaunchArgs.Parse" }
+# Update everything: fixed command line, validated source folder, user click only, script never pushes or force-updates.
+$uaw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.UpdateAll.cs") -Raw
+$uas = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts\UPDATE_ALL_V1.ps1") -Raw
+if($uaw -notmatch 'MessageBox\.Show'){ $bad += "Update everything must ask before it runs" }
+if($uaw -match 'msg|Dec\('){ $bad += "MainWindow.UpdateAll.cs must not use text that came from a page" }
+if($uas -match 'git[^\r\n]*(push|--force|reset --hard|clean -)'){ $bad += "UPDATE_ALL_V1.ps1 must never push, force, reset or clean" }
+if($uas -notmatch '--ff-only'){ $bad += "UPDATE_ALL_V1.ps1 must only fast-forward" }
+if($uas -match '[^\x00-\x7F]'){ $bad += "UPDATE_ALL_V1.ps1 must stay ASCII (Windows PowerShell 5.1 reads BOM-less files as ANSI)" }
 # Home page, start background, VPN-app hint: pure rules stay pure, the start page makes no web requests.
 $sbg = Get-Content -LiteralPath (Join-Path $bdir "StartBackground.cs") -Raw
 $vdt = Get-Content -LiteralPath (Join-Path $bdir "VpnDetect.cs") -Raw
@@ -119,6 +135,35 @@ if($navGlue -notmatch 'RegisterShieldAsync'){ $bad += "every tab must register t
 if($bad.Count -gt 0){ $bad | ForEach-Object { Write-Host ("BROWSER_TESTS_FAIL: " + $_) -ForegroundColor Red }; exit 1 }
 Write-Host "  ok  - static: filter engine is local-only and regex-free; list updater is https-only, size-capped, receipted; shield never uses postMessage"
 Write-Host "  ok  - static: receipts carry no secrets; setup never touches the vault; Fill is origin-gated twice and never event-driven"
+# workspace: groups, session, tiles, reader, picture-in-picture, translate, device sync
+$wsr = Get-Content -LiteralPath (Join-Path $bdir "Workspace.cs") -Raw
+$wsw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Workspace.cs") -Raw
+$wsy = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Sync.cs") -Raw
+$wxa = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml.cs") -Raw
+if($wsr -match 'HttpClient|WebClient|WebRequest|Process\.Start|File\.|Directory\.'){ $bad += "Workspace.cs must stay pure: no network, processes or files" }
+if($wsw -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo'){ $bad += "MainWindow.Workspace.cs must not make web requests or start processes" }
+if($wsy -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo'){ $bad += "MainWindow.Sync.cs must not make web requests or start processes" }
+if($wsw -notmatch 'WriteSecure\(SessionPath'){ $bad += "the session file must be written encrypted (WriteSecure)" }
+if($wsw -notmatch '!t\.Private'){ $bad += "private tabs must never be saved in the session" }
+if($wsw -notmatch 'MessageBox\.Show\(this, q, "Translate"'){ $bad += "translate must ask before the page address goes to a service" }
+if($wxa -notmatch 'StartsWith\("tile-"\) && \(tab\.Internal == "start"'){ $bad += "tile messages must come from internal pages only" }
+if($wxa -notmatch 'StartsWith\("sync-"\) && tab\.Internal == "settings"'){ $bad += "sync messages must come from the settings page only" }
+if($wsy -notmatch 'SoteriaBridge\.IsSafeRoot'){ $bad += "the sync folder must be validated as an absolute local path" }
+if($wsy -notmatch 'SetupBlob\.Seal'){ $bad += "the sync file must be sealed with the setup code" }
+if($wsy -match 'File\.Delete\(file\)'){ $bad += "sync must never delete the shared sync file" }
+if($bad.Count -gt 0){ $bad | ForEach-Object { Write-Host ("BROWSER_TESTS_FAIL: " + $_) -ForegroundColor Red }; exit 1 }
+# library: bookmarks, downloads, history ranges, overview
+$lib = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Library.cs") -Raw
+if($lib -match 'HttpClient|WebClient|WebRequest|TcpClient'){ $bad += "MainWindow.Library.cs must not make web requests" }
+if($lib -notmatch 'DownloadRules\.Assess\(Path\.GetFileName\(d\.Path\)\) != DownloadRisk\.None'){ $bad += "Open on a download must refuse files that can run code" }
+if($lib -notmatch 'MessageBox\.Show\(this, "Clear history from'){ $bad += "clearing history must ask first" }
+if($wxa -notmatch 'StartsWith\("dl-"\) && \(tab\.Internal == "downloads"'){ $bad += "download messages must come from internal pages only" }
+if($wxa -notmatch 'StartsWith\("ov-"\) && tab\.Internal == "overview"'){ $bad += "overview messages must come from the overview page only" }
+if($wxa -notmatch 'StartsWith\("bm-"\) && tab\.Internal == "bookmarks"'){ $bad += "bookmark messages must come from the bookmarks page only" }
+if($lib -notmatch 'IsSafeRoot'){ $bad += "the download folder must be validated" }
+if($bad.Count -gt 0){ $bad | ForEach-Object { Write-Host ("BROWSER_TESTS_FAIL: " + $_) -ForegroundColor Red }; exit 1 }
+Write-Host "  ok  - static: library pages are local-only; risky downloads cannot be opened from the list; clearing asks first; messages are gated"
+Write-Host "  ok  - static: workspace rules are pure; session encrypted and never holds private tabs; translate asks first; sync is local-folder only, sealed and never deletes"
 Write-Host "  ok  - static: privacy/tools/viewer/vault/setup modules are local-only; tools never overwrite originals; no prefix-based localhost exemption"
 
 # Fingerprint shield maths run under node when it is installed (they are JavaScript, not C#).
@@ -127,6 +172,9 @@ if($node){
   $shieldOut = & node (Join-Path $RepoRoot "browser.tests\shield\shield.test.js") 2>&1 | Out-String
   Write-Host $shieldOut
   if($LASTEXITCODE -ne 0){ Write-Host "BROWSER_TESTS_FAIL: fingerprint shield tests failed" -ForegroundColor Red; exit 1 }
+  $ptOut = & node (Join-Path $RepoRoot "browser.tests\shield\pagetools.test.js") 2>&1 | Out-String
+  Write-Host $ptOut
+  if($LASTEXITCODE -ne 0){ Write-Host "BROWSER_TESTS_FAIL: reader/picture-in-picture script tests failed" -ForegroundColor Red; exit 1 }
   $pkOut = & node (Join-Path $RepoRoot "browser.tests\shield\passkey.test.js") 2>&1 | Out-String
   Write-Host $pkOut
   if($LASTEXITCODE -ne 0){ Write-Host "BROWSER_TESTS_FAIL: passkey guard/test-page tests failed" -ForegroundColor Red; exit 1 }

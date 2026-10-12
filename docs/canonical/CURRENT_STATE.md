@@ -141,3 +141,48 @@ The handoff has no separate DoD; §31's ✓ pattern **is** the definition, gover
 | VPN app hint | `VpnDetect.cs` reads network adapters (name, description, type, up) and recognises common VPN apps and Windows' own VPN connections; mesh tools (Tailscale, ZeroTier) are reported as such. Shown on the VPN page and the toolbar button. It is a hint: it cannot prove all traffic uses the VPN. Rules executed by tests. |
 | Settings wording | Section-sign references (the spec numbers) removed from visible headings. |
 
+## v1.3.4: one-command update (unverified until run on Windows)
+
+| Area | State |
+|---|---|
+| `UPDATE_ALL.cmd` / `scripts\UPDATE_ALL_V1.ps1` | Pulls Recognition, SoteriaVault and Constellation (fast-forward only, skipped when a repo has uncommitted changes or no remote), validates the ecosystem map (read only), reports .NET and WebView2 versions (`-IncludeSystem` asks winget to update WebView2), runs the browser tests, release gate and packager, and only if all are green closes the app, installs and reopens it. Stops at the first failure; never pushes, commits, forces or kills the browser. Log in `runtime\update_logs`. Static checks in the PowerShell selftest. |
+| Settings, Updates, Update everything | Button (with a confirmation) that starts the script in a PowerShell 7 window; shown once a source checkout is known. Filter lists, extensions and the SoteriaVault link are updated in their own pages, by your click. |
+
+## v1.3.5: everyday-browser features (unverified until the gate is run on Windows)
+
+| Area | State |
+|---|---|
+| Bookmarks bar, bookmark import, side bar | Built. Import rules (web addresses only, 5000 max, entities decoded) are in BrowserFeel.cs and executed by tests. Layout toggles in Settings. |
+| Tab menu (pin, mute, duplicate, close others and to the right, reopen closed tab), sound indicator | Built. Reopen uses an in-memory list of the last 10 closed non-private tabs; Ctrl+Shift+T is a rate-limited shortcut. Needs the manual check. |
+| Search engine choice | Built (7 engines, fixed https templates, tested). Used by the address bar, suggestions and start pages. |
+| Start page: most visited and counters | Built. Tiles come from stored history; lifetime counters are persisted in `browser_settings.json`. |
+| Comparison | `docs\COMPARISON_OPERA_GX_BRAVE.md` lists what is still not built. |
+
+## v1.3.6: workspace features (unverified until the gate is run on Windows)
+
+| Area | State |
+|---|---|
+| Tab groups | Built. Named, coloured groups (max 12); a group's tabs stay together and pinned tabs stay first (`TabGroups.Arrange`, executed by tests). Tab menu: add, new, rename, collapse, ungroup, close group. Needs the manual check. |
+| Split view | Built. Two tabs side by side with a drag bar; the side you click becomes the active tab. Needs the manual check. |
+| Continue where I left off | Built, off by default (Settings, Tabs, startup and tools). Tab list is encrypted (DPAPI) in `runtime\session.v1.enc`, excludes private and internal pages, max 60 tabs, only the active tab loads at start. Validation in `SessionRules` is executed by tests. |
+| Editable start tiles | Built. Remove a tile, add a site, reset (`TileRules`, tested). |
+| Reader mode, picture-in-picture | Built as embedded scripts (`shield\reader.js`, `pip.js`), tested under node with a mock DOM. Real pages still need the manual check. Picture-in-picture works on videos in the top page only. |
+| Translate | Built as a link to Google Translate or Microsoft Translator. It asks first, because the service sees the page address. Nothing is translated on this computer. |
+| Device sync | Built without servers: one encrypted file (`recognition-sync.v1.rsetup`) in a folder you choose and your own file sync carries. Bookmarks, tiles, home page, search engine. Add-only merge (never deletes); home page and search engine follow the newest change. Needs a two-device manual check. |
+| Not built | News feeds, sponsored tiles, rewards, wallet and AI sidebars (left out on purpose: they call home or serve ads). |
+
+## v1.3.7: library, downloads, overview (unverified until the gate is run on Windows)
+
+| Area | State |
+|---|---|
+| Bookmarks | Rename, open in new tab or private tab, copy, remove, search; same actions in the bar's right-click menu. |
+| Private tab access | Buttons beside the tab "+" and in the side bar, a start page button, the menu, and Ctrl+Shift+N. |
+| Downloads | Save folder (validated absolute path), ask-each-time, live progress, pause, resume, cancel, open (never for file types that can run code), show in folder, remove, clear. Settings has the same folder and ask options. |
+| History | Every entry shows its time, grouped by day; search; clear by last hour, 24 hours, 7 days, 4 weeks or everything (confirmation). Range clearing removes the newest entries so the rest of the hash chain still verifies. |
+| Overview | New page and side bar button: blocked trackers (session, lifetime, tab), most blocked hosts, links cleaned, fingerprint attempts, cookies by site (delete one site or all), library counts, most visited, filter lists, connection, uptime; Clear browsing data by range (history, cookies and site data, cache, download list). The start page also shows sites visited, bookmarks and quick buttons. |
+| Filter lists | Per-list progress bar (connecting, downloading with KB, checking) and a result line (time taken, rules, change since the old copy). |
+| Menus | Side bar grouped by purpose; main menu grouped into Privacy and security, Zoom, Bookmark options; Settings has a jump bar. |
+| Bookmark folders | Folders (max 50, names cleaned to 30 characters; rules in `BookmarkFolders`, executed by tests). Move a bookmark from the Bookmarks page ("Folder") or the bar's right-click menu; rename or delete a folder (bookmarks are kept). Folders show on the bar as drop-down chips. Device sync carries bookmarks but not their folders yet. |
+| Overview cookies | Also counts cookies in private tabs (counts only, no site names); Delete all and per-site delete cover both. |
+| Downloads page | Progress is pushed into the open page without reloading it. |
+

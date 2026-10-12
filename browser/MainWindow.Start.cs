@@ -87,7 +87,7 @@ namespace Recognition.Browser
                     string raw; try { raw = Uri.UnescapeDataString(msg.Substring("home-set:".Length)); } catch { raw = ""; }
                     var h = StartBackground.HomeUrl(raw, File.Exists);
                     if (h == null) { Status("that is not a web address I can use as a home page"); return; }
-                    _homeUrl = h; SaveSettings(); _actions?.Append("home.set", h == StartBackground.StartPage ? "start" : "custom");
+                    _homeUrl = h; _prefsChangedUtc = DateTime.UtcNow; SaveSettings(); _actions?.Append("home.set", h == StartBackground.StartPage ? "start" : "custom");
                     Status("home page: " + (h == StartBackground.StartPage ? "the start page" : h));
                 }
                 else if (msg.StartsWith("bg-set:", StringComparison.Ordinal))

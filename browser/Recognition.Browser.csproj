@@ -13,9 +13,9 @@
     <RootNamespace>Recognition.Browser</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>recognition.ico</ApplicationIcon>
-    <Version>1.3.3</Version>
-    <AssemblyVersion>1.3.3.0</AssemblyVersion>
-    <FileVersion>1.3.3.0</FileVersion>
+    <Version>1.3.7</Version>
+    <AssemblyVersion>1.3.7.0</AssemblyVersion>
+    <FileVersion>1.3.7.0</FileVersion>
     <Product>Recognition</Product>
     <Company>ScrappyHub</Company>
     <Description>Recognition governed browser</Description>
@@ -36,6 +36,8 @@
     <EmbeddedResource Include="shield\fingerprint_shield.js" LogicalName="fingerprint_shield.js" />
     <EmbeddedResource Include="shield\passkey_guard.js" LogicalName="passkey_guard.js" />
     <EmbeddedResource Include="shield\passkey_test.js" LogicalName="passkey_test.js" />
+    <EmbeddedResource Include="shield\reader.js" LogicalName="reader.js" />
+    <EmbeddedResource Include="shield\pip.js" LogicalName="pip.js" />
   </ItemGroup>
 
 </Project>

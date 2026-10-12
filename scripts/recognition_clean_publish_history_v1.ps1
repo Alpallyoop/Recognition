@@ -16,7 +16,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$RepoRoot,
   [string]$Branch    = "main",
-  [string]$RemoteUrl = "https://github.com/ScrappyHub/Recognition.git",
+  [string]$RemoteUrl = "",   # empty = whatever origin already is (no owner name is hard-coded)
   [switch]$Execute
 )
 
@@ -104,7 +104,7 @@ $newCount = (RunGitOrDie @("rev-list","--count","HEAD")).Trim()
 Write-Host ("Branch '" + $Branch + "' now has " + $newCount + " commit (old history kept in " + $backup + ").") -ForegroundColor Green
 Write-Host ""
 Write-Host "Verify, then publish manually:" -ForegroundColor Cyan
-Write-Host ("  git remote get-url origin   # expect " + $RemoteUrl)
+Write-Host ("  git remote get-url origin   # expect " + $(if($RemoteUrl){ $RemoteUrl } else { "your existing origin" }))
 Write-Host ("  git push -u origin " + $Branch + " --force")
 Write-Host "  (force replaces the remote's placeholder README commit; re-add Contributing/Security after if you want them.)" -ForegroundColor DarkGray
 Write-Host ""

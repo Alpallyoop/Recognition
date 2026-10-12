@@ -34,7 +34,7 @@ namespace Recognition.Browser
         }
 
         // Shortcuts that create or close tabs are rate-limited when they come from web content, so a page cannot spam them.
-        public static bool IsTabShortcut(string name) => name == "newtab" || name == "newprivate" || name == "closetab";
+        public static bool IsTabShortcut(string name) => name == "newtab" || name == "newprivate" || name == "closetab" || name == "reopentab";
     }
 
     internal enum DownloadRisk { None, Executable, DeceptiveName }
