@@ -1293,6 +1293,62 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(new WindowPlacement(100, 80, 1000, 700, true).Fit(wpA).Maximized, "window: maximized survives fitting");
 }
 
+{
+    // ---- cards and the unlock PIN ----
+    Check(CardRules.Luhn("4242424242424242") && CardRules.Luhn("378282246310005") && CardRules.Luhn("5555555555554444") && !CardRules.Luhn("4242424242424241") && !CardRules.Luhn("") && !CardRules.Luhn("42a2"), "cards: the check digit test accepts real test numbers and refuses typing mistakes");
+    Check(CardRules.Digits("4242 4242-4242 4242") == "4242424242424242" && CardRules.Digits("1234") == null && CardRules.Digits("4242 4242 4242 424x") == null && CardRules.Digits(new string('4', 20)) == null && CardRules.Digits(null) == null, "cards: numbers are cleaned to digits and length checked");
+    Check(CardRules.Brand("4242424242424242") == "Visa" && CardRules.Brand("5555555555554444") == "Mastercard" && CardRules.Brand("2223003122003222") == "Mastercard" && CardRules.Brand("378282246310005") == "American Express" && CardRules.Brand("6011111111111117") == "Discover" && CardRules.Brand("9999999999999995") == "Card" && CardRules.Brand("x") == "Card", "cards: brands are recognised from the first digits");
+    Check(CardRules.Mask("4242424242424242") == "\u2022\u2022\u2022\u2022 4242" && !CardRules.Mask("4242424242424242").Contains("4242 4242") && CardRules.Mask("12") == "\u2022\u2022\u2022\u2022", "cards: only the last four digits are shown");
+    var cvNow = new DateTime(2026, 10, 13, 0, 0, 0, DateTimeKind.Utc);
+    Check(CardRules.ExpiryOk(10, 2026, cvNow) && CardRules.ExpiryOk(12, 28, cvNow) && !CardRules.ExpiryOk(9, 2026, cvNow) && !CardRules.ExpiryOk(13, 2030, cvNow) && !CardRules.ExpiryOk(0, 2030, cvNow) && !CardRules.ExpiryOk(5, 1999, cvNow) && CardRules.Expiry(3, 2029) == "03/29", "cards: a card is valid through the end of its expiry month");
+    var cvMem = new Dictionary<string, string>();
+    var cv = new CardVault("c.enc", p => cvMem.TryGetValue(p, out var v) ? v : "", (p, v) => cvMem[p] = v);
+    Check(cv.Load() == 0 && cv.Entries.Count == 0, "cards: an empty store loads as empty");
+    Check(cv.Add("Main", "A Person", "4242 4242 4242 4242", 12, 2030, cvNow, out var cvA) == null && cvA != null && cvA.Number == "4242424242424242" && cvA.Brand == "Visa" && cvA.Last4 == "4242", "cards: a good card is saved with a cleaned number");
+    Check(cv.Add("", "A Person", "4242424242424242", 12, 2030, cvNow, out _) != null, "cards: the same card cannot be saved twice");
+    Check(cv.Add("", "A Person", "4242424242424241", 12, 2030, cvNow, out _) != null && cv.Add("", "A Person", "4000056655665556", 1, 2020, cvNow, out _) != null && cv.Add("", "", "4000056655665556", 12, 2030, cvNow, out _) != null && cv.Add("x\u0001", "A Person", "4000056655665556", 12, 2030, cvNow, out _) != null, "cards: a bad number, an expired card, a missing name and control characters are refused");
+    Check(!cvMem["c.enc"].Contains("cvc", StringComparison.OrdinalIgnoreCase) && !cvMem["c.enc"].Contains("cvv", StringComparison.OrdinalIgnoreCase) && !cvMem["c.enc"].Contains("security", StringComparison.OrdinalIgnoreCase), "cards: no security code field is ever stored");
+    var cv2 = new CardVault("c.enc", p => cvMem.TryGetValue(p, out var v) ? v : "", (p, v) => cvMem[p] = v);
+    Check(cv2.Load() == 0 && cv2.Entries.Count == 1 && cv2.Entries[0].Number == "4242424242424242" && cv2.Entries[0].Holder == "A Person" && cv2.Entries[0].Year == 2030, "cards: saved cards come back after a reload");
+    cvMem["bad.enc"] = "{\"cards\":[{\"id\":\"short\",\"number\":\"4242424242424242\",\"month\":1,\"year\":2030},{\"id\":\"0123456789abcdef\",\"label\":\"ok\",\"holder\":\"H\",\"number\":\"4242424242424242\",\"month\":13,\"year\":2030},{\"id\":\"fedcba9876543210\",\"holder\":\"H\",\"number\":\"5555555555554444\",\"month\":2,\"year\":2031}]}";
+    var cv3 = new CardVault("bad.enc", p => cvMem.TryGetValue(p, out var v) ? v : "", (p, v) => cvMem[p] = v);
+    Check(cv3.Load() == 2 && cv3.Entries.Count == 1 && cv3.Entries[0].Last4 == "4444", "cards: damaged records are skipped and the good one kept");
+    cvMem["junk.enc"] = "not json";
+    Check(new CardVault("junk.enc", p => cvMem[p], (p, v) => cvMem[p] = v).Load() == 1, "cards: an unreadable store loads empty and reports the damage");
+    Check(cv.Remove(cvA!.Id) && !cv.Remove(cvA.Id) && cv.Entries.Count == 0, "cards: a card can be removed");
+    var cvJs = CardFillScript.Build("Eve \"</script>\\", "4242424242424242", 7, 28);
+    Check(!cvJs.Contains('\n') && cvJs.Contains("\"4242424242424242\"") && cvJs.Contains("\"2028\"") && cvJs.Contains("\"07\"") && cvJs.Contains("\"28\"") && cvJs.Contains("\\u003C/script\\u003E") || cvJs.Contains("\\u003C/script"), "cards: the fill script is one line and carries the values as escaped literals");
+    Check(cvJs.Contains("cc-number") && cvJs.Contains("cc-exp-month") && cvJs.Contains("cvc|cvv|csc|security") && !cvJs.Contains("cc-csc"), "cards: the fill script targets card fields and avoids security-code fields");
+
+    // PIN gate
+    var pgT = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+    Check(new[] { null, "", "123", "1234567890123", "12a456", "1111", "00000" }.All(x => PinGate.ValidatePin(x) != null) && PinGate.ValidatePin("2468") == null && PinGate.ValidatePin("123456789012") == null, "pin: only 4 to 12 digits, not one digit repeated");
+    var pg = new PinGate();
+    Check(!pg.IsSet && pg.TryUnlock("2468", pgT) == UnlockResult.NotSet && !pg.IsUnlocked(pgT), "pin: with no PIN set nothing is unlocked");
+    Check(pg.SetPin("12") != null && !pg.IsSet && pg.SetPin("2468") == null && pg.IsSet && pg.SetPin("1357") != null, "pin: a bad PIN is refused, a good one is set once");
+    var pgJson = pg.ToJson();
+    Check(!pgJson.Contains("2468") && pgJson.Contains("recognition.pin.v1"), "pin: only a salted hash is kept, never the PIN");
+    Check(pg.TryUnlock("0000", pgT) == UnlockResult.Wrong && !pg.IsUnlocked(pgT) && pg.TryUnlock("2468", pgT) == UnlockResult.Ok && pg.IsUnlocked(pgT) && pg.Failures == 0, "pin: a wrong PIN stays locked, the right one unlocks and clears the count");
+    Check(pg.IsUnlocked(pgT.AddMinutes(4)) && !pg.IsUnlocked(pgT.AddMinutes(6)), "pin: it relocks after five idle minutes");
+    pg.Touch(pgT.AddMinutes(4));
+    Check(pg.IsUnlocked(pgT.AddMinutes(8)) && !pg.IsUnlocked(pgT.AddMinutes(10)), "pin: using the vault keeps it unlocked for another five minutes");
+    pg.Lock();
+    Check(!pg.IsUnlocked(pgT.AddSeconds(1)), "pin: Lock now locks at once");
+    var pgL = PinGate.Parse(pgJson)!;
+    Check(pgL.IsSet && pgL.TryUnlock("2468", pgT) == UnlockResult.Ok && PinGate.Parse(pgJson)!.TryUnlock("9999", pgT) == UnlockResult.Wrong, "pin: the PIN survives saving and loading");
+    var pgF = new PinGate(); pgF.SetPin("2468");
+    var r5 = UnlockResult.Wrong; for (int i = 0; i < 5; i++) r5 = pgF.TryUnlock("0001", pgT);
+    Check(r5 == UnlockResult.LockedOut && pgF.RetryAfterSeconds(pgT) == 30 && pgF.TryUnlock("2468", pgT.AddSeconds(10)) == UnlockResult.LockedOut, "pin: five wrong tries lock it for 30 seconds, even for the right PIN");
+    Check(pgF.TryUnlock("0001", pgT.AddSeconds(31)) == UnlockResult.LockedOut && pgF.RetryAfterSeconds(pgT.AddSeconds(31)) == 60, "pin: the next wrong try doubles the wait");
+    Check(pgF.TryUnlock("2468", pgT.AddSeconds(31 + 61)) == UnlockResult.Ok, "pin: after the wait the right PIN works again");
+    for (int i = 0; i < 40; i++) pgF.TryUnlock("0002", pgT.AddDays(1 + i));
+    Check(pgF.RetryAfterSeconds(pgT.AddDays(41)) <= 0 || pgF.RetryAfterSeconds(pgT.AddDays(41)) <= 900, "pin: the wait never grows past 15 minutes");
+    var pgC = new PinGate(); pgC.SetPin("2468");
+    Check(pgC.Change("0000", "1357", pgT, out _) == UnlockResult.Wrong && pgC.Change("2468", "12", pgT, out var pgErr) != UnlockResult.Ok && pgErr != null && pgC.Change("2468", "1357", pgT, out _) == UnlockResult.Ok && pgC.TryUnlock("2468", pgT) == UnlockResult.Wrong && pgC.TryUnlock("1357", pgT) == UnlockResult.Ok, "pin: changing needs the old PIN and a valid new one");
+    Check(pgC.Remove("0000", pgT) == UnlockResult.Wrong && pgC.IsSet && pgC.Remove("1357", pgT) == UnlockResult.Ok && !pgC.IsSet, "pin: removing needs the PIN");
+    Check(PinGate.Parse("not json") == null && PinGate.Parse("{}") == null && PinGate.Parse("{\"schema\":\"recognition.pin.v1\",\"salt\":\"AAAA\",\"hash\":\"AAAA\"}") == null && PinGate.Parse("")!.IsSet == false, "pin: a damaged PIN record is refused (the caller must fail closed), an empty one means no PIN");
+}
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }

@@ -1,1 +1,1 @@
-{"kill_switch_enabled":false,"provider_id":null,"schema":"recognition.vpn_state.v1","vpn_connected":false,"vpn_mode":"off"}
+{"schema":"recognition.vpn_state.v1","connected":false,"mode":"off","proxy_configured":false,"provider":null,"exit_region":null,"since_utc":null,"policy":"canonical","https_first":true,"telemetry":false,"tracker_blocking":true,"blocked_session":0}

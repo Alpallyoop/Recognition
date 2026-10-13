@@ -25,3 +25,4 @@ Earlier versions: see `docs/canonical/CURRENT_STATE.md` and the git history.
 ## 1.3.9 (later additions)
 - One-command install (`install.ps1`) and a tag-triggered release workflow that publishes the zip and checksum.
 - Bookmark bar shows each site's own icon (kept encrypted, never recorded from private tabs).
+- Vault: unlock PIN (salted hash, lock-out), saved payment cards (never the security code), key button in the address bar for logins and cards.

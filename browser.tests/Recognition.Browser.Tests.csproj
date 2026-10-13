@@ -23,6 +23,7 @@
     <Compile Include="..\browser\NetworkInfo.cs" Link="NetworkInfo.cs" />
     <Compile Include="..\browser\SetupSnapshot.cs" Link="SetupSnapshot.cs" />
     <Compile Include="..\browser\PasswordVault.cs" Link="PasswordVault.cs" />
+    <Compile Include="..\browser\CardVault.cs" Link="CardVault.cs" />
     <Compile Include="..\browser\PrivacyRules.cs" Link="PrivacyRules.cs" />
     <Compile Include="..\browser\CodeHighlighter.cs" Link="CodeHighlighter.cs" />
     <Compile Include="..\browser\PdfTools.cs" Link="PdfTools.cs" />

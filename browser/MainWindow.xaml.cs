@@ -600,6 +600,26 @@ document.addEventListener('keydown',function(e){
 
         // ---- favicons -----------------------------------------------------------
 
+        // the address the page is really at (the engine's own value, which is up to date when the icon arrives)
+        private static string PageAddressOf(BrowserTab tab)
+        {
+            try { var u = tab.Web.CoreWebView2?.Source; if (!string.IsNullOrEmpty(u)) return u; } catch { }
+            return tab.CurrentUrl;
+        }
+
+        // when a page is bookmarked, keep the icon its tab is already showing
+        private void CaptureTabIcon(BrowserTab tab)
+        {
+            try
+            {
+                if (tab.Fav.Source is not BitmapSource src) return;
+                var enc = new PngBitmapEncoder(); enc.Frames.Add(BitmapFrame.Create(src));
+                using var ms = new MemoryStream(); enc.Save(ms);
+                NoteFavicon(PageAddressOf(tab), ms.ToArray());
+            }
+            catch { }
+        }
+
         private async void OnFaviconChanged(BrowserTab tab)
         {
             try
@@ -615,7 +635,7 @@ document.addEventListener('keydown',function(e){
                 var bmp = new BitmapImage();
                 bmp.BeginInit(); bmp.CacheOption = BitmapCacheOption.OnLoad; bmp.StreamSource = ms; bmp.EndInit(); bmp.Freeze();
                 tab.Fav.Source = bmp;
-                if (!tab.Private) NoteFavicon(tab.CurrentUrl, favBytes);
+                if (!tab.Private) NoteFavicon(PageAddressOf(tab), favBytes);
             }
             catch { }
         }
@@ -1339,6 +1359,7 @@ document.addEventListener('keydown',function(e){
             var a = Active; if (a == null || a.IsInternal || string.IsNullOrEmpty(a.CurrentUrl)) return;
             if (IsBookmarked(a.CurrentUrl)) { _bookmarks.RemoveAll(b => b.Url == a.CurrentUrl); _actions?.Append("bookmark.remove", a.CurrentUrl); Status("bookmark removed"); }
             else { _bookmarks.Add(new Bookmark { Url = a.CurrentUrl, Title = a.CurrentTitle, Ts = Iso(DateTime.UtcNow) }); _actions?.Append("bookmark.add", a.CurrentUrl); Status("bookmarked"); }
+            if (!a.Private) CaptureTabIcon(a);
             SaveBookmarks(); UpdateStar(a);
             if (a.Internal == "bookmarks") LoadInternal(a, "bookmarks");
         }
@@ -1349,6 +1370,7 @@ document.addEventListener('keydown',function(e){
             StarBtn.Foreground = new SolidColorBrush(on ? Color.FromRgb(0xF2, 0xC1, 0x4E) : Color.FromRgb(0xC7, 0xCC, 0xD4));
             StarBtn.IsEnabled = !tab.IsInternal && !tab.Private;
             StarBtn.Visibility = StarBtn.IsEnabled && !string.IsNullOrEmpty(tab.CurrentUrl) ? Visibility.Visible : Visibility.Collapsed;   // nothing to bookmark on blank, internal and private tabs
+            UpdateKeyBtn(tab);
         }
 
         // ---- locked startup preflight (worker thread) ---------------------------
@@ -1426,6 +1448,7 @@ document.addEventListener('keydown',function(e){
         {
             tab.Internal = name;
             tab.CurrentUrl = "recognition:" + name;
+            _shellPage = ShellMenu.Any(g => g.Items.Any(i => i.Id == name)) ? name : "";   // the shared page frame (MainWindow.Shell.cs)
             tab.Fav.Source = null;
             SetHeader(tab, "");
             if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); }
@@ -1484,7 +1507,10 @@ document.addEventListener('keydown',function(e){
 
         // The base stylesheet is dark; the user's appearance preferences (light theme, font) are
         // layered on top. The rec-internal meta tells the appearance script not to restyle our own pages.
-        private string PageHead => PageHeadBase + _appearance.InternalPageCss() + "</style></head><body><div class='wrap'>";
+        private string PageHead => PageHeadBase + ShellCss + _appearance.InternalPageCss() + (_appearance.Theme == "light" ? ShellLightCss : "") + "</style>" + EarlySendScript + "</head><body>" + ShellOpen();
+        // Pages ask the browser for their data in their own script, which runs before SendScript() is parsed at the end of the page,
+        // so send() has to exist from the start (otherwise that first request fails and the page stays empty).
+        private const string EarlySendScript = "<script>function send(c){window.chrome.webview.postMessage(c);}</script>";
         private const string PageHeadBase =
             "<!doctype html><html><head><meta charset='utf-8'><meta name='rec-internal' content='1'>" +
             // Internal pages keep inline script (they are built from strings), but may not make network requests, load frames/plugins,
@@ -1510,7 +1536,7 @@ document.addEventListener('keydown',function(e){
             ".pill{display:inline-block;border:1px solid #2c7a4b;background:#16351f;color:#7fd6a0;border-radius:999px;padding:3px 10px;font-size:11px;margin-right:6px}" +
             ".big{font-size:30px;font-weight:700;color:#7fd6a0}" +
             "a{color:#6aa9e9}";
-        private const string PageFoot = "</div></body></html>";
+        private string PageFoot => ShellClose();
 
         private string StartPageHtml()
         {
@@ -1925,6 +1951,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             else if (msg.StartsWith("net-")) HandleNetMessage(msg);
             else if (msg.StartsWith("setup-") && tab.Internal == "setup") HandleSetupMessage(msg);
             else if (msg.StartsWith("pw-") && tab.Internal == "passwords") HandlePwMessage(msg);
+            else if ((msg.StartsWith("card-") || msg.StartsWith("pin-")) && tab.Internal == "passwords") HandleCardPinMessage(msg);
             else if (msg.StartsWith("tools-") && tab.Internal == "tools") HandleToolsMessage(msg);
             else if ((msg.StartsWith("flt-") || msg.StartsWith("shield-")) && tab.Internal == "shield") HandleShieldMessage(msg);
             else if (msg.StartsWith("pk-") && tab.Internal == "passkeys") HandlePasskeyMessage(msg);
@@ -2202,6 +2229,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 
         private void OnNavCompleted(BrowserTab tab, CoreWebView2NavigationCompletedEventArgs e)
         {
+            if (e.IsSuccess && !tab.IsInternal && !tab.Private) OnFaviconChanged(tab);   // the icon may have arrived before the address was settled
             if (!e.IsSuccess) { if (ReferenceEquals(tab, Active)) Status("navigation failed"); return; }
             var url = tab.Web.CoreWebView2.Source;
             if (tab.IsInternal || url.StartsWith("data:") || url.StartsWith("about:")) return;

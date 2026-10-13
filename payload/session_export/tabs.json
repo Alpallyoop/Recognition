@@ -1,1 +1,1 @@
-{"schema":"recognition.tabs.v1","tabs":["@{index=0; is_active=True; is_pinned=False; last_committed_navigation_utc=2026-03-31T13:00:10.000Z; opened_utc=2026-03-31T13:00:05.000Z; schema=recognition.runtime.tab_state.v1; tab_id=tab-001; title=Example Docs; url=https://example.com/docs}"]}
+{"schema":"recognition.tabs.v1","tabs":[{"index":0,"url_sha256":"e5bc05e5f63f7dfa2bd3ff1e168ba57df92f96da61b9c4cea45457f2b97f0ca2","title":"New tab","blocked":0,"internal":true,"private":false}]}

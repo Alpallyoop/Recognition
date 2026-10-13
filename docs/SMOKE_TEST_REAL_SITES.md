@@ -143,3 +143,12 @@ Expected honest result: lower than Brave on list breadth and cosmetic coverage u
 1. Resize and move the window, close it, open it again: same size and place.
 2. Maximize, close, open: maximized. Restore, close, open: the earlier windowed size.
 3. With two monitors, close on the second one, open again: it returns there. Unplug it and open: the window appears on the main screen.
+
+## P. PIN and cards (v1.3.9)
+
+1. Passwords, Security tab: Set a PIN (a Windows window with masked boxes appears). Wrong second entry sets nothing.
+2. With a PIN set, click Fill, Copy password or Reveal on a login: the PIN window appears once, then not again for 5 idle minutes. Lock now makes it ask again.
+3. Five wrong PINs: it refuses for 30 seconds even with the right PIN.
+4. Cards tab: save a test card (4242 4242 4242 4242, a future date). A mistyped number is refused. The list shows only the brand, last four and expiry.
+5. On a real https checkout page, click the key button in the address bar and choose the card: number, name and expiry fill; the security code stays empty; nothing is submitted. On an http page the card entries do not appear.
+6. Delete the card: it asks first.

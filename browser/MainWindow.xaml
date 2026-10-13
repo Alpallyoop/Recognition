@@ -52,6 +52,7 @@
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#6FCF97" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13"/>
             <TextBox x:Name="AddressBar" Grid.Column="1" Background="Transparent" Foreground="{DynamicResource ChromeText}"
@@ -61,9 +62,19 @@
             <Button x:Name="VpnBtn" Grid.Column="2" Content="&#xE774;" ToolTip="VPN: click for network settings" Foreground="{DynamicResource ChromeMuted}" Style="{StaticResource IconBtn}" Width="Auto" MinWidth="30" Height="30" FontSize="14" Click="Vpn_Click"/>
             <Button x:Name="ShieldBtn" Grid.Column="3" Content="&#xEA18;" ToolTip="Trackers and ads blocked: click for settings" Foreground="#6FCF97" Style="{StaticResource IconBtn}" Width="Auto" MinWidth="30" Height="30" FontSize="14" Click="Shield_Click"/>
             <Button x:Name="StarBtn" Grid.Column="4" Content="&#xE734;" ToolTip="Bookmark this page (Ctrl+D)" Style="{StaticResource IconBtn}" Width="30" Height="30" FontSize="14" Margin="2,0,4,0" Click="Star_Click" Visibility="Collapsed"/>
+            <Button x:Name="KeyBtn" Grid.Column="5" ToolTip="Saved logins for this site" Visibility="Collapsed" Style="{StaticResource IconBtn}" Width="30" Height="30" Margin="2,0,4,0" Click="Key_Click">
+              <Viewbox Width="16" Height="16"><Canvas Width="24" Height="24">
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" StrokeLineJoin="Round" Data="M12,12 a4,4 0 1 0 -8,0 a4,4 0 1 0 8,0 M12,12 H22 M19,12 V16 M22,12 V15"/>
+              </Canvas></Viewbox>
+            </Button>
           </Grid>
         </Border>
 
+        <Button x:Name="ExtBtn" Grid.Column="7" ToolTip="Extensions" Click="Extensions_Click" Style="{StaticResource IconBtn}">
+          <Viewbox Width="18" Height="18"><Canvas Width="24" Height="24">
+            <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeLineJoin="Round" Data="M4,9 H8.5 a2.5,2.5 0 1 1 5,0 H18 V13.5 a2.5,2.5 0 1 1 0,5 V21 H4 Z"/>
+          </Canvas></Viewbox>
+        </Button>
         <Button x:Name="GoBtn" Grid.Column="6" Content="&#xE751;" ToolTip="Go" Click="Go_Click" Style="{StaticResource IconBtn}" Visibility="Collapsed"/>
         <Button x:Name="NewTabBtn" Grid.Column="7" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click" Style="{StaticResource IconBtn}" Visibility="Collapsed"/>
         <Button x:Name="MenuBtn" Grid.Column="8" Content="&#xE712;" ToolTip="Menu" Click="Menu_Click" Style="{StaticResource IconBtn}" Margin="2,0,6,0">

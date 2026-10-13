@@ -173,6 +173,26 @@ if($mwx -notmatch 'AddressComplete\.Complete' -or $mwx -notmatch 'Address_Previe
 $xm = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml") -Raw
 if($xm -notmatch 'x:Name="HomeBtn"[\s\S]*x:Name="PrivateBtn"[\s\S]*x:Name="ReloadBtn"'){ $bad += "the private tab button must sit between Home and Reload" }
 if($xm -match 'NavBtn\}" FontFamily="Segoe UI Emoji"'){ $bad += "toolbar and side bar buttons must use the IconBtn style" }
+# shared page frame: every menu entry is a real internal page; the frame script makes no requests
+$shl = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Shell.cs") -Raw
+$mwx2 = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml.cs") -Raw
+foreach($mm in [regex]::Matches($shl, '\("([a-z]+)", "[A-Za-z ]+"\)')){
+  $pid2 = $mm.Groups[1].Value
+  if($mwx2 -notmatch ('"' + $pid2 + '"\s*=>')){ $bad += "the page menu lists '$pid2' but LoadInternal has no such page" }
+}
+if($shl -match 'fetch\(|XMLHttpRequest|WebSocket|http://|https://'){ $bad += "the shared page frame must not make requests" }
+if($mwx2 -notmatch 'private string PageFoot => ShellClose\(\)'){ $bad += "PageFoot must close the shared frame" }
+# cards and the unlock PIN: no CVC stored, no requests, gates in front of every fill/copy/reveal, PIN typed in a native masked box, receipts without numbers
+$cvt = Get-Content -LiteralPath (Join-Path $bdir "CardVault.cs") -Raw
+$cgl = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Cards.cs") -Raw
+$pwg = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Passwords.cs") -Raw
+if($cvt -match 'HttpClient|WebClient|WebRequest|TcpClient'){ $bad += "CardVault.cs must not make web requests" }
+if($cvt -match 'public (string|int)[^;{]*\b(Cvc|Cvv|Csc|SecurityCode)\b'){ $bad += "a card must never carry a security code field" }
+if(([regex]::Matches($pwg, 'EnsureUnlocked\(')).Count -lt 3){ $bad += "login Fill, Copy and Reveal must all go through EnsureUnlocked" }
+if($cgl -notmatch 'new PasswordBox'){ $bad += "the PIN must be typed in a masked native box" }
+if($cgl -match 'Append\("card\.[a-z]+",[^;]*\.Number'){ $bad += "receipts must never contain a card number" }
+if($cgl -notmatch 'Uri\.UriSchemeHttps'){ $bad += "cards may only be filled on https pages" }
+if($cgl -notmatch 'RequirePinSet\(\)'){ $bad += "cards must need a PIN" }
 # library: bookmarks, downloads, history ranges, overview
 $lib = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Library.cs") -Raw
 if($lib -match 'HttpClient|WebClient|WebRequest|TcpClient'){ $bad += "MainWindow.Library.cs must not make web requests" }
