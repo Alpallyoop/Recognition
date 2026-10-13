@@ -7,14 +7,14 @@ A deterministic, governed, encrypted, cryptographically-verifiable web browser. 
 In PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/ScrappyHub/Recognition/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Alpallyoop/Recognition/main/install.ps1 | iex
 ```
 
 It downloads the latest release, checks its SHA-256, and runs the per-user installer. Read `install.ps1` first if you like. Releases are published by `.github/workflows/release.yml` when a version tag is pushed (`git tag v1.3.9; git push origin v1.3.9`).
 
 ## Download
 
-**[⬇ Download Recognition for Windows (latest release)](https://github.com/ScrappyHub/Recognition/releases/latest)**
+**[⬇ Download Recognition for Windows (latest release)](https://github.com/Alpallyoop/Recognition/releases/latest)**
 
 Self-contained — no .NET install required. Extract the zip and run
 `pwsh -File installer\RECOGNITION_INSTALL_V1.ps1` (per-user; Start Menu + Desktop

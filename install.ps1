@@ -1,6 +1,6 @@
 # Recognition one-command install (Windows 10/11, per-user, no admin).
 #
-#   irm https://raw.githubusercontent.com/ScrappyHub/Recognition/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Alpallyoop/Recognition/main/install.ps1 | iex
 #
 # What it does: finds the latest release on GitHub, downloads Recognition-win-x64.zip over https, checks its SHA-256
 # against Recognition-win-x64.zip.sha256 when the release has one (it stops if they differ), unpacks it to a temporary
@@ -9,7 +9,7 @@
 # NOTE: keep this file ASCII - Windows PowerShell 5.1 reads BOM-less files as ANSI.
 
 $ErrorActionPreference = "Stop"
-$Repo = "ScrappyHub/Recognition"
+$Repo = "Alpallyoop/Recognition"
 $Asset = "Recognition-win-x64.zip"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13 } catch { }
 $ProgressPreference = "SilentlyContinue"
@@ -20,7 +20,8 @@ Write-Host "Recognition: looking for the latest release..." -ForegroundColor Cya
 $rel = Invoke-RestMethod -Uri ("https://api.github.com/repos/" + $Repo + "/releases/latest") -Headers @{ "User-Agent" = "recognition-installer" }
 $zipInfo = @($rel.assets) | Where-Object { $_.name -eq $Asset } | Select-Object -First 1
 if(-not $zipInfo){ Fail ("the latest release (" + $rel.tag_name + ") has no " + $Asset + ". Build it with BUILD_EXE.cmd from the source instead.") }
-foreach($u in @($zipInfo.browser_download_url)){ if($u -notmatch '^https://github\.com/' + [regex]::Escape($Repo) + '/releases/download/'){ Fail ("unexpected download address: " + $u) } }
+# the repository was renamed (ScrappyHub -> Alpallyoop); GitHub reports the current name in asset addresses, so both are accepted
+foreach($u in @($zipInfo.browser_download_url)){ if($u -notmatch '^https://github\.com/(Alpallyoop|ScrappyHub)/Recognition/releases/download/'){ Fail ("unexpected download address: " + $u) } }
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("recognition_install_" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
