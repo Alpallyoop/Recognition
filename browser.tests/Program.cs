@@ -1227,6 +1227,52 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(BookmarkFolders.Resolve(bfMany, "extra") == null && BookmarkFolders.Resolve(bfMany, "F7") == "f7", "folders: at most 50 folders, but an existing one can always be used");
 }
 
+{
+    // ---- themes and extension sources ----
+    Check(ThemePacks.Presets.Select(x => x.Id).Distinct().Count() == ThemePacks.Presets.Length && ThemePacks.Presets.All(x => Rgb.Valid(x.Bar) && Rgb.Valid(x.Text) && Rgb.Valid(x.Accent)), "themes: built-in looks have unique ids and valid colours");
+    Check(ThemePacks.Presets.All(x => x.StartBg == StartBackground.Normalize(x.StartBg)) && ThemePacks.Find("AURORA")?.Name == "Aurora" && ThemePacks.Find("nope") == null, "themes: each look names a start background that exists");
+    foreach (var (thName, thBar) in new[] { ("dark", "#1b1e24"), ("light", "#f1f3f6") })
+    {
+        var thD = ChromeColors.Derive(thBar, thBar == "#1b1e24" ? "#d6dae2" : "#1f2430", "#2b6cb0");
+        Check(ChromeColors.Keys.All(k => thD.ContainsKey(k) && Rgb.Valid(thD[k])), "themes: every window colour is derived and valid (" + thName + " bar)");
+        Check(thName == "dark" ? Rgb.Luminance(thD["Win"]) < Rgb.Luminance(thD["Bar"]) && Rgb.Luminance(thD["Hover"]) > Rgb.Luminance(thD["Bar"]) : Rgb.Luminance(thD["Field"]) > Rgb.Luminance(thD["Bar"]) && Rgb.Luminance(thD["Hover"]) < Rgb.Luminance(thD["Bar"]), "themes: dark bars get lighter hovers, light bars get darker ones (" + thName + ")");
+    }
+    Check(ChromeColors.Derive("red", "x", "y")["Bar"] == "#1b1e24" && ChromeColors.Derive("#1b1e24", "#d6dae2", "#2b6cb0")["Bar"] == "#1b1e24", "themes: invalid colours fall back to the default look");
+    Check(ThemePacks.Custom("#102030", "#eeeeee", "#33aa66", "default")?.Dark == true && ThemePacks.Custom("#fff", "#eeeeee", "#33aa66", "default") == null && ThemePacks.Custom("#f0f0f0", "#111111", "#33aa66", "light")?.Dark == false, "themes: your own colours make a look, bad colours are refused");
+    var thJson = "{\"name\":\"Ocean\\u0001\",\"theme\":{\"colors\":{\"toolbar\":[10,30,60],\"tab_text\":[255,255,255],\"ntp_background\":[5,15,30],\"button_background\":[0,200,150,1]},\"images\":{\"theme_ntp_background\":\"img\\\\bg.png\"}}}";
+    var thP = ThemePacks.FromChromeTheme(thJson);
+    Check(thP != null && thP.Bar == "#0a1e3c" && thP.Dark && thP.Text == "#ffffff" && thP.StartBg == "#050f1e" && thP.Accent == "#00c896" && thP.NtpImage == "img/bg.png" && thP.Name == "Ocean", "themes: a Chrome theme gives its colours, name and picture");
+    Check(ThemePacks.FromChromeTheme("{\"name\":\"x\",\"manifest_version\":3}") == null && ThemePacks.FromChromeTheme("not json") == null && ThemePacks.FromChromeTheme(null) == null && ThemePacks.FromChromeTheme("{\"theme\":{}}") == null, "themes: an extension that is not a theme, or broken input, gives nothing");
+    var thBad = ThemePacks.FromChromeTheme("{\"theme\":{\"colors\":{\"toolbar\":[300,0,0],\"frame\":[1.5,2,3],\"tab_text\":[1,2]},\"images\":{\"theme_ntp_background\":\"../x.png\"}}}");
+    Check(thBad == null, "themes: out-of-range colours and a picture outside the folder are ignored");
+    var thLow = ThemePacks.FromChromeTheme("{\"theme\":{\"colors\":{\"toolbar\":[20,20,20],\"toolbar_text\":[30,30,30]}}}");
+    Check(thLow != null && thLow.Text == "#e6e8ee", "themes: text that cannot be read on the bar is replaced");
+    Check(new[] { "a.png", "dir/a.JPG", "d\\a.gif" }.All(x => ThemePacks.SafeImagePath(x) != null) && new[] { "../a.png", "/a.png", "C:/a.png", "a.exe", "a", "", "a//b.png", "./a.png" }.All(x => ThemePacks.SafeImagePath(x) == null), "themes: picture paths stay inside the theme folder and must be pictures");
+    var esId = new string('a', 16) + new string('p', 16);
+    Check(ExtSources.Parse(esId)?.Store == "chrome" && ExtSources.Parse("  " + esId + " ")?.Id == esId, "store links: a bare id is a Chrome Web Store id");
+    Check(ExtSources.Parse("https://chromewebstore.google.com/detail/ublock-origin-lite/" + esId + "?hl=en")?.Id == esId && ExtSources.Parse("https://chrome.google.com/webstore/detail/x/" + esId)?.Store == "chrome", "store links: Chrome Web Store links are read");
+    Check(ExtSources.Parse("https://microsoftedge.microsoft.com/addons/detail/some-name/" + esId)?.Store == "edge", "store links: Edge Add-ons links are read");
+    Check(new[] { "http://chromewebstore.google.com/detail/x/" + esId, "https://evil.test/detail/x/" + esId, "https://chromewebstore.google.com/detail/x/" + esId.Replace('p', 'z'), "https://u@chromewebstore.google.com/detail/x/" + esId, "https://chromewebstore.google.com/search/" + esId, "ABCD", "", "javascript:alert(1)" }.All(x => ExtSources.Parse(x) == null), "store links: other hosts, plain http, user names, wrong ids and other pages are refused");
+    var esUrl = ExtSources.Url(new ExtSources.Source("chrome", esId), "154.0.1<x>");
+    Check(esUrl.StartsWith("https://clients2.google.com/service/update2/crx?") && esUrl.Contains("prodversion=154") && esUrl.Contains(esId) && !esUrl.Contains("<") && ExtSources.Url(new ExtSources.Source("edge", esId), "").StartsWith("https://edge.microsoft.com/") && ExtSources.Url(new ExtSources.Source("edge", esId), "").Contains("prodversion=120"), "store links: the download address is the store's own, https, with the engine version");
+}
+
+{
+    // ---- address bar completion ----
+    var acV = new[] { "https://github.com/a", "https://www.gitlab.com/x", "https://github.com/b", "https://example.org/", "http://user@evil.test/", "https://gitea.example/" };
+    Check(AddressComplete.Complete("git", acV, null) == "github.com", "autofill: the site you visit most wins");
+    Check(AddressComplete.Complete("GIT", acV, null) == "GITHUB.COM".Substring(0, 3) + "hub.com", "autofill: what you typed keeps its capitals");
+    Check(AddressComplete.Complete("www.gitl", acV, null) == "www.gitlab.com", "autofill: www. is ignored when matching and kept when typed");
+    Check(AddressComplete.Complete("gitl", null, new[] { "https://gitlab.com/" }) == "gitlab.com", "autofill: bookmarks are used too");
+    Check(AddressComplete.Complete("wikip", null, null) == "wikipedia.org" && AddressComplete.Complete("yout", acV, null) == "youtube.com", "autofill: very popular sites complete even if never visited");
+    Check(AddressComplete.Complete("github.com", acV, null) == null && AddressComplete.Complete("zzzzqq", acV, null) == null, "autofill: nothing is added when it already matches or nothing fits");
+    Check(new[] { "", "git hub", "https://git", "git/", "a@b", "git?", "git#", "git:" }.All(x => AddressComplete.Complete(x, acV, null) == null), "autofill: only a single word being typed is completed");
+    Check(AddressComplete.Complete("evil", acV, null) == null, "autofill: addresses with user names are never offered");
+    Check(AddressComplete.Popular.Distinct().Count() == AddressComplete.Popular.Length && AddressComplete.Popular.All(d => d == d.ToLowerInvariant() && d.Contains('.') && !d.Contains(' ')), "autofill: the built-in list has no repeats and only plain lower-case domains");
+    var acTie = new[] { "https://one.test/", "https://two.test/" };
+    Check(AddressComplete.Complete("t", acTie, null) == "two.test" && AddressComplete.Complete("o", acTie, null) == "one.test", "autofill: equal visits go to the newest");
+}
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }

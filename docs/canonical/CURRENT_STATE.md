@@ -186,3 +186,23 @@ The handoff has no separate DoD; §31's ✓ pattern **is** the definition, gover
 | Overview cookies | Also counts cookies in private tabs (counts only, no site names); Delete all and per-site delete cover both. |
 | Downloads page | Progress is pushed into the open page without reloading it. |
 
+## v1.3.8: extensions, themes, taskbar menu (unverified until the gate is run on Windows)
+
+| Area | State |
+|---|---|
+| Extension support | On by default (nothing loads without your review and the governance ledger). Install by Chrome Web Store link, Edge Add-ons link, extension id, .crx/.zip or folder; managed on the Extensions page (enable, disable, test, remove). The store download is the governed https downloader; the address is built by `ExtSources` (tested). The engine supports only part of the extension system (see the page's Limits). |
+| Chrome themes | A theme from the store or a file is read for its colours and start page picture and applied as a Recognition look (`ThemePacks.FromChromeTheme`, tested); it is not run as an extension. |
+| Customize page | 8 looks, your own bar/text/accent colours, backgrounds and home page, layout toggles. The toolbar, tabs, side bar, menus, status bar and title bar follow the colours (`ChromeColors.Derive`, tested). |
+| Taskbar menu | Right-click the icon: New private tab, New tab, and the 4 newest pages (never from private tabs; switch in Settings). It is a private tab, not a separate private window. |
+
+
+## v1.3.9: address autofill, audit, documents (unverified until the gate is run on Windows)
+
+| Area | State |
+|---|---|
+| Address autofill | Typing a word in the address bar completes it inline (`git` shows `github.com` with the added letters selected). Order: sites you visit most (newest wins ties), then bookmarks, then a built-in list of about 190 popular sites. Backspace or Delete removes the suggestion; Enter or the right arrow accepts it. Only host names are completed; addresses with a user name are never offered. Nothing is looked up or sent: the list is text in the program. Rules in `AddressComplete` (`BrowserFeel.cs`), executed by tests. |
+| Audit | Removed dead `IsBlockedHost`; fixed stale Settings text about translate; fixed the proposal 0008 reference in `docs/GITHUB_OWNER.md`; refreshed the open items in `docs/RELEASE_CHECKLIST.md`. |
+| Documents | Added `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/README.md` (index), `docs/USER_GUIDE.md`, issue and pull request templates. README refreshed. No `LICENSE` file: the owner must choose one. |
+| Toolbar redo | One icon button style (`IconBtn`, Segoe Fluent Icons, 34 px, rounded hover) for every toolbar and side bar button. Order: Back, Forward, Home, Private tab, Reload. The private tab button left the tab strip (only "+" is there now); Go and the duplicate toolbar "+" are hidden (Enter and the tab strip do the job). Shield and VPN show an icon plus a short label. Needs a visual check on Windows (glyphs need Segoe Fluent Icons or Segoe MDL2 Assets, present on Windows 10/11). |
+| Fix | `ThemePacks.FromChromeTheme` now checks the picture path before deciding a theme has content (test "out-of-range colours and a picture outside the folder are ignored" was failing). |
+| Start-up cover and spacing | The separate launch splash window is gone (it could stay on screen after the browser was ready). The main window opens at once with a small "Starting" cover inside it showing the start-up step; it is removed the moment start-up ends (`MainWindow.HideLoading`). Toolbar, tab strip, side bar and bookmark bar spacing increased (about 20 percent). Needs a visual check on Windows. |

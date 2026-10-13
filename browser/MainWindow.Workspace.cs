@@ -246,6 +246,7 @@ namespace Recognition.Browser
         private void StartSessionTimer()
         {
             if (_syncOn) _ = SyncNowAsync(true);
+            UpdateJumpList();
             if (_sessionTimer != null) return;
             _sessionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
             _sessionTimer.Tick += (_, __) => SaveSession();
@@ -403,6 +404,7 @@ namespace Recognition.Browser
                       string.Concat(TranslateRules.Languages.Select(l => "<option value='" + l.Code + "'" + (l.Code == _translateLang ? " selected" : "") + ">" + Esc(l.Name) + "</option>")) + "</select> " +
                       string.Concat(TranslateRules.Services.Select(s => "<a class='btn" + (s.Id == _translateService ? "" : " ghost") + "' onclick=\"send('ws-svc:" + s.Id + "')\">" + Esc(s.Name) + "</a> ")) + "</div></div>");
             sb.Append("<div class='row'><div><div class='t'>Start page tiles</div><div class='u'>Hover a tile on the start page to remove it, or use Add a site. " + _tilesCustom.Count + " added by you, " + _tilesHidden.Count + " hidden.</div></div><div class='ts'><a class='btn ghost' onclick=\"send('tile-reset')\">Reset tiles</a></div></div>");
+            sb.Append(CustomizeSettingsRowsHtml());
             sb.Append("<div class='row'><div><div class='t'>Tab groups, split view, reader mode</div><div class='u'>Right-click a tab for groups (name, colour, collapse) and split view. Menu, Page tools has Reader mode and Picture-in-picture.</div></div></div>");
             return sb.ToString();
         }

@@ -45,6 +45,7 @@ namespace Recognition.Browser
         {
             public string Staging = "", Root = "", Source = "";
             public ExtIdentity Identity = null!; public ExtManifest Manifest = null!; public ExtDecision Decision = null!;
+            public bool IsTheme;   // a Chrome theme: Recognition can use its colours, but there is nothing to install into the engine
         }
 
         private ExtState _extState = new();
@@ -181,7 +182,9 @@ namespace Recognition.Browser
             var man = ExtGovernance.ReadManifest(root);
             var pol = ExtGovernance.ParsePolicy(File.ReadAllText(ExtPolicyPath));
             var dec = ExtGovernance.Decide(man, id.Id, pol);
-            return new ExtPending { Staging = staging, Root = root, Source = source, Identity = id, Manifest = man, Decision = dec };
+            bool isTheme = false;
+            try { isTheme = ThemePacks.FromChromeTheme(File.ReadAllText(Path.Combine(root, "manifest.json"), Encoding.UTF8).TrimStart('\uFEFF')) != null; } catch { }
+            return new ExtPending { Staging = staging, Root = root, Source = source, Identity = id, Manifest = man, Decision = dec, IsTheme = isTheme };
         }
 
         private ExtPending StageBytes(byte[] package, string source)
@@ -241,7 +244,7 @@ namespace Recognition.Browser
                 permissions = p.Manifest.Permissions.Select(CleanLabel).ToList(), hosts = p.Manifest.HostPermissions.Select(CleanLabel).ToList(),
                 optional = p.Manifest.OptionalPermissions.Select(CleanLabel).ToList(), contentScripts = p.Manifest.ContentScriptMatches.Select(CleanLabel).ToList(),
                 decision = p.Decision.Decision, reasons = p.Decision.Reasons.Select(CleanLabel).ToList(),
-                already = _extState.Items.Any(i => i.Gid == p.Identity.Id)
+                already = _extState.Items.Any(i => i.Gid == p.Identity.Id), theme = p.IsTheme
             };
         }
 
@@ -300,7 +303,9 @@ namespace Recognition.Browser
                 if (msg.StartsWith("ext-url:"))
                 {
                     var url = Dec(msg.Substring("ext-url:".Length)).Trim();
-                    ExtReport("downloading…");
+                    var store = ExtSources.Parse(url);   // a Chrome Web Store or Edge Add-ons link, or an extension id
+                    if (store != null) url = ExtSources.Url(store, EngineMajor());
+                    ExtReport(store != null ? "downloading from the " + (store.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store") + "…" : "downloading…");
                     var bytes = await DownloadExtensionAsync(url);
                     DiscardPending();
                     var host = new Uri(url).Host;
@@ -309,6 +314,22 @@ namespace Recognition.Browser
                     SendExtSnapshot(); return;
                 }
                 if (msg == "ext-cancel") { DiscardPending(); SendExtSnapshot(); return; }
+                if (msg == "ext-theme-apply")
+                {
+                    var tp = _extPending;
+                    if (tp == null || !tp.IsTheme) { ExtReport("nothing to apply", false); return; }
+                    var pack = ThemePacks.FromChromeTheme(File.ReadAllText(Path.Combine(tp.Root, "manifest.json"), Encoding.UTF8).TrimStart('\uFEFF'));
+                    if (pack == null) { ExtReport("that theme could not be read", false); return; }
+                    string? img = null;
+                    if (pack.NtpImage != null)
+                    {
+                        var full = Path.GetFullPath(Path.Combine(tp.Root, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar)));
+                        if (full.StartsWith(Path.GetFullPath(tp.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full;
+                    }
+                    ApplyPack(pack, img); DiscardPending();
+                    ExtReport("applied the theme \"" + pack.Name + "\". Change it any time on the Customize page.");
+                    SendExtSnapshot(); return;
+                }
                 if (msg.StartsWith("ext-install:")) { ExtInstall(msg.EndsWith(":approve")); return; }
                 if (msg == "ext-verify-chain")
                 {
@@ -341,6 +362,7 @@ namespace Recognition.Browser
         {
             var p = _extPending;
             if (p == null) { ExtReport("nothing to install", false); return; }
+            if (p.IsTheme) { ExtReport("this is a theme: use Use this theme (it has nothing to install)", false); return; }
             var decision = p.Decision.Decision;
             if (decision == "deny") { ExtReport("refused: policy denies this extension (" + string.Join("; ", p.Decision.Reasons) + "). To change the policy, edit config\\extension_policy.v1.json yourself.", false); return; }
             if (decision == "review" && !approved) { ExtReport("this extension needs your explicit approval of the permissions listed", false); return; }
@@ -488,8 +510,9 @@ namespace Recognition.Browser
 <div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0'>
  <a class='btn' onclick=""send('ext-pick-file')"">Choose a .crx or .zip&hellip;</a>
  <a class='btn ghost' onclick=""send('ext-pick-folder')"">Choose an unpacked folder&hellip;</a>
- <input id='url' placeholder='https://example.com/extension.crx' style='flex:1;min-width:260px;background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:8px'>
+ <input id='url' placeholder='Chrome Web Store or Edge Add-ons link, an extension id, or a .crx address' style='flex:1;min-width:260px;background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:8px'>
  <a class='btn ghost' onclick='fromUrl()'>Download and review</a></div>
+<div class='muted' style='margin-top:4px'>Find one: <a class='t' href='https://chromewebstore.google.com/category/extensions'>Chrome Web Store</a> &middot; <a class='t' href='https://microsoftedge.microsoft.com/addons'>Edge Add-ons</a> &middot; <a class='t' href='https://chromewebstore.google.com/category/themes'>Chrome themes</a>. Open an extension's page there, copy its address, and paste it above. The store's own Add button does not work in Recognition; this does the download, then you review what it asks for. Themes are used for Recognition's look (see <a class='t' href='recognition:customize'>Customize</a>).</div>
 <div id='pending'></div>
 
 <h1 style='font-size:16px'>Installed</h1>
@@ -521,7 +544,8 @@ function render(m){
     var dec=el('div','Policy decision: '+p.decision.toUpperCase()+(p.reasons.length?'  —  '+p.reasons.join('; '):''),'t');dec.style.color=p.decision==='deny'?'#e57373':(p.decision==='review'?'#e0b050':'#6fcf97');r.appendChild(dec);
     listBlock(r,'Permissions',p.permissions);listBlock(r,'Site access (host permissions)',p.hosts);listBlock(r,'Content scripts will run on (not scored by the policy)',p.contentScripts);listBlock(r,'Optional permissions it may ask for later (not scored)',p.optional);
     var a=el('div',null,'ts');
-    if(p.decision==='deny'){a.appendChild(el('span','Refused by policy: it cannot be installed here.','u'));}
+    if(p.theme){r.appendChild(el('div','This is a theme. Recognition cannot run Chrome themes in the engine, but it can use the theme\'s colours and picture for its own look.','t'));a.appendChild(btn('Use this theme','ext-theme-apply'));}
+    else if(p.decision==='deny'){a.appendChild(el('span','Refused by policy: it cannot be installed here.','u'));}
     else{ if(p.decision==='review')a.appendChild(btn('I reviewed these permissions: install','ext-install:approve'));else a.appendChild(btn('Install','ext-install:plain'));
           a.appendChild(btn('Test first (temporary profile)','ext-test-pending',true)); }
     a.appendChild(btn('Discard','ext-cancel',true));r.appendChild(a);P.appendChild(r);}

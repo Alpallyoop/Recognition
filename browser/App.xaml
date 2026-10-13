@@ -4,14 +4,32 @@
              StartupUri="MainWindow.xaml">
   <Application.Resources>
 
+    <!-- Window colours. Customize swaps these at run time, so everything below refers to them with DynamicResource. -->
+    <SolidColorBrush x:Key="ChromeWin" Color="#111318"/>
+    <SolidColorBrush x:Key="ChromeBar" Color="#1B1E24"/>
+    <SolidColorBrush x:Key="ChromeSide" Color="#15181D"/>
+    <SolidColorBrush x:Key="ChromeField" Color="#0E1015"/>
+    <SolidColorBrush x:Key="ChromeLine" Color="#2A2E36"/>
+    <SolidColorBrush x:Key="ChromeLine2" Color="#2E333C"/>
+    <SolidColorBrush x:Key="ChromeHover" Color="#2A2F38"/>
+    <SolidColorBrush x:Key="ChromeTab" Color="#1E222A"/>
+    <SolidColorBrush x:Key="ChromeTabSel" Color="#2B313B"/>
+    <SolidColorBrush x:Key="ChromeTabHover" Color="#262B34"/>
+    <SolidColorBrush x:Key="ChromeText" Color="#D6DAE2"/>
+    <SolidColorBrush x:Key="ChromeMuted" Color="#B8BDC7"/>
+    <SolidColorBrush x:Key="ChromeAccent" Color="#2B6CB0"/>
+    <SolidColorBrush x:Key="ChromeAccentHover" Color="#3480CE"/>
+    <SolidColorBrush x:Key="ChromeMenuBg" Color="#14171C"/>
+    <SolidColorBrush x:Key="ChromeMenuSel" Color="#26456E"/>
+
     <!-- Toolbar nav button -->
     <Style x:Key="NavBtn" TargetType="Button">
-      <Setter Property="Foreground" Value="#D6DAE2"/>
+      <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="FontSize" Value="14"/>
-      <Setter Property="Padding" Value="9,4"/>
-      <Setter Property="Margin" Value="1,0"/>
+      <Setter Property="Padding" Value="10,5"/>
+      <Setter Property="Margin" Value="2,0"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -22,7 +40,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="b" Property="Background" Value="#2A2F38"/>
+                <Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeHover}"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Foreground" Value="#565B64"/>
@@ -33,10 +51,38 @@
       </Setter>
     </Style>
 
+    <!-- Icon button: one size, one font, one hover, used for every toolbar and side bar button -->
+    <Style x:Key="IconBtn" TargetType="Button">
+      <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="Width" Value="34"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Margin" Value="3,0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="8">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeHover}"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeTabSel}"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.35"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- Accent (Export) button -->
     <Style x:Key="AccentBtn" TargetType="Button">
       <Setter Property="Foreground" Value="#FFFFFF"/>
-      <Setter Property="Background" Value="#2B6CB0"/>
+      <Setter Property="Background" Value="{DynamicResource ChromeAccent}"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="Padding" Value="12,5"/>
@@ -51,7 +97,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="b" Property="Background" Value="#3480CE"/>
+                <Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeAccentHover}"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="b" Property="Background" Value="#3A3F48"/>
@@ -65,9 +111,9 @@
 
     <!-- Dark context menu -->
     <Style TargetType="ContextMenu">
-      <Setter Property="Background" Value="#14171C"/>
-      <Setter Property="BorderBrush" Value="#2E333C"/>
-      <Setter Property="Foreground" Value="#E4E7EC"/>
+      <Setter Property="Background" Value="{DynamicResource ChromeMenuBg}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource ChromeLine2}"/>
+      <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ContextMenu">
@@ -81,7 +127,7 @@
     </Style>
 
     <Style TargetType="MenuItem">
-      <Setter Property="Foreground" Value="#E4E7EC"/>
+      <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Padding" Value="14,7"/>
       <Setter Property="Cursor" Value="Hand"/>
@@ -92,7 +138,7 @@
               <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
-              <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="b" Property="Background" Value="#26456E"/></Trigger>
+              <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeMenuSel}"/></Trigger>
               <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="#565B64"/></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -101,28 +147,28 @@
     </Style>
 
     <Style TargetType="Separator">
-      <Setter Property="Background" Value="#2A2E36"/>
+      <Setter Property="Background" Value="{DynamicResource ChromeLine}"/>
       <Setter Property="Height" Value="1"/>
       <Setter Property="Margin" Value="6,4"/>
     </Style>
 
     <!-- Tab header pill -->
     <Style TargetType="TabItem">
-      <Setter Property="Foreground" Value="#AEB4BE"/>
+      <Setter Property="Foreground" Value="{DynamicResource ChromeMuted}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
-            <Border x:Name="b" Background="#1E222A" CornerRadius="7,7,0,0" Margin="2,0,0,0"
-                    BorderBrush="#2A2E36" BorderThickness="1,1,1,0">
-              <ContentPresenter ContentSource="Header" Margin="12,6" VerticalAlignment="Center"/>
+            <Border x:Name="b" Background="{DynamicResource ChromeTab}" CornerRadius="7,7,0,0" Margin="2,0,0,0"
+                    BorderBrush="{DynamicResource ChromeLine}" BorderThickness="1,1,1,0">
+              <ContentPresenter ContentSource="Header" Margin="14,8" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="b" Property="Background" Value="#2B313B"/>
-                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeTabSel}"/>
+                <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="b" Property="Background" Value="#262B34"/>
+                <Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeTabHover}"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>

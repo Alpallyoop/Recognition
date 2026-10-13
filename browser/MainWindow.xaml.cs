@@ -194,6 +194,7 @@ document.addEventListener('keydown',function(e){
                 LoadBookmarks();
                 LoadDownloads();
                 LoadSettings();
+                ApplyChromeTheme();
                 ApplyLayout(); RebuildBookmarksBar();
                 LoadBlocklist();
                 InitFilters();
@@ -513,6 +514,7 @@ document.addEventListener('keydown',function(e){
         private static string InternalTitle(string name) => name switch
         {
             "start" => "New tab",
+            "customize" => "Customize",
             "overview" => "Overview",
             "history" => "History",
             "downloads" => "Downloads",
@@ -550,10 +552,12 @@ document.addEventListener('keydown',function(e){
                 var ms = new MemoryStream();
                 await stream.CopyToAsync(ms);
                 if (ms.Length == 0) { tab.Fav.Source = null; return; }
+                var favBytes = ms.ToArray();
                 ms.Position = 0;
                 var bmp = new BitmapImage();
                 bmp.BeginInit(); bmp.CacheOption = BitmapCacheOption.OnLoad; bmp.StreamSource = ms; bmp.EndInit(); bmp.Freeze();
                 tab.Fav.Source = bmp;
+                if (!tab.Private) NoteFavicon(tab.CurrentUrl, favBytes);
             }
             catch { }
         }
@@ -727,21 +731,6 @@ document.addEventListener('keydown',function(e){
             return _sitePolicyState.TryGetValue(key + "|" + origin, out var v) ? v : def;
         }
 
-        private bool IsBlockedHost(string host)
-        {
-            host = (host ?? "").ToLowerInvariant();
-            if (host.Length == 0) return false;
-            if (_blockHosts.Contains(host)) return true;
-            int dot = host.IndexOf('.');
-            while (dot >= 0)
-            {
-                var parent = host.Substring(dot + 1);
-                if (_blockHosts.Contains(parent)) return true;
-                dot = host.IndexOf('.', dot + 1);
-            }
-            return false;
-        }
-
         private void LoadBlocklist()
         {
             _blockHosts.Clear();
@@ -782,11 +771,27 @@ document.addEventListener('keydown',function(e){
             "crazyegg.com","optimizely.com","yandex.ru/metrika","mc.yandex.ru"
         };
 
+        // a toolbar icon with a short label beside it (blocked count, VPN region); the label is left out when empty
+        private static FrameworkElement IconText(string glyph, string? text)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 6, 0) };
+            sp.Children.Add(new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+            if (!string.IsNullOrEmpty(text)) sp.Children.Add(new TextBlock { Text = text, FontSize = 11, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            return sp;
+        }
+
+        // removes the in-window "starting" cover; safe to call more than once
+        internal void HideLoading()
+        {
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(HideLoading)); return; }
+            LoadingCover.Visibility = Visibility.Collapsed;
+        }
+
         private void UpdateShield()
         {
             var a = Active;
             int n = a?.Blocked ?? 0;
-            ShieldBtn.Content = _blockingEnabled ? ("🛡 " + n) : "🛡✕";
+            ShieldBtn.Content = IconText("\uEA18", _blockingEnabled ? (n > 0 ? n.ToString() : "") : "off");
             ShieldBtn.Foreground = new SolidColorBrush(_blockingEnabled ? Color.FromRgb(0x6F, 0xCF, 0x97) : Color.FromRgb(0x8B, 0x90, 0x9A));
             ShieldBtn.ToolTip = _blockingEnabled
                 ? $"{n} trackers/ads blocked on this page ({_blockedSession} this session) — click for settings"
@@ -804,14 +809,14 @@ document.addEventListener('keydown',function(e){
             var region = string.IsNullOrEmpty(_netExitRegion) ? "on" : _netExitRegion;
             if (warn)
             {
-                VpnBtn.Content = "\U0001F310 !";
+                VpnBtn.Content = IconText("\uE774", "!");
                 VpnBtn.Foreground = new SolidColorBrush(Color.FromRgb(0xE0, 0xB4, 0x4C)); // amber
                 VpnBtn.ToolTip = "The chosen exit (" + (_netExitRegion ?? "") + ") could not be reached — running DIRECT this session. Click to fix it.";
             }
             else
             {
                 bool sysOn = !on && _sysVpn != null && _sysVpn.Kind == "vpn";
-                VpnBtn.Content = on ? ("\U0001F310 " + region) : (sysOn ? "\U0001F310 VPN" : "\U0001F310");
+                VpnBtn.Content = IconText("\uE774", on ? region : (sysOn ? "VPN" : ""));
                 VpnBtn.Foreground = new SolidColorBrush((on || sysOn) ? Color.FromRgb(0x6F, 0xCF, 0x97) : Color.FromRgb(0x8B, 0x90, 0x9A));
                 VpnBtn.ToolTip = on
                     ? ("VPN ON — " + _netMode + (string.IsNullOrEmpty(_netExitRegion) ? "" : " · " + _netExitRegion) + "  (click for settings)")
@@ -892,6 +897,11 @@ document.addEventListener('keydown',function(e){
                 if (r.TryGetProperty("stats_blocked", out var sbl) && sbl.ValueKind == JsonValueKind.Number && sbl.TryGetInt64(out var sblv) && sblv >= 0) _statsBlocked = sblv;
                 if (r.TryGetProperty("stats_stripped", out var ssp) && ssp.ValueKind == JsonValueKind.Number && ssp.TryGetInt64(out var sspv) && sspv >= 0) _statsStripped = sspv;
                 if (r.TryGetProperty("home_url", out var hu)) { var s = StartBackground.HomeUrl(hu.GetString(), File.Exists); if (s != null) _homeUrl = s; }
+                if (r.TryGetProperty("chrome_bar", out var cbr) && cbr.ValueKind == JsonValueKind.String && Rgb.Valid(cbr.GetString())
+                    && r.TryGetProperty("chrome_text", out var ctx) && Rgb.Valid(ctx.GetString()) && r.TryGetProperty("chrome_accent", out var cac) && Rgb.Valid(cac.GetString()))
+                { _chromeBar = Rgb.Norm(cbr.GetString()); _chromeText = Rgb.Norm(ctx.GetString()); _chromeAccent = Rgb.Norm(cac.GetString()); }
+                if (r.TryGetProperty("theme_name", out var tnm) && tnm.ValueKind == JsonValueKind.String) { var tn = new string((tnm.GetString() ?? "").Where(c => !char.IsControl(c) && c != '<' && c != '>').Take(40).ToArray()).Trim(); if (tn.Length > 0) _themeName = tn; }
+                if (r.TryGetProperty("taskbar_recent", out var tbr) && (tbr.ValueKind == JsonValueKind.True || tbr.ValueKind == JsonValueKind.False)) _taskbarRecent = tbr.GetBoolean();
                 if (r.TryGetProperty("download_dir", out var ddr) && ddr.ValueKind == JsonValueKind.String && SoteriaBridge.IsSafeRoot(ddr.GetString())) _downloadDir = ddr.GetString()!.Trim();
                 if (r.TryGetProperty("download_ask", out var dak) && (dak.ValueKind == JsonValueKind.True || dak.ValueKind == JsonValueKind.False)) _downloadAsk = dak.GetBoolean();
                 if (r.TryGetProperty("startup_mode", out var sm) && sm.ValueKind == JsonValueKind.String && sm.GetString() is "start" or "restore") _startupMode = sm.GetString()!;
@@ -913,7 +923,7 @@ document.addEventListener('keydown',function(e){
                 Directory.CreateDirectory(Path.GetDirectoryName(p)!);
                 File.WriteAllText(p, "{" + J("blocking_enabled") + ":" + (_blockingEnabled ? "true" : "false") + "," +
                                           J("strip_tracking") + ":" + (_stripTracking ? "true" : "false") + "," + J("send_gpc") + ":" + (_sendGpc ? "true" : "false") + "," + J("shield_level") + ":" + J(_shieldLevel) + "," + J("passkeys_level") + ":" + J(_passkeyLevel) + "," + J("tracking_level") + ":" + J(_trackingLevel) + "," +
-                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("search_engine") + ":" + J(_searchEngine) + "," + J("bookmarks_bar") + ":" + (_bookmarksBarOn ? "true" : "false") + "," + J("sidebar") + ":" + (_sideBarOn ? "true" : "false") + "," + J("stats_blocked") + ":" + _statsBlocked + "," + J("stats_stripped") + ":" + _statsStripped + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("download_dir") + ":" + J(_downloadDir) + "," + J("download_ask") + ":" + (_downloadAsk ? "true" : "false") + "," + J("startup_mode") + ":" + J(_startupMode) + "," + J("translate_lang") + ":" + J(_translateLang) + "," + J("translate_service") + ":" + J(_translateService) + "," + J("tiles") + ":" + TileRules.ToJson(_tilesCustom, _tilesHidden) + "," + J("prefs_utc") + ":" + J(_prefsChangedUtc.ToString("o")) + "," + SyncSettingsJson() + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
+                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("search_engine") + ":" + J(_searchEngine) + "," + J("bookmarks_bar") + ":" + (_bookmarksBarOn ? "true" : "false") + "," + J("sidebar") + ":" + (_sideBarOn ? "true" : "false") + "," + J("stats_blocked") + ":" + _statsBlocked + "," + J("stats_stripped") + ":" + _statsStripped + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("chrome_bar") + ":" + J(_chromeBar) + "," + J("chrome_text") + ":" + J(_chromeText) + "," + J("chrome_accent") + ":" + J(_chromeAccent) + "," + J("theme_name") + ":" + J(_themeName) + "," + J("taskbar_recent") + ":" + (_taskbarRecent ? "true" : "false") + "," + J("download_dir") + ":" + J(_downloadDir) + "," + J("download_ask") + ":" + (_downloadAsk ? "true" : "false") + "," + J("startup_mode") + ":" + J(_startupMode) + "," + J("translate_lang") + ":" + J(_translateLang) + "," + J("translate_service") + ":" + J(_translateService) + "," + J("tiles") + ":" + TileRules.ToJson(_tilesCustom, _tilesHidden) + "," + J("prefs_utc") + ":" + J(_prefsChangedUtc.ToString("o")) + "," + SyncSettingsJson() + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
             }
             catch { }
         }
@@ -1277,7 +1287,7 @@ document.addEventListener('keydown',function(e){
         private void UpdateStar(BrowserTab tab)
         {
             bool on = !tab.IsInternal && IsBookmarked(tab.CurrentUrl);
-            StarBtn.Content = on ? "★" : "☆";
+            StarBtn.Content = on ? "\uE735" : "\uE734";
             StarBtn.Foreground = new SolidColorBrush(on ? Color.FromRgb(0xF2, 0xC1, 0x4E) : Color.FromRgb(0xC7, 0xCC, 0xD4));
             StarBtn.IsEnabled = !tab.IsInternal && !tab.Private;
             StarBtn.Visibility = StarBtn.IsEnabled && !string.IsNullOrEmpty(tab.CurrentUrl) ? Visibility.Visible : Visibility.Collapsed;   // nothing to bookmark on blank, internal and private tabs
@@ -1363,6 +1373,7 @@ document.addEventListener('keydown',function(e){
             if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); }
             string html = name switch
             {
+                "customize" => CustomizeHtml(),
                 "overview"  => OverviewHtml(),
                 "history"   => HistoryHtml(),
                 "downloads" => DownloadsHtml(),
@@ -1614,7 +1625,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             sb.Append("<h1 style='font-size:16px'>Web engine</h1>");
             sb.Append(EngineHtmlRow());
             sb.Append(DefaultBrowserHtmlRow());
-            sb.Append("<div class='row'><div><div class='t'>Tools</div><div class='u'>PDF page tools (merge, split, rotate, reorder), image tools, full-page screenshots, save as PDF, view source. Also under Menu &rarr; Tools. Translate and widgets are not built.</div></div><div class='ts'><a class='btn' href='recognition:tools'>Open Tools</a> <a class='btn ghost' href='recognition:vpn'>VPN / proxy</a> <a class='btn ghost' href='recognition:export'>Last export</a></div></div>");
+            sb.Append("<div class='row'><div><div class='t'>Tools</div><div class='u'>PDF page tools (merge, split, rotate, reorder), image tools, full-page screenshots, save as PDF, view source. Also under Menu &rarr; Tools. Page translation and the side panels are under Menu &rarr; Workspace.</div></div><div class='ts'><a class='btn' href='recognition:tools'>Open Tools</a> <a class='btn ghost' href='recognition:vpn'>VPN / proxy</a> <a class='btn ghost' href='recognition:export'>Last export</a></div></div>");
             sb.Append("<h1 style='font-size:16px'>Extensions</h1>");
             sb.Append("<div class='kv'><div class='k'>Chromium extensions</div><div class='v'>" + (_extEnabled ? ("enabled &mdash; " + (_extPaths.Count + _extState.Items.Count) + " configured") : "off") + " &middot; <a class='t' href='recognition:extensions'>manage extensions</a>" + "</div></div>");
             sb.Append("<div class='muted' style='margin:6px 0 18px'>Configured in <code>config\\extensions.v1.json</code>: an unpacked folder, a <code>.zip</code>, or a <code>.crx</code> (universal adapter — all three are normalized to an unpacked folder). Every extension must ALSO pass the governance load gate (<code>recognition_extension_governance_v1.ps1</code>): its current bytes are hashed and checked against a ledger decision an operator recorded explicitly via <code>-Action register</code>. Nothing loads on first sight, on a tamper, or on a review/deny decision &mdash; refusals are receipted like any other action.</div>");
@@ -1863,8 +1874,9 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             else if (msg.StartsWith("sv-") && tab.Internal == "soteria") HandleSoteriaMessage(msg);
             else if (msg.StartsWith("exp-") && tab.Internal == "export") HandleExportMessage(msg);
             else if (msg.StartsWith("exit-") && tab.Internal == "vpn") HandleVpnMessage(msg);
-            else if ((msg.StartsWith("home-set:") || msg.StartsWith("bg-")) && tab.Internal == "settings") HandleStartPageMessage(tab, msg);
-            else if (msg.StartsWith("feel-") && (tab.Internal == "settings" || tab.Internal == "bookmarks")) HandleFeelMessage(tab, msg);
+            else if ((msg.StartsWith("home-set:") || msg.StartsWith("bg-")) && (tab.Internal == "settings" || tab.Internal == "customize")) HandleStartPageMessage(tab, msg);
+            else if (msg.StartsWith("feel-") && (tab.Internal == "settings" || tab.Internal == "bookmarks" || tab.Internal == "customize")) HandleFeelMessage(tab, msg);
+            else if (msg.StartsWith("cz-") && (tab.Internal == "customize" || (tab.Internal == "settings" && msg.StartsWith("cz-taskbar:")))) HandleCustomizeMessage(tab, msg);
             else if (msg.StartsWith("bm-") && tab.Internal == "bookmarks") HandleBookmarkMessage(tab, msg);
             else if (msg.StartsWith("dl-") && (tab.Internal == "downloads" || tab.Internal == "settings")) HandleDownloadMessage(tab, msg);
             else if (msg.StartsWith("hist-clear:") && tab.Internal == "history") HandleHistoryMessage(tab, msg);
@@ -2139,7 +2151,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             var title = tab.Web.CoreWebView2.DocumentTitle ?? "";
             tab.CurrentUrl = url; tab.CurrentTitle = title;
             tab.Visits.Add((url, title, DateTime.UtcNow));
-            if (!tab.Private) { _history.Append(url, title); _actions.Append("navigate", url); _ = SnapshotCookiesAsync(tab, url); }   // private tabs leave no persisted trace
+            if (!tab.Private) { _history.Append(url, title); _actions.Append("navigate", url); _ = SnapshotCookiesAsync(tab, url); ScheduleJumpListUpdate(); }   // private tabs leave no persisted trace
             SetHeader(tab, title);
             if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); UpdateShield(); Status($"visited {TotalVisits()}: {title}"); }
         }
@@ -2153,7 +2165,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             if (input.StartsWith("recognition:", StringComparison.OrdinalIgnoreCase))
             {
                 var name = input.Substring("recognition:".Length).ToLowerInvariant();
-                LoadInternal(tab, name is "overview" or "history" or "downloads" or "bookmarks" or "settings" or "network" or "setup" or "passwords" or "tools" or "shield" or "passkeys" or "extensions" or "soteria" or "vpn" or "export" or "start" ? name : "start");
+                LoadInternal(tab, name is "customize" or "overview" or "history" or "downloads" or "bookmarks" or "settings" or "network" or "setup" or "passwords" or "tools" or "shield" or "passkeys" or "extensions" or "soteria" or "vpn" or "export" or "start" ? name : "start");
                 return;
             }
             tab.Internal = "";
@@ -2186,12 +2198,37 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 
         private void Address_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_suppressSuggest) return;
+            if (_suppressSuggest || _autofilling) return;
             var q = AddressBar.Text.Trim();
             if (q.Length == 0) { HideSuggest(); return; }
+            TryAutofill(q);
             var items = BuildSuggestions(q);
             SuggestList.ItemsSource = items;
             if (items.Count > 0) { SuggestList.SelectedIndex = -1; SuggestPopup.IsOpen = true; } else HideSuggest();
+        }
+
+        // Inline address completion: type "git" and the bar shows "github.com" with the added letters selected.
+        // Backspace/Delete remove it, Enter or the right arrow accept it. Only done when the caret is at the end of what was typed.
+        private bool _autofilling, _skipAutofill;
+        private void TryAutofill(string q)
+        {
+            if (_skipAutofill) { _skipAutofill = false; return; }
+            if (!AddressBar.IsKeyboardFocused || AddressBar.SelectionLength != 0 || AddressBar.CaretIndex != AddressBar.Text.Length) return;
+            if (AddressBar.Text != q) return; // leading/trailing spaces: leave alone
+            string? done;
+            try { done = AddressComplete.Complete(q, _history.Items.Select(h => h.Url), _bookmarks.Select(b => b.Url)); }
+            catch { return; }
+            if (done == null || done.Length <= q.Length) return;
+            _autofilling = true;
+            try { AddressBar.Text = done; AddressBar.Select(q.Length, done.Length - q.Length); }
+            finally { _autofilling = false; }
+        }
+
+        private void Address_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Back || e.Key == Key.Delete) _skipAutofill = true;
+            else if (e.Key == Key.Right && AddressBar.SelectionLength > 0 && AddressBar.SelectionStart + AddressBar.SelectionLength == AddressBar.Text.Length)
+            { AddressBar.CaretIndex = AddressBar.Text.Length; e.Handled = true; }
         }
 
         private List<Suggestion> BuildSuggestions(string q)
@@ -2407,7 +2444,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             catch { try { return EncNoBom.GetString(bytes); } catch { return ""; } }   // legacy plaintext (pre-encryption)
         }
 
-        private void Status(string s) => StatusText.Text = s;
+        private void Status(string s) { StatusText.Text = s; if (LoadingCover.Visibility == Visibility.Visible) LoadingText.Text = s; }
 
         // ---- governed, append-only, hash-chained history (§24) ------------------
 

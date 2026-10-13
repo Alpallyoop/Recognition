@@ -1,0 +1,208 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace Recognition.Browser
+{
+    // Pure rules for themes and for finding extensions (compiled into browser.tests too; no WPF, files or network).
+    //  * ThemePacks: the built-in looks, and reading the colours (and start-page picture name) out of a Chrome theme.
+    //  * ChromeColors: from three colours (bar, text, accent) to every colour the window uses, for dark and light bars alike.
+    //  * ExtSources: turning a Chrome Web Store or Edge Add-ons link (or a bare extension id) into the official download address.
+    // Every colour that leaves this file is a validated #rrggbb value, so nothing a theme file says can reach the window as anything else.
+
+    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null);
+
+    internal static class Rgb
+    {
+        private static readonly Regex Rx = new("^#[0-9a-fA-F]{6}$", RegexOptions.Compiled);
+        public static bool Valid(string? s) => s != null && Rx.IsMatch(s);
+        public static string Norm(string? s) => Valid(s) ? s!.ToLowerInvariant() : "";
+
+        public static (int R, int G, int B) Parse(string hex) =>
+            (int.Parse(hex.Substring(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
+             int.Parse(hex.Substring(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture),
+             int.Parse(hex.Substring(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+
+        public static string From(int r, int g, int b) =>
+            "#" + Math.Clamp(r, 0, 255).ToString("x2", CultureInfo.InvariantCulture) + Math.Clamp(g, 0, 255).ToString("x2", CultureInfo.InvariantCulture) + Math.Clamp(b, 0, 255).ToString("x2", CultureInfo.InvariantCulture);
+
+        // 0 (black) .. 1 (white), by the usual weights
+        public static double Luminance(string hex)
+        {
+            var (r, g, b) = Parse(hex);
+            return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+        }
+
+        // a toward b by t (0..1)
+        public static string Mix(string a, string b, double t)
+        {
+            var (ar, ag, ab) = Parse(a); var (br, bg, bb) = Parse(b);
+            t = Math.Clamp(t, 0, 1);
+            return From((int)Math.Round(ar + (br - ar) * t), (int)Math.Round(ag + (bg - ag) * t), (int)Math.Round(ab + (bb - ab) * t));
+        }
+    }
+
+    internal static class ThemePacks
+    {
+        public const string DefaultId = "default";
+
+        // The look Recognition starts with is pack "default": choosing it removes every override.
+        public static readonly ThemePack[] Presets =
+        {
+            new("default",  "Recognition",   "#1b1e24", "#d6dae2", "#2b6cb0", "default", true),
+            new("midnight", "Midnight",      "#161922", "#e6e8ee", "#5b8def", "slate",   true),
+            new("aurora",   "Aurora",        "#1a2430", "#e6f0f5", "#35c6b1", "aurora",  true),
+            new("dusk",     "Dusk",          "#26203a", "#ece8f7", "#9b7bf0", "dusk",    true),
+            new("forest",   "Forest",        "#18261f", "#e4f0e8", "#4fb477", "forest",  true),
+            new("ember",    "Ember",         "#2a1f1c", "#f3e8e2", "#e8743b", "default", true),
+            new("paper",    "Paper",         "#f1f3f6", "#1f2430", "#2b6cb0", "light",   false),
+            new("sand",     "Sand",          "#efe7d8", "#2b2418", "#b7791f", "light",   false),
+        };
+
+        public static ThemePack? Find(string? id) => Presets.FirstOrDefault(p => string.Equals(p.Id, (id ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+        // A pack made from a bar colour, a text colour and an accent you chose yourself.
+        public static ThemePack? Custom(string? bar, string? text, string? accent, string startBg)
+        {
+            if (!Rgb.Valid(bar) || !Rgb.Valid(text) || !Rgb.Valid(accent)) return null;
+            var b = Rgb.Norm(bar);
+            return new ThemePack("custom", "Custom", b, Rgb.Norm(text), Rgb.Norm(accent), startBg, Rgb.Luminance(b) < 0.5);
+        }
+
+        // Colours in a Chrome theme are [r,g,b] or [r,g,b,a] with 0..255 (alpha 0..1); a float anywhere makes it invalid.
+        private static string? Color(JsonElement colors, string key)
+        {
+            if (colors.ValueKind != JsonValueKind.Object || !colors.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.Array) return null;
+            var parts = v.EnumerateArray().ToList();
+            if (parts.Count < 3 || parts.Count > 4) return null;
+            var n = new int[3];
+            for (int i = 0; i < 3; i++)
+            {
+                if (parts[i].ValueKind != JsonValueKind.Number || !parts[i].TryGetInt32(out var x) || x < 0 || x > 255) return null;
+                n[i] = x;
+            }
+            return Rgb.From(n[0], n[1], n[2]);
+        }
+
+        // null when the manifest is not a theme (no "theme" object) or has no usable colour at all.
+        public static ThemePack? FromChromeTheme(string? manifestJson, string fallbackName = "Imported theme")
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(manifestJson) || manifestJson.Length > 1_000_000) return null;
+                using var doc = JsonDocument.Parse(manifestJson, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                var r = doc.RootElement;
+                if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("theme", out var th) || th.ValueKind != JsonValueKind.Object) return null;
+                th.TryGetProperty("colors", out var colors);
+                var bar = Color(colors, "toolbar") ?? Color(colors, "frame") ?? Color(colors, "ntp_background");
+                string? ntpImage = null;
+                if (th.TryGetProperty("images", out var imgs) && imgs.ValueKind == JsonValueKind.Object && imgs.TryGetProperty("theme_ntp_background", out var ni) && ni.ValueKind == JsonValueKind.String)
+                    ntpImage = SafeImagePath(ni.GetString());
+                if (bar == null && ntpImage == null) return null;
+                bar ??= "#1b1e24";
+                bool dark = Rgb.Luminance(bar) < 0.5;
+                var text = Color(colors, "toolbar_text") ?? Color(colors, "bookmark_text") ?? Color(colors, "tab_text") ?? (dark ? "#e6e8ee" : "#1f2430");
+                // text that cannot be read on the bar is replaced
+                if (Math.Abs(Rgb.Luminance(text) - Rgb.Luminance(bar)) < 0.3) text = dark ? "#e6e8ee" : "#1f2430";
+                var accent = Color(colors, "button_background") ?? Color(colors, "ntp_link") ?? "#2b6cb0";
+                var start = Color(colors, "ntp_background") ?? "default";
+                string name = fallbackName;
+                if (r.TryGetProperty("name", out var nm) && nm.ValueKind == JsonValueKind.String) { var s = new string((nm.GetString() ?? "").Where(c => !char.IsControl(c)).ToArray()).Trim(); if (s.Length > 0) name = s.Length > 40 ? s.Substring(0, 40) : s; }
+                return new ThemePack("imported", name, bar, text, accent, start, dark, ntpImage);
+            }
+            catch { return null; }
+        }
+
+        // a relative path inside the theme folder, forward or back slashes, no drive, no "..", a picture extension
+        public static string? SafeImagePath(string? p)
+        {
+            if (string.IsNullOrWhiteSpace(p) || p.Length > 200) return null;
+            var s = p.Replace('\\', '/').Trim();
+            if (s.StartsWith("/") || s.Contains(':') || s.Split('/').Any(x => x == ".." || x == "." || x.Length == 0 || x.Any(char.IsControl))) return null;
+            var ext = s.Substring(s.LastIndexOf('.') + 1).ToLowerInvariant();
+            return s.LastIndexOf('.') > 0 && (ext is "png" or "jpg" or "jpeg" or "gif" or "bmp") ? s : null;
+        }
+    }
+
+    // Every colour the window chrome uses, from the three the person chose.
+    internal static class ChromeColors
+    {
+        public static readonly string[] Keys =
+            { "Win", "Bar", "Side", "Field", "Line", "Line2", "Hover", "Tab", "TabSel", "TabHover", "Text", "Muted", "Accent", "AccentHover", "MenuBg", "MenuSel" };
+
+        public static Dictionary<string, string> Derive(string bar, string text, string accent)
+        {
+            bar = Rgb.Valid(bar) ? Rgb.Norm(bar) : "#1b1e24";
+            text = Rgb.Valid(text) ? Rgb.Norm(text) : "#d6dae2";
+            accent = Rgb.Valid(accent) ? Rgb.Norm(accent) : "#2b6cb0";
+            bool dark = Rgb.Luminance(bar) < 0.5;
+            const string black = "#000000", white = "#ffffff";
+            var d = new Dictionary<string, string>();
+            if (dark)
+            {
+                d["Win"] = Rgb.Mix(bar, black, .40); d["Side"] = Rgb.Mix(bar, black, .22); d["Field"] = Rgb.Mix(bar, black, .35);
+                d["Line"] = Rgb.Mix(bar, white, .10); d["Line2"] = Rgb.Mix(bar, white, .14); d["Hover"] = Rgb.Mix(bar, white, .09);
+                d["Tab"] = Rgb.Mix(bar, white, .04); d["TabSel"] = Rgb.Mix(bar, white, .12); d["TabHover"] = Rgb.Mix(bar, white, .08);
+                d["MenuBg"] = Rgb.Mix(bar, black, .25); d["MenuSel"] = Rgb.Mix(accent, black, .45);
+            }
+            else
+            {
+                d["Win"] = Rgb.Mix(bar, black, .08); d["Side"] = Rgb.Mix(bar, black, .04); d["Field"] = Rgb.Mix(bar, white, .70);
+                d["Line"] = Rgb.Mix(bar, black, .14); d["Line2"] = Rgb.Mix(bar, black, .20); d["Hover"] = Rgb.Mix(bar, black, .08);
+                d["Tab"] = Rgb.Mix(bar, black, .05); d["TabSel"] = Rgb.Mix(bar, white, .55); d["TabHover"] = Rgb.Mix(bar, black, .09);
+                d["MenuBg"] = Rgb.Mix(bar, white, .45); d["MenuSel"] = Rgb.Mix(accent, white, .65);
+            }
+            d["Bar"] = bar; d["Text"] = text; d["Accent"] = accent; d["AccentHover"] = Rgb.Mix(accent, white, .14);
+            d["Muted"] = Rgb.Mix(text, bar, .38);
+            return d;
+        }
+    }
+
+    // Finding extensions: a store link or a bare id becomes the store's own download address. The download itself is the governed one
+    // (https only, size limit, review before install); this only builds the address.
+    internal static class ExtSources
+    {
+        private static readonly Regex IdRx = new("^[a-p]{32}$", RegexOptions.Compiled);
+
+        public sealed record Source(string Store, string Id);
+
+        public static bool IsId(string? s) => s != null && IdRx.IsMatch(s);
+
+        // chrome: chromewebstore.google.com/detail/<name>/<id> or chrome.google.com/webstore/detail/<name>/<id>
+        // edge:   microsoftedge.microsoft.com/addons/detail/<name>/<id>
+        // a bare 32-letter id is taken as a Chrome Web Store id
+        public static Source? Parse(string? input)
+        {
+            var s = (input ?? "").Trim();
+            if (s.Length == 0 || s.Length > 500 || s.Any(char.IsControl)) return null;
+            if (IsId(s)) return new Source("chrome", s);
+            if (!Uri.TryCreate(s, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps || u.UserInfo.Length > 0) return null;
+            var host = u.Host.ToLowerInvariant();
+            string? store = host switch
+            {
+                "chromewebstore.google.com" or "chrome.google.com" => "chrome",
+                "microsoftedge.microsoft.com" => "edge",
+                _ => null
+            };
+            if (store == null) return null;
+            var path = u.AbsolutePath;
+            if (store == "chrome" && !(path.StartsWith("/detail/", StringComparison.Ordinal) || path.StartsWith("/webstore/detail/", StringComparison.Ordinal))) return null;
+            if (store == "edge" && !path.StartsWith("/addons/detail/", StringComparison.Ordinal)) return null;
+            var last = path.TrimEnd('/').Split('/').LastOrDefault() ?? "";
+            return IsId(last) ? new Source(store, last) : null;
+        }
+
+        public static string Url(Source s, string engineMajor)
+        {
+            var major = new string((engineMajor ?? "").Where(char.IsAsciiDigit).Take(4).ToArray());
+            if (major.Length == 0) major = "120";
+            var x = "id%3D" + s.Id + "%26installsource%3Dondemand%26uc";
+            return s.Store == "edge"
+                ? "https://edge.microsoft.com/extensionwebstorebase/v1/crx?response=redirect&prodversion=" + major + "&x=" + x
+                : "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=" + major + "&acceptformat=crx2,crx3&x=" + x;
+        }
+    }
+}

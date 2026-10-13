@@ -32,5 +32,7 @@ pwsh -File scripts\RUN_RELEASE_GATE_V1.ps1 -RepoRoot . -RequirePublishClean -Req
 ## Honest open items (not release-blocking, tracked)
 
 - Ecosystem canon (`C:\dev\_ecosystem\*`) unavailable to the auditor — release criteria there, if any, not reflected.
-- Browser: multi-tab, VPN policy (5.3), and locked-startup gating (§20) in front of launch are not yet wired.
+- Browser: tabs, VPN policy and workspace features exist (see CURRENT_STATE.md); locked-startup gating (§20) in front of launch is not yet wired.
+- Everything from v1.3.8 onward must be built and run on a real machine before release: build, tests, selftest, UPDATE_ALL, and the smoke tests in docs/SMOKE_TEST_REAL_SITES.md.
+- No LICENSE file is present; choosing one is the owner's decision.
 - §31 "clean browser session" remains synthetic until the WebView2 shell's real sessions feed the timeline.

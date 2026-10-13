@@ -19,14 +19,16 @@ namespace Recognition.Browser
     {
         // Addresses to open once the first tab exists. Filled from the command line and from the second-launch messages.
         internal static readonly ConcurrentQueue<string> PendingUrls = new();
+        internal static string? PendingSpecial;   // "--private" or "--new-tab" from the taskbar menu, until the first tab exists
 
         private Mutex? _mutex;
         private CancellationTokenSource? _cts;
-        private Window? _splash;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             var url = LaunchArgs.FromArgs(e.Args, File.Exists);
+            // the taskbar menu starts the program with one of two fixed switches; nothing else is read from them
+            string? special = Array.IndexOf(e.Args, "--private") >= 0 ? "--private" : Array.IndexOf(e.Args, "--new-tab") >= 0 ? "--new-tab" : null;
             var id = InstanceId();
             try
             {
@@ -36,11 +38,12 @@ namespace Recognition.Browser
                 {
                     try { first = _mutex.WaitOne(12000); } catch (AbandonedMutexException) { first = true; }
                 }
-                if (!first) { SendToRunning(id, url ?? ""); Shutdown(); return; }
+                if (!first) { SendToRunning(id, special ?? url ?? ""); Shutdown(); return; }
             }
             catch { /* no mutex: run anyway, never block the browser from starting */ }
 
             if (url != null) PendingUrls.Enqueue(url);
+            if (special != null) PendingSpecial = special;
             ShowSplash();
             base.OnStartup(e);
             _cts = new CancellationTokenSource();
@@ -87,6 +90,7 @@ namespace Recognition.Browser
                     var buf = new byte[LaunchArgs.MaxLen * 3 + 8]; int total = 0;
                     while (total < buf.Length) { int n = await s.ReadAsync(buf.AsMemory(total), rd.Token); if (n == 0) break; total += n; }
                     var text = total >= buf.Length ? "" : Encoding.UTF8.GetString(buf, 0, total).Trim();
+                    if (text == "--private" || text == "--new-tab") { var sp = text; _ = Dispatcher.BeginInvoke(new Action(() => { FindMain()?.OpenSpecialFromOutside(sp); })); continue; }
                     var url = text.Length == 0 ? "" : LaunchArgs.Parse(text, File.Exists);
                     if (url != null) _ = Dispatcher.BeginInvoke(new Action(() => { FindMain()?.OpenFromOutside(url); }));
                 }
@@ -103,32 +107,11 @@ namespace Recognition.Browser
         }
 
         // ---- splash ------------------------------------------------------------------------------------------------------------
-        private void ShowSplash()
-        {
-            try
-            {
-                var title = new TextBlock { Text = "Recognition", FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xEA, 0xEE)), HorizontalAlignment = HorizontalAlignment.Center, FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI") };
-                var sub = new TextBlock { Text = "Governed browser  ·  starting", FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0x7F, 0x87, 0x94)), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 22), FontFamily = new FontFamily("Segoe UI") };
-                var bar = new ProgressBar { IsIndeterminate = true, Height = 3, Width = 180, Background = new SolidColorBrush(Color.FromRgb(0x24, 0x28, 0x31)), Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0x9B, 0xF0)), BorderThickness = new Thickness(0) };
-                var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                panel.Children.Add(title); panel.Children.Add(sub); panel.Children.Add(bar);
-                _splash = new Window
-                {
-                    WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true,
-                    Width = 420, Height = 220, WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                    Background = new SolidColorBrush(Color.FromRgb(0x11, 0x13, 0x18)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2E, 0x36)), BorderThickness = new Thickness(1),
-                    Content = panel
-                };
-                _splash.Show();
-                var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };   // never leave it up if start-up stalls
-                t.Tick += (_, __) => { t.Stop(); CloseSplash(); };
-                t.Start();
-            }
-            catch { _splash = null; }
-        }
+        // No separate loading window: the main window opens at once and shows a small "starting" cover inside itself,
+        // which is removed the moment start-up finishes (MainWindow.HideLoading).
+        private void ShowSplash() { }
 
-        private void CloseSplash() { try { _splash?.Close(); } catch { } _splash = null; }
+        private void CloseSplash() { try { FindMain()?.HideLoading(); } catch { } }
         internal static void HideSplash() { try { (Current as App)?.CloseSplash(); } catch { } }
     }
 }

@@ -112,7 +112,7 @@ namespace Recognition.Browser
                 }
                 else return;
                 ReloadStartTabs();
-                if (from.Internal == "settings") LoadInternal(from, "settings");
+                if (from.Internal is "settings" or "customize") LoadInternal(from, from.Internal);
             }
             catch (Exception ex) { Status("start page setting failed: " + ex.Message); }
         }

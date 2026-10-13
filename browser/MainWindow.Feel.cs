@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Windows.Media.Imaging;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -41,6 +43,7 @@ namespace Recognition.Browser
         // ---- bookmarks bar ------------------------------------------------------------------------------------------------
         private void RebuildBookmarksBar()
         {
+            SaveBookmarkIcons();
             try
             {
                 BookmarksBarItems.Children.Clear();
@@ -51,7 +54,7 @@ namespace Recognition.Browser
                         Text = "Bookmarks you save with the star appear here.", Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x90, 0x9A)),
                         FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 8, 0)
                     });
-                    var imp = new Button { Content = "Import bookmarks", Style = (Style)FindResource("NavBtn"), FontSize = 12, Padding = new Thickness(8, 3, 8, 3), Foreground = new SolidColorBrush(Color.FromRgb(0x6F, 0xA8, 0xF0)) };
+                    var imp = new Button { Content = "Import bookmarks", Style = (Style)FindResource("NavBtn"), FontSize = 12, Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(2, 0, 2, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x6F, 0xA8, 0xF0)) };
                     imp.Click += (_, __) => ImportBookmarks();
                     BookmarksBarItems.Children.Add(imp);
                     return;
@@ -64,7 +67,7 @@ namespace Recognition.Browser
 
         private Button MakeFolderChip(string folder)
         {
-            var btn = new Button { Content = "\U0001F4C1  " + folder + "  \u25BE", Style = (Style)FindResource("NavBtn"), Padding = new Thickness(8, 3, 8, 3), FontSize = 12, ToolTip = "Folder" };
+            var btn = new Button { Content = "\U0001F4C1  " + folder + "  \u25BE", Style = (Style)FindResource("NavBtn"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(2, 0, 2, 0), FontSize = 12, ToolTip = "Folder" };
             btn.Click += (_, __) =>
             {
                 var cm = new ContextMenu { PlacementTarget = btn, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
@@ -79,11 +82,70 @@ namespace Recognition.Browser
             return btn;
         }
 
+        // ---- bookmark icons ------------------------------------------------------------------------------------------
+        // Pages send their own small icon. Icons seen this session are kept in memory; the ones for bookmarked sites are
+        // also saved (encrypted, same as the bookmarks) so the bar shows them next time. Private tabs are never recorded.
+        private readonly Dictionary<string, byte[]> _favSeen = new();
+        private Dictionary<string, byte[]>? _favSaved;
+        private string FavPath() => Path.Combine(_repoRoot, "runtime", "bookmark_icons.v1.enc");
+        private static string FavKey(string? url)
+        {
+            try { var h = new Uri(url ?? "").Host.ToLowerInvariant(); return h.StartsWith("www.") ? h.Substring(4) : h; } catch { return ""; }
+        }
+        private Dictionary<string, byte[]> FavSaved()
+        {
+            if (_favSaved != null) return _favSaved;
+            _favSaved = new Dictionary<string, byte[]>();
+            try
+            {
+                if (File.Exists(FavPath()))
+                    using (var d = JsonDocument.Parse(ReadSecure(FavPath())))
+                        foreach (var p in d.RootElement.EnumerateObject())
+                            if (p.Value.ValueKind == JsonValueKind.String && _favSaved.Count < 500) { var b = Convert.FromBase64String(p.Value.GetString() ?? ""); if (b.Length > 0 && b.Length <= 65536) _favSaved[p.Name] = b; }
+            }
+            catch { _favSaved = new Dictionary<string, byte[]>(); }
+            return _favSaved;
+        }
+        private void NoteFavicon(string? pageUrl, byte[] png)
+        {
+            var key = FavKey(pageUrl);
+            if (key.Length == 0 || png.Length == 0 || png.Length > 65536) return;
+            if (_favSeen.Count < 1000 || _favSeen.ContainsKey(key)) _favSeen[key] = png;
+            if (_bookmarks.Any(b => FavKey(b.Url) == key) && !(FavSaved().TryGetValue(key, out var old) && old.AsSpan().SequenceEqual(png))) RebuildBookmarksBar();
+        }
+        private BitmapSource? BookmarkIcon(string host)
+        {
+            var key = FavKey("https://" + host);
+            byte[]? png = null;
+            if (_favSeen.TryGetValue(key, out var seen)) png = seen; else FavSaved().TryGetValue(key, out png);
+            if (png == null) return null;
+            try
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit(); bmp.CacheOption = BitmapCacheOption.OnLoad; bmp.StreamSource = new MemoryStream(png); bmp.EndInit(); bmp.Freeze();
+                return bmp;
+            }
+            catch { return null; }
+        }
+        private void SaveBookmarkIcons()
+        {
+            try
+            {
+                var saved = FavSaved(); bool dirty = false;
+                var keep = new HashSet<string>(_bookmarks.Select(b => FavKey(b.Url)).Where(k => k.Length > 0));
+                foreach (var k in keep) if (_favSeen.TryGetValue(k, out var png) && !(saved.TryGetValue(k, out var o) && o.AsSpan().SequenceEqual(png))) { saved[k] = png; dirty = true; }
+                foreach (var k in saved.Keys.Where(k => !keep.Contains(k)).ToList()) { saved.Remove(k); dirty = true; }
+                if (dirty) { Directory.CreateDirectory(Path.GetDirectoryName(FavPath())!); WriteSecure(FavPath(), JsonSerializer.Serialize(saved.ToDictionary(kv => kv.Key, kv => Convert.ToBase64String(kv.Value)))); }
+            }
+            catch { }
+        }
+
         private Button MakeBookmarkChip(Bookmark b)
         {
             string host = ""; try { host = new Uri(b.Url).Host; } catch { }
             var c = SiteBadge.Color(host);
-            var badge = new Border
+            var icon = BookmarkIcon(host);
+            FrameworkElement badge = icon != null ? new Image { Source = icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center } : new Border
             {
                 Width = 16, Height = 16, CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 0, 6, 0), Background = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)),
                 Child = new TextBlock { Text = SiteBadge.Letter(host), Foreground = Brushes.White, FontSize = 10, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
@@ -95,7 +157,7 @@ namespace Recognition.Browser
             };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
             sp.Children.Add(badge); sp.Children.Add(label);
-            var btn = new Button { Content = sp, Style = (Style)FindResource("NavBtn"), Padding = new Thickness(8, 3, 8, 3), ToolTip = b.Url, FontSize = 12 };
+            var btn = new Button { Content = sp, Style = (Style)FindResource("NavBtn"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(2, 0, 2, 0), ToolTip = b.Url, FontSize = 12 };
             var url = b.Url;
             btn.Click += (_, __) => OpenBookmark(url, false);
             btn.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle) OpenBookmark(url, true); };
@@ -287,7 +349,7 @@ namespace Recognition.Browser
                         return;
                 }
                 SaveSettings(); ApplyLayout();
-                if (from.Internal == "settings") LoadInternal(from, "settings");
+                if (from.Internal is "settings" or "customize") LoadInternal(from, from.Internal);
             }
             catch (Exception ex) { Status("setting failed: " + ex.Message); }
         }

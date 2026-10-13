@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:Recognition.Browser"
         Title="Recognition — Governed Browser" Height="820" Width="1280"
         WindowStartupLocation="CenterScreen"
-        Background="#111318"
+        Background="{DynamicResource ChromeWin}"
         Icon="recognition.ico"
         PreviewKeyDown="Window_PreviewKeyDown">
   <Window.CommandBindings>
@@ -19,25 +19,32 @@
     </Grid.RowDefinitions>
 
     <!-- Chrome: nav + address + actions -->
-    <Border Grid.Row="0" Background="#1B1E24" BorderBrush="#2A2E36" BorderThickness="0,0,0,1">
-      <Grid Margin="8,6">
+    <Border Grid.Row="0" Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,0,1">
+      <Grid Margin="12,9">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>  <!-- back -->
           <ColumnDefinition Width="Auto"/>  <!-- forward -->
-          <ColumnDefinition Width="Auto"/>  <!-- reload -->
           <ColumnDefinition Width="Auto"/>  <!-- home -->
+          <ColumnDefinition Width="Auto"/>  <!-- private -->
+          <ColumnDefinition Width="Auto"/>  <!-- reload -->
           <ColumnDefinition Width="*"/>     <!-- address -->
           <ColumnDefinition Width="Auto"/>  <!-- go -->
           <ColumnDefinition Width="Auto"/>  <!-- new tab -->
           <ColumnDefinition Width="Auto"/>  <!-- menu -->
           <ColumnDefinition Width="Auto"/>  <!-- export -->
         </Grid.ColumnDefinitions>
-        <Button x:Name="BackBtn"   Grid.Column="0" Content="&#x25C0;" ToolTip="Back (Alt+Left)"     Click="Back_Click"    Style="{StaticResource NavBtn}"/>
-        <Button x:Name="FwdBtn"    Grid.Column="1" Content="&#x25B6;" ToolTip="Forward (Alt+Right)" Click="Forward_Click" Style="{StaticResource NavBtn}"/>
-        <Button x:Name="ReloadBtn" Grid.Column="2" Content="&#x27F3;" ToolTip="Reload (Ctrl+R)"     Click="Reload_Click"  Style="{StaticResource NavBtn}"/>
-        <Button x:Name="HomeBtn"   Grid.Column="3" Content="&#x2302;" ToolTip="Home (Alt+Home)"     Click="Home_Click"    Style="{StaticResource NavBtn}"/>
+        <Button x:Name="BackBtn"   Grid.Column="0" Content="&#xE72B;" ToolTip="Back (Alt+Left)"     Click="Back_Click"    Style="{StaticResource IconBtn}"/>
+        <Button x:Name="FwdBtn"    Grid.Column="1" Content="&#xE72A;" ToolTip="Forward (Alt+Right)" Click="Forward_Click" Style="{StaticResource IconBtn}"/>
+        <Button x:Name="HomeBtn"   Grid.Column="2" Content="&#xE80F;" ToolTip="Home (Alt+Home)"     Click="Home_Click"    Style="{StaticResource IconBtn}"/>
+        <Button x:Name="PrivateBtn" Grid.Column="3" ToolTip="New private tab (Ctrl+Shift+N)" Click="MenuPrivateBtn_Click" Style="{StaticResource IconBtn}">
+          <Viewbox Width="18" Height="18"><Canvas Width="24" Height="24">
+                <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Data="M6.5,10 L8.7,4 Q9,3.3 9.8,3.3 H14.2 Q15,3.3 15.3,4 L17.5,10 Z M3,11.2 H21 V12.8 H3 Z"/>
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Data="M4.5,17.5 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M13.5,17.5 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M10.5,17 Q12,15.8 13.5,17"/>
+              </Canvas></Viewbox>
+        </Button>
+        <Button x:Name="ReloadBtn" Grid.Column="4" Content="&#xE72C;" ToolTip="Reload (Ctrl+R)"     Click="Reload_Click"  Style="{StaticResource IconBtn}"/>
 
-        <Border x:Name="AddrBorder" Grid.Column="4" Background="#0E1015" BorderBrush="#2E333C" BorderThickness="1" CornerRadius="7" Margin="8,0">
+        <Border x:Name="AddrBorder" Grid.Column="5" Background="{DynamicResource ChromeField}" BorderBrush="{DynamicResource ChromeLine2}" BorderThickness="1" CornerRadius="9" Margin="12,0" Height="38">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
@@ -46,26 +53,20 @@
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="&#128274;" Foreground="#6FCF97" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="12"/>
-            <TextBox x:Name="AddressBar" Grid.Column="1" Background="Transparent" Foreground="#E8E8E8"
-                     BorderThickness="0" VerticalContentAlignment="Center" Padding="8,7" CaretBrush="#E8E8E8"
-                     FontSize="13" KeyDown="Address_KeyDown" TextChanged="Address_TextChanged"
+            <TextBlock Grid.Column="0" Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#6FCF97" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13"/>
+            <TextBox x:Name="AddressBar" Grid.Column="1" Background="Transparent" Foreground="{DynamicResource ChromeText}"
+                     BorderThickness="0" VerticalContentAlignment="Center" Padding="8,7" CaretBrush="{DynamicResource ChromeText}"
+                     FontSize="13" PreviewKeyDown="Address_PreviewKeyDown" KeyDown="Address_KeyDown" TextChanged="Address_TextChanged"
                      GotKeyboardFocus="Address_GotFocus" LostKeyboardFocus="Address_LostFocus"/>
-            <Button x:Name="VpnBtn" Grid.Column="2" Content="&#x1F310;" ToolTip="VPN — click for network settings"
-                    Foreground="#8B909A" Background="Transparent" BorderThickness="0" FontSize="13"
-                    Padding="6,0" Cursor="Hand" Click="Vpn_Click"/>
-            <Button x:Name="ShieldBtn" Grid.Column="3" Content="&#x1F6E1;" ToolTip="Trackers &amp; ads blocked — click for settings"
-                    Foreground="#6FCF97" Background="Transparent" BorderThickness="0" FontSize="13"
-                    Padding="6,0" Cursor="Hand" Click="Shield_Click"/>
-            <Button x:Name="StarBtn" Grid.Column="4" Content="&#x2606;" ToolTip="Bookmark this page (Ctrl+D)"
-                    Foreground="#C7CCD4" Background="Transparent" BorderThickness="0" FontSize="15"
-                    Padding="8,0" Cursor="Hand" Click="Star_Click" Style="{StaticResource NavBtn}" Visibility="Collapsed"/>
+            <Button x:Name="VpnBtn" Grid.Column="2" Content="&#xE774;" ToolTip="VPN: click for network settings" Foreground="{DynamicResource ChromeMuted}" Style="{StaticResource IconBtn}" Width="Auto" MinWidth="30" Height="30" FontSize="14" Click="Vpn_Click"/>
+            <Button x:Name="ShieldBtn" Grid.Column="3" Content="&#xEA18;" ToolTip="Trackers and ads blocked: click for settings" Foreground="#6FCF97" Style="{StaticResource IconBtn}" Width="Auto" MinWidth="30" Height="30" FontSize="14" Click="Shield_Click"/>
+            <Button x:Name="StarBtn" Grid.Column="4" Content="&#xE734;" ToolTip="Bookmark this page (Ctrl+D)" Style="{StaticResource IconBtn}" Width="30" Height="30" FontSize="14" Margin="2,0,4,0" Click="Star_Click" Visibility="Collapsed"/>
           </Grid>
         </Border>
 
-        <Button x:Name="GoBtn"     Grid.Column="5" Content="Go"       Click="Go_Click"     Style="{StaticResource NavBtn}"/>
-        <Button x:Name="NewTabBtn" Grid.Column="6" Content="&#x2795;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click" Style="{StaticResource NavBtn}"/>
-        <Button x:Name="MenuBtn"   Grid.Column="7" Content="&#x2630;" ToolTip="Menu"       Click="Menu_Click"   Style="{StaticResource NavBtn}">
+        <Button x:Name="GoBtn" Grid.Column="6" Content="&#xE751;" ToolTip="Go" Click="Go_Click" Style="{StaticResource IconBtn}" Visibility="Collapsed"/>
+        <Button x:Name="NewTabBtn" Grid.Column="7" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click" Style="{StaticResource IconBtn}" Visibility="Collapsed"/>
+        <Button x:Name="MenuBtn" Grid.Column="8" Content="&#xE712;" ToolTip="Menu" Click="Menu_Click" Style="{StaticResource IconBtn}" Margin="2,0,6,0">
           <Button.ContextMenu>
             <ContextMenu>
               <MenuItem Header="New tab"          Click="MenuNewTab_Click"     InputGestureText="Ctrl+T"/>
@@ -120,6 +121,7 @@
                 <MenuItem Header="SoteriaVault link" Click="MenuSoteria_Click"/>
               </MenuItem>
               <MenuItem Header="Extensions" Click="MenuExtensions_Click"/>
+              <MenuItem Header="Customize (themes, colours, backgrounds)" Click="MenuCustomize_Click"/>
               <MenuItem Header="Tools (PDF, images)" Click="MenuTools_Click"/>
               <MenuItem Header="Setup snapshot" Click="MenuSetup_Click"/>
               <Separator/>
@@ -128,71 +130,69 @@
             </ContextMenu>
           </Button.ContextMenu>
         </Button>
-        <Button x:Name="ExportBtn" Grid.Column="8" Content="Export Session" ToolTip="Export a governed evidence packet"
-                Click="Export_Click" Style="{StaticResource AccentBtn}"/>
+        <Button x:Name="ExportBtn" Grid.Column="9" Content="Export Session" ToolTip="Export a governed evidence packet"
+                Click="Export_Click" Style="{StaticResource AccentBtn}" Height="34" Margin="0"/>
       </Grid>
     </Border>
 
     <!-- Tab strip + find bar over a persistent web host -->
     <DockPanel Grid.Row="1" LastChildFill="True">
-      <Border x:Name="SideBar" DockPanel.Dock="Left" Width="46" Background="#15181D" BorderBrush="#2A2E36" BorderThickness="0,0,1,0">
+      <Border x:Name="SideBar" DockPanel.Dock="Left" Width="54" Background="{DynamicResource ChromeSide}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,1,0">
         <DockPanel LastChildFill="False">
           <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe UI Emoji" FontSize="15" Margin="5,2" Width="34" Height="34" Content="&#x1F576;" ToolTip="New private tab (Ctrl+Shift+N)" Click="MenuPrivateBtn_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE80F;" ToolTip="Home" Click="MenuHome_Click"/>
-            <Border Height="1" Margin="9,6" Background="#2A2E36"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe UI Emoji" FontSize="15" Margin="5,2" Width="34" Height="34" Content="&#x1F4CA;" ToolTip="Overview: stats, cookies, trackers" Click="MenuOverview_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE734;" ToolTip="Bookmarks" Click="MenuBookmarks_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE81C;" ToolTip="History" Click="MenuHistory_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE896;" ToolTip="Downloads" Click="MenuDownloads_Click"/>
-            <Border Height="1" Margin="9,6" Background="#2A2E36"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xEA18;" ToolTip="Shield (ads, trackers, fingerprinting)" Click="MenuShield_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE72E;" ToolTip="Passwords" Click="MenuPasswords_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE774;" ToolTip="VPN / proxy" Click="Vpn_Click"/>
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE90F;" ToolTip="Tools (PDF, images, page tools)" Click="MenuTools_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Click="NewTab_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" ToolTip="New private tab (Ctrl+Shift+N)" Click="MenuPrivateBtn_Click"><Viewbox Width="18" Height="18"><Canvas Width="24" Height="24">
+                <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Data="M6.5,10 L8.7,4 Q9,3.3 9.8,3.3 H14.2 Q15,3.3 15.3,4 L17.5,10 Z M3,11.2 H21 V12.8 H3 Z"/>
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Data="M4.5,17.5 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M13.5,17.5 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M10.5,17 Q12,15.8 13.5,17"/>
+              </Canvas></Viewbox></Button>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE80F;" ToolTip="Home" Click="MenuHome_Click"/>
+            <Border Height="1" Margin="9,6" Background="{DynamicResource ChromeLine}"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE9D9;" ToolTip="Overview: stats, cookies, trackers" Click="MenuOverview_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE734;" ToolTip="Bookmarks" Click="MenuBookmarks_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE81C;" ToolTip="History" Click="MenuHistory_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE896;" ToolTip="Downloads" Click="MenuDownloads_Click"/>
+            <Border Height="1" Margin="9,6" Background="{DynamicResource ChromeLine}"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xEA18;" ToolTip="Shield (ads, trackers, fingerprinting)" Click="MenuShield_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE72E;" ToolTip="Passwords" Click="MenuPasswords_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE774;" ToolTip="VPN / proxy" Click="Vpn_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE90F;" ToolTip="Tools (PDF, images, page tools)" Click="MenuTools_Click"/>
           </StackPanel>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,8">
-            <Button Style="{StaticResource NavBtn}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Margin="5,2" Width="34" Height="34" Content="&#xE713;" ToolTip="Settings" Click="MenuSettings_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE790;" ToolTip="Customize: themes, colours, backgrounds" Click="MenuCustomize_Click"/>
+            <Button Style="{StaticResource IconBtn}" Margin="7,3" Content="&#xE713;" ToolTip="Settings" Click="MenuSettings_Click"/>
           </StackPanel>
         </DockPanel>
       </Border>
 
-      <TabControl x:Name="Tabs" DockPanel.Dock="Top" Background="#15181D" BorderThickness="0"
+      <TabControl x:Name="Tabs" DockPanel.Dock="Top" Background="{DynamicResource ChromeSide}" BorderThickness="0"
                   SelectionChanged="Tabs_SelectionChanged">
         <TabControl.Template>
           <ControlTemplate TargetType="TabControl">
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                          Background="#15181D">
+                          Background="{DynamicResource ChromeSide}">
               <!-- tabs, then a "+" right after the last tab (like every mainstream browser) -->
-              <StackPanel Orientation="Horizontal" Margin="4,4,4,0">
+              <StackPanel Orientation="Horizontal" Margin="8,8,8,0">
                 <TabPanel IsItemsHost="True"/>
-                <Button Command="{x:Static local:MainWindow.PrivateTab}" Content="&#x1F576;" ToolTip="New private tab (Ctrl+Shift+N)" FontFamily="Segoe UI Emoji"
-                        Width="30" Height="28" Margin="2,2,0,0" VerticalAlignment="Center"
-                        Background="Transparent" Foreground="#C7CCD4" BorderThickness="0" FontSize="14" Cursor="Hand"/>
-                <Button Command="ApplicationCommands.New" Content="+" ToolTip="New tab (Ctrl+T)"
-                        Width="30" Height="28" Margin="4,2,0,0" VerticalAlignment="Center"
-                        Background="Transparent" Foreground="#C7CCD4" BorderThickness="0"
-                        FontSize="20" FontWeight="Bold" Padding="0,-4,0,0" Cursor="Hand"/>
+                <Button Command="ApplicationCommands.New" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Style="{StaticResource IconBtn}" Width="28" Height="28" FontSize="12" Margin="10,2,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </ScrollViewer>
           </ControlTemplate>
         </TabControl.Template>
       </TabControl>
 
-      <Border x:Name="BookmarksBar" DockPanel.Dock="Top" Background="#1B1E24" BorderBrush="#2A2E36" BorderThickness="0,0,0,1" Height="32">
+      <Border x:Name="BookmarksBar" DockPanel.Dock="Top" Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,0,1" Height="38">
         <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
-          <StackPanel x:Name="BookmarksBarItems" Orientation="Horizontal" Margin="6,0"/>
+          <StackPanel x:Name="BookmarksBarItems" Orientation="Horizontal" Margin="12,0" VerticalAlignment="Center"/>
         </ScrollViewer>
       </Border>
 
-      <Border x:Name="FindBar" DockPanel.Dock="Top" Background="#1B1E24" BorderBrush="#2A2E36"
+      <Border x:Name="FindBar" DockPanel.Dock="Top" Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}"
               BorderThickness="0,0,0,1" Visibility="Collapsed" Padding="8,5">
         <StackPanel Orientation="Horizontal">
-          <TextBlock Text="Find:" Foreground="#B8BDC7" VerticalAlignment="Center" Margin="2,0,8,0" FontSize="12"/>
-          <Border Background="#0E1015" BorderBrush="#2E333C" BorderThickness="1" CornerRadius="6" Width="280">
-            <TextBox x:Name="FindBox" Background="Transparent" Foreground="#E8E8E8" BorderThickness="0"
-                     VerticalContentAlignment="Center" Padding="8,5" CaretBrush="#E8E8E8" FontSize="12"
+          <TextBlock Text="Find:" Foreground="{DynamicResource ChromeMuted}" VerticalAlignment="Center" Margin="2,0,8,0" FontSize="12"/>
+          <Border Background="{DynamicResource ChromeField}" BorderBrush="{DynamicResource ChromeLine2}" BorderThickness="1" CornerRadius="6" Width="280">
+            <TextBox x:Name="FindBox" Background="Transparent" Foreground="{DynamicResource ChromeText}" BorderThickness="0"
+                     VerticalContentAlignment="Center" Padding="8,5" CaretBrush="{DynamicResource ChromeText}" FontSize="12"
                      KeyDown="FindBox_KeyDown"/>
           </Border>
           <Button Content="&#x25B2;" ToolTip="Previous (Shift+Enter)" Click="FindPrev_Click" Style="{StaticResource NavBtn}" Margin="6,0,0,0"/>
@@ -202,14 +202,21 @@
       </Border>
 
       <Grid x:Name="WebHost" Background="#1E1F22">
-        <GridSplitter x:Name="SplitBar" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#2A2E36" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Visibility="Collapsed" Panel.ZIndex="5"/>
+        <Grid x:Name="LoadingCover" Grid.ColumnSpan="3" Panel.ZIndex="20" Background="{DynamicResource ChromeWin}">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="Recognition" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource ChromeText}" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="LoadingText" Text="Starting..." FontSize="12" Foreground="{DynamicResource ChromeMuted}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+            <ProgressBar IsIndeterminate="True" Height="3" Width="180" BorderThickness="0" Background="{DynamicResource ChromeHover}" Foreground="{DynamicResource ChromeAccent}"/>
+          </StackPanel>
+        </Grid>
+        <GridSplitter x:Name="SplitBar" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource ChromeLine}" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" Visibility="Collapsed" Panel.ZIndex="5"/>
       </Grid>
     </DockPanel>
 
     <!-- Status strip -->
-    <Border Grid.Row="2" Background="#1B1E24" BorderBrush="#2A2E36" BorderThickness="0,1,0,0">
+    <Border Grid.Row="2" Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,1,0,0">
       <Grid Margin="10,4">
-        <TextBlock x:Name="StatusText" Foreground="#B8BDC7" FontSize="12" Text="starting…" HorizontalAlignment="Left"/>
+        <TextBlock x:Name="StatusText" Foreground="{DynamicResource ChromeMuted}" FontSize="12" Text="starting…" HorizontalAlignment="Left"/>
         <TextBlock x:Name="GovText" Foreground="#6FCF97" FontSize="12" HorizontalAlignment="Right"
                    Text="governed • HTTPS-first • no autofill • no telemetry"/>
       </Grid>
@@ -219,7 +226,7 @@
     <Popup x:Name="SuggestPopup" PlacementTarget="{Binding ElementName=AddrBorder}" Placement="Bottom"
            AllowsTransparency="True" StaysOpen="False" Focusable="False"
            HorizontalOffset="0" VerticalOffset="2">
-      <Border Background="#14171C" BorderBrush="#2E333C" BorderThickness="1" CornerRadius="8"
+      <Border Background="{DynamicResource ChromeMenuBg}" BorderBrush="{DynamicResource ChromeLine2}" BorderThickness="1" CornerRadius="8"
               MinWidth="{Binding ActualWidth, ElementName=AddrBorder}" Padding="4">
         <ListBox x:Name="SuggestList" Background="Transparent" BorderThickness="0" MaxHeight="320"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -246,10 +253,10 @@
           <ListBox.ItemTemplate>
             <DataTemplate>
               <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Icon}" Foreground="#7F8794" Width="20" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding Icon}" Foreground="{DynamicResource ChromeMuted}" Width="20" FontSize="12" VerticalAlignment="Center"/>
                 <StackPanel>
-                  <TextBlock Text="{Binding Primary}" Foreground="#E8E8E8" FontSize="13" TextTrimming="CharacterEllipsis" MaxWidth="820"/>
-                  <TextBlock Text="{Binding Secondary}" Foreground="#6D7480" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="820"/>
+                  <TextBlock Text="{Binding Primary}" Foreground="{DynamicResource ChromeText}" FontSize="13" TextTrimming="CharacterEllipsis" MaxWidth="820"/>
+                  <TextBlock Text="{Binding Secondary}" Foreground="{DynamicResource ChromeMuted}" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="820"/>
                 </StackPanel>
               </StackPanel>
             </DataTemplate>

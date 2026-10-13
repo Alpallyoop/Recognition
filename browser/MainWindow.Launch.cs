@@ -44,6 +44,7 @@ namespace Recognition.Browser
                 Tabs.SelectedItem = t.Item; ShowActiveWebView(); NavigateTab(t, url);
                 _actions?.Append("launch.open", "external");
             }
+            await DrainSpecialAsync();
         }
 
         // Windows does not let a program make itself the default browser; the person chooses it in Windows settings. This opens the

@@ -16,4 +16,4 @@ This repository does not decide the GitHub account name it lives under. Constell
 
 Old links keep redirecting only while nobody else takes the old name. Receipts, signed files and hashes that contain the old name stay as written; they are records and are not edited.
 
-Governed by Constellation: `docs/proposals/0008-oversight-plane-and-global-workbench-console.md`.
+Governed by Constellation (proposal 0008, oversight plane and global workbench console, in the Constellation repository: `docs/proposals/0008-oversight-plane-and-global-workbench-console.md` there, not in this repo).

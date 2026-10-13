@@ -66,7 +66,7 @@ $mfe = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Feel.cs") -Raw
 $mwf = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml.cs") -Raw
 if($bfe -match 'HttpClient|WebClient|WebRequest|Process\.Start|File\.|Directory\.'){ $bad += "BrowserFeel.cs must stay pure: no network, processes or files" }
 if($mfe -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo'){ $bad += "MainWindow.Feel.cs must not make web requests or start processes" }
-if($mwf -notmatch 'StartsWith\("feel-"\) && \(tab\.Internal == "settings" \|\| tab\.Internal == "bookmarks"\)'){ $bad += "feel- settings messages must only be accepted from the settings and bookmarks pages" }
+if($mwf -notmatch 'StartsWith\("feel-"\) && \(tab\.Internal == "settings" \|\| tab\.Internal == "bookmarks"( \|\| tab\.Internal == "customize")?\)'){ $bad += "feel- settings messages must only be accepted from the settings and bookmarks pages" }
 if($bfe -notmatch 'LaunchArgs\.Parse'){ $bad += "bookmark import must validate addresses with LaunchArgs.Parse" }
 # Update everything: fixed command line, validated source folder, user click only, script never pushes or force-updates.
 $uaw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.UpdateAll.cs") -Raw
@@ -152,6 +152,27 @@ if($wsy -notmatch 'SoteriaBridge\.IsSafeRoot'){ $bad += "the sync folder must be
 if($wsy -notmatch 'SetupBlob\.Seal'){ $bad += "the sync file must be sealed with the setup code" }
 if($wsy -match 'File\.Delete\(file\)'){ $bad += "sync must never delete the shared sync file" }
 if($bad.Count -gt 0){ $bad | ForEach-Object { Write-Host ("BROWSER_TESTS_FAIL: " + $_) -ForegroundColor Red }; exit 1 }
+# themes, extension links, taskbar menu
+$cus = Get-Content -LiteralPath (Join-Path $bdir "Customize.cs") -Raw
+$cuw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Customize.cs") -Raw
+if($cus -match 'HttpClient|WebClient|WebRequest|Process\.Start|File\.|Directory\.'){ $bad += "Customize.cs must stay pure: no network, processes or files" }
+if($cuw -match 'HttpClient|WebClient|WebRequest|Process\.Start|ProcessStartInfo'){ $bad += "MainWindow.Customize.cs must not make web requests itself or start processes" }
+if($cuw -notmatch 'DownloadExtensionAsync'){ $bad += "store downloads must use the governed https downloader" }
+if($wxa -notmatch 'StartsWith\("cz-"\) && \(tab\.Internal == "customize"'){ $bad += "customize messages must come from internal pages only" }
+if($cuw -notmatch 'SafeImagePath' -and $cus -notmatch 'SafeImagePath'){ $bad += "theme pictures must stay inside the theme folder" }
+if($cuw -notmatch '--private' -or $cuw -match 'Arguments = url'){ $bad += "the taskbar menu must use fixed switches and quoted addresses" }
+$apx = Get-Content -LiteralPath (Join-Path $bdir "App.xaml.cs") -Raw
+if($apx -notmatch 'text == "--private" \|\| text == "--new-tab"'){ $bad += "the pipe may only accept the two fixed switches besides validated addresses" }
+# address autofill: local data only, hosts only
+$bf = Get-Content -LiteralPath (Join-Path $bdir "BrowserFeel.cs") -Raw
+$mwx = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml.cs") -Raw
+if($bf -notmatch 'class AddressComplete'){ $bad += "address autofill rules (AddressComplete) are missing" }
+if($bf -match 'class AddressComplete[\s\S]*(HttpClient|WebClient|WebRequest)'){ $bad += "address autofill must not make web requests" }
+if($mwx -notmatch 'AddressComplete\.Complete' -or $mwx -notmatch 'Address_PreviewKeyDown'){ $bad += "address autofill must be wired into the address bar" }
+# toolbar layout: Back, Forward, Home, Private, Reload, one icon style, no emoji buttons
+$xm = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.xaml") -Raw
+if($xm -notmatch 'x:Name="HomeBtn"[\s\S]*x:Name="PrivateBtn"[\s\S]*x:Name="ReloadBtn"'){ $bad += "the private tab button must sit between Home and Reload" }
+if($xm -match 'NavBtn\}" FontFamily="Segoe UI Emoji"'){ $bad += "toolbar and side bar buttons must use the IconBtn style" }
 # library: bookmarks, downloads, history ranges, overview
 $lib = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Library.cs") -Raw
 if($lib -match 'HttpClient|WebClient|WebRequest|TcpClient'){ $bad += "MainWindow.Library.cs must not make web requests" }

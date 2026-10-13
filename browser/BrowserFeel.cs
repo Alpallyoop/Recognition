@@ -122,4 +122,67 @@ namespace Recognition.Browser
         // 1234 -> "1,234"; large numbers stay readable on the start page
         public static string Pretty(long n) => (n < 0 ? 0 : n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    // Address bar completion: as you type "git", the bar fills in "github.com" (the extra letters are selected, so Backspace removes
+    // them and Enter or the right arrow accepts them). The suggestions come from, in order: the sites you visit most, your bookmarks,
+    // then a short built-in list of very popular sites. The list is static text inside the program: nothing is looked up or sent.
+    internal static class AddressComplete
+    {
+        public static readonly string[] Popular =
+        {
+            "google.com", "youtube.com", "facebook.com", "instagram.com", "wikipedia.org", "amazon.com", "x.com", "twitter.com", "reddit.com", "linkedin.com",
+            "netflix.com", "github.com", "microsoft.com", "apple.com", "bing.com", "duckduckgo.com", "yahoo.com", "whatsapp.com", "tiktok.com", "twitch.tv",
+            "stackoverflow.com", "outlook.com", "office.com", "live.com", "gmail.com", "mail.google.com", "drive.google.com", "docs.google.com", "maps.google.com", "translate.google.com",
+            "news.google.com", "calendar.google.com", "photos.google.com", "paypal.com", "ebay.com", "walmart.com", "target.com", "bestbuy.com", "etsy.com", "aliexpress.com",
+            "cnn.com", "bbc.com", "nytimes.com", "washingtonpost.com", "theguardian.com", "reuters.com", "apnews.com", "foxnews.com", "forbes.com", "bloomberg.com",
+            "weather.com", "imdb.com", "spotify.com", "soundcloud.com", "pinterest.com", "tumblr.com", "quora.com", "medium.com", "discord.com", "slack.com",
+            "zoom.us", "dropbox.com", "onedrive.live.com", "icloud.com", "adobe.com", "canva.com", "figma.com", "notion.so", "trello.com", "atlassian.com",
+            "salesforce.com", "oracle.com", "ibm.com", "nvidia.com", "amd.com", "intel.com", "samsung.com", "sony.com", "dell.com", "hp.com",
+            "mozilla.org", "brave.com", "opera.com", "vivaldi.com", "proton.me", "protonmail.com", "signal.org", "archive.org", "gitlab.com", "bitbucket.org",
+            "npmjs.com", "pypi.org", "nuget.org", "docker.com", "kubernetes.io", "python.org", "nodejs.org", "rust-lang.org", "go.dev", "dotnet.microsoft.com",
+            "learn.microsoft.com", "developer.mozilla.org", "w3schools.com", "coursera.org", "udemy.com", "khanacademy.org", "edx.org", "duolingo.com", "openai.com", "anthropic.com",
+            "claude.ai", "chatgpt.com", "huggingface.co", "kaggle.com", "arxiv.org", "nature.com", "sciencedirect.com", "nih.gov", "who.int", "cdc.gov",
+            "irs.gov", "usa.gov", "gov.uk", "europa.eu", "un.org", "nasa.gov", "ups.com", "fedex.com", "usps.com", "dhl.com",
+            "chase.com", "bankofamerica.com", "wellsfargo.com", "capitalone.com", "americanexpress.com", "booking.com", "expedia.com", "tripadvisor.com", "airbnb.com", "uber.com",
+            "lyft.com", "doordash.com", "yelp.com", "zillow.com", "indeed.com", "glassdoor.com", "craigslist.org", "homedepot.com", "lowes.com", "costco.com",
+            "steampowered.com", "epicgames.com", "roblox.com", "minecraft.net", "ea.com", "playstation.com", "xbox.com", "nintendo.com", "gog.com", "itch.io",
+            "cloudflare.com", "wordpress.com", "wix.com", "squarespace.com", "shopify.com", "godaddy.com", "namecheap.com", "vercel.com", "netlify.com", "heroku.com"
+        };
+
+        private static string HostOf(string url)
+        {
+            if (!Uri.TryCreate(url ?? "", UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) || u.UserInfo.Length > 0 || string.IsNullOrEmpty(u.Host)) return "";
+            var h = u.Host.ToLowerInvariant();
+            return h.StartsWith("www.", StringComparison.Ordinal) ? h.Substring(4) : h;
+        }
+
+        // visits newest first is not required: counts decide, and the newest of equal counts wins (visits are given oldest first).
+        // Returns the whole completed text (what to put in the bar), or null when nothing sensible completes what was typed.
+        public static string? Complete(string? typed, IEnumerable<string>? visitedUrls, IEnumerable<string>? bookmarkUrls)
+        {
+            var t = typed ?? "";
+            if (t.Length == 0 || t.Length > 100 || t.Any(c => char.IsWhiteSpace(c) || char.IsControl(c) || c == '/' || c == ':' || c == '@' || c == '\\' || c == '?' || c == '#')) return null;
+            var lower = t.ToLowerInvariant();
+            if (lower.StartsWith("www.", StringComparison.Ordinal)) lower = lower.Substring(4);
+            if (lower.Length == 0) return null;
+
+            string? Pick(IEnumerable<string> hosts) => hosts.FirstOrDefault(h => h.Length > lower.Length && h.StartsWith(lower, StringComparison.Ordinal));
+
+            var order = new Dictionary<string, (int Count, int Last)>(StringComparer.Ordinal);
+            int i = 0;
+            foreach (var u in visitedUrls ?? Array.Empty<string>())
+            {
+                var h = HostOf(u); i++; if (h.Length == 0) continue;
+                order[h] = order.TryGetValue(h, out var o) ? (o.Count + 1, i) : (1, i);
+            }
+            var visited = order.OrderByDescending(kv => kv.Value.Count).ThenByDescending(kv => kv.Value.Last).Select(kv => kv.Key);
+            var hit = Pick(visited);
+            if (hit == null) hit = Pick((bookmarkUrls ?? Array.Empty<string>()).Select(HostOf).Where(h => h.Length > 0));
+            if (hit == null) hit = Pick(Popular);
+            if (hit == null) return null;
+            // keep what was typed exactly (including its capitals), add the rest
+            var typedNoWww = t.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? t.Substring(4) : t;
+            return t.Substring(0, t.Length - typedNoWww.Length) + typedNoWww + hit.Substring(lower.Length);
+        }
+    }
 }

@@ -2,6 +2,16 @@
 
 A deterministic, governed, encrypted, cryptographically-verifiable web browser. Local-first, offline-first, evidence-producing. Every operation emits a deterministic receipt; nothing important exists without integrity — and the browser **verifies its own signed software identity at every launch** and refuses to open if a single byte has changed.
 
+## Install (one command)
+
+In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ScrappyHub/Recognition/main/install.ps1 | iex
+```
+
+It downloads the latest release, checks its SHA-256, and runs the per-user installer. Read `install.ps1` first if you like. Releases are published by `.github/workflows/release.yml` when a version tag is pushed (`git tag v1.3.9; git push origin v1.3.9`).
+
 ## Download
 
 **[⬇ Download Recognition for Windows (latest release)](https://github.com/ScrappyHub/Recognition/releases/latest)**
@@ -19,7 +29,7 @@ mainstream browser has:
 - **Signed SoftwareID launch check** — `SHA-256` of the browser's own bytes, Ed25519-signed
   against a pinned trust root, verified fail-closed before the window opens.
 - **Tracker/ad blocking** at the network layer with a per-site shield.
-- **HTTPS-first, no autofill, no telemetry**; local history/bookmarks/downloads
+- **HTTPS-first, no telemetry, no form autofill of personal data** (address bar completion uses only local history, bookmarks and a built-in site list); local history/bookmarks/downloads
   **encrypted at rest** (Windows DPAPI, per-user).
 - **Governed session export** — one click produces a signed, hash-chained evidence packet.
 - **Self-owned identity chain** — no external identity service.
@@ -41,6 +51,8 @@ pwsh -File scripts\RUN_PACKAGE_DIST_V1.ps1 -RepoRoot .        # build the downlo
 Every push is also verified automatically by CI (`.github/workflows/release-gate.yml`).
 
 ---
+
+Documents index: `docs/README.md`. User guide: `docs/USER_GUIDE.md`. Changes: `CHANGELOG.md`. Security: `SECURITY.md`. Contributing: `CONTRIBUTING.md`. One-command update and proof: `scripts\UPDATE_ALL.cmd`.
 
 Canonical direction: see `docs/CANONICAL_HANDOFF_V1.md`.
 Current audit and roadmap: see `docs/RECOGNITION_AUDIT_V1.md`.

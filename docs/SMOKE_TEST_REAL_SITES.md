@@ -74,7 +74,7 @@ Expected honest result: lower than Brave on list breadth and cosmetic coverage u
 ## H. Look and default browser (v1.3.1)
 | # | Do this | Pass when |
 |---|---|---|
-| H1 | Launch Recognition | A small splash shows, then the main window opens with a dark title bar and the new start page |
+| H1 | Launch Recognition | No separate loading window appears; the main window opens at once with a small Starting cover inside it that disappears when ready, with with a dark title bar and the new start page |
 | H2 | Open a new tab, then an internal page (Settings) | No white box where the bookmark star was; the star appears only on real web pages |
 | H3 | Click each start page tile | Bookmarks, History, Passwords, Shield, Tools and Settings open |
 | H4 | Settings > Default browser > Open Windows Default apps, pick Recognition for HTTP and HTTPS | Windows lists Recognition (installed copy only) |
@@ -121,3 +121,19 @@ Expected honest result: lower than Brave on list breadth and cosmetic coverage u
 8. Start a large download with the Downloads page open: the bar and size update smoothly with no page reload or flicker.
 9. Open a site in a private tab, then Overview: a card shows cookies in private tabs with a count and no site names.
 
+## M. Extensions, themes, taskbar (v1.3.8)
+
+1. Extensions page: paste a Chrome Web Store link (try a simple content-script extension). It downloads, shows what it asks for, you install it, restart, and it appears under Installed. Test, Disable, Enable and Remove work.
+2. Paste a store link for a theme: the page says it is a theme; Use this theme changes the bar, tabs and start page.
+3. Customize: click each look; the toolbar, tabs, side bar, menus and title bar change at once, and restarting keeps it. Light looks show readable text. Reset brings back the original.
+4. Right-click the taskbar icon: New private tab and New tab work with Recognition running and when it is closed; the Recent pages list shows your last four pages; private-tab pages never appear; switching "recent pages" off in Settings clears it.
+
+
+## N. Address autofill (v1.3.9)
+
+1. Visit a site you have not been to (for example `example.org`), then open a new tab, click the address bar and type `exam`. Expect `example.org` with `ple.org` selected. Enter opens it.
+2. Type `yout`. Expect `youtube.com` (popular list) even if never visited.
+3. Type `git`, press Backspace. Expect the suggestion to vanish, leaving `gi`, and not to come back until you type another letter.
+4. Type `git` and press the right arrow. Expect the caret at the end of the full host.
+5. Visit one site three times and another once with the same first letters; the three-time site wins.
+6. Private tabs do not add to history, so their sites are not offered.
