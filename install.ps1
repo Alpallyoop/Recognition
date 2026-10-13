@@ -48,6 +48,9 @@ try {
   $exe = if($ps){ $ps.Source } else { "powershell.exe" }
   & $exe -NoProfile -ExecutionPolicy Bypass -File $inst.FullName
   if($LASTEXITCODE -ne 0){ Fail "the installer reported an error" }
+  # open it when the install is done (set RECOGNITION_NO_LAUNCH=1 first to skip)
+  $app = Join-Path $env:LOCALAPPDATA "Recognition\browser\RecognitionBrowser.exe"
+  if((Test-Path -LiteralPath $app) -and -not $env:RECOGNITION_NO_LAUNCH){ Write-Host "Opening Recognition..." -ForegroundColor Cyan; Start-Process -FilePath $app }
 } finally {
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
