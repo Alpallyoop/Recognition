@@ -137,3 +137,9 @@ Expected honest result: lower than Brave on list breadth and cosmetic coverage u
 4. Type `git` and press the right arrow. Expect the caret at the end of the full host.
 5. Visit one site three times and another once with the same first letters; the three-time site wins.
 6. Private tabs do not add to history, so their sites are not offered.
+
+## O. Window size and place (v1.3.9)
+
+1. Resize and move the window, close it, open it again: same size and place.
+2. Maximize, close, open: maximized. Restore, close, open: the earlier windowed size.
+3. With two monitors, close on the second one, open again: it returns there. Unplug it and open: the window appears on the main screen.

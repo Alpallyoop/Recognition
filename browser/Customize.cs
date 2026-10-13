@@ -205,4 +205,41 @@ namespace Recognition.Browser
                 : "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=" + major + "&acceptformat=crx2,crx3&x=" + x;
         }
     }
+
+    // Where the window was when it was closed, so it opens the same way next time (size, place, maximized).
+    internal sealed record WindowPlacement(double Left, double Top, double Width, double Height, bool Maximized)
+    {
+        public const double MinWidth = 640, MinHeight = 420;
+
+        public static WindowPlacement? Parse(string? json)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(json) || json.Length > 2000) return null;
+                using var d = JsonDocument.Parse(json);
+                var r = d.RootElement;
+                if (r.ValueKind != JsonValueKind.Object) return null;
+                double N(string k) { if (!r.TryGetProperty(k, out var v) || v.ValueKind != JsonValueKind.Number) throw new FormatException(); var x = v.GetDouble(); if (double.IsNaN(x) || double.IsInfinity(x) || Math.Abs(x) > 100000) throw new FormatException(); return x; }
+                bool max = r.TryGetProperty("maximized", out var m) && m.ValueKind == JsonValueKind.True;
+                return new WindowPlacement(N("left"), N("top"), N("width"), N("height"), max);
+            }
+            catch { return null; }
+        }
+
+        public string ToJson() => string.Create(CultureInfo.InvariantCulture, $"{{\"left\":{Left:0.##},\"top\":{Top:0.##},\"width\":{Width:0.##},\"height\":{Height:0.##},\"maximized\":{(Maximized ? "true" : "false")}}}");
+
+        // Make the saved place usable on today's screens: never smaller than the minimum or bigger than the screens, and its
+        // title bar must be reachable; otherwise it is centred on the first screen area given (a monitor may have been unplugged).
+        public WindowPlacement Fit(IReadOnlyList<(double L, double T, double W, double H)> areas)
+        {
+            if (areas == null || areas.Count == 0) return this;
+            var main = areas[0];
+            double bigW = areas.Max(a => a.W), bigH = areas.Max(a => a.H);
+            double w = Math.Min(Math.Max(Width, MinWidth), Math.Max(bigW, MinWidth)), h = Math.Min(Math.Max(Height, MinHeight), Math.Max(bigH, MinHeight));
+            // the strip along the top (at least 120 wide, 40 tall) has to overlap some screen area
+            bool reachable = areas.Any(a => Left + w - 120 > a.L && Left + 120 < a.L + a.W && Top >= a.T - 1 && Top + 40 < a.T + a.H);
+            if (!reachable) return new WindowPlacement(main.L + Math.Max(0, (main.W - w) / 2), main.T + Math.Max(0, (main.H - h) / 2), w, h, Maximized);
+            return new WindowPlacement(Left, Top, w, h, Maximized);
+        }
+    }
 }

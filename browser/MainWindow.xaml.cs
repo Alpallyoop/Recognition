@@ -138,12 +138,14 @@ document.addEventListener('keydown',function(e){
         {
             InitializeComponent();
             _repoRoot = FindRepoRoot(AppContext.BaseDirectory);
+            RestoreWindowPlacement();
             Loaded += OnLoaded;
             Closing += OnClosing;
         }
 
         private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            SaveWindowPlacement();
             SaveSession();
             RecordNetworkEnd();
             StopPasskeyServer();
@@ -152,6 +154,61 @@ document.addEventListener('keydown',function(e){
             CleanupViewerAll();
             foreach (var t in _tabs) { if (t.Private) { try { t.Web.Dispose(); } catch { } } }
             if (_privateDir != null) { try { if (Directory.Exists(_privateDir)) Directory.Delete(_privateDir, true); } catch { } }
+        }
+
+        // Come up in front of the other windows (Windows may refuse a plain Activate from a program started elsewhere,
+        // so the window is raised as topmost for a moment and then released).
+        private void BringToFront()
+        {
+            try
+            {
+                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                Show(); Activate();
+                Topmost = true; Topmost = false;
+                Focus();
+            }
+            catch { }
+        }
+
+        // ---- window size and place are remembered ---------------------------------------------------------------------
+        private string WindowPath() => Path.Combine(_repoRoot, "runtime", "window.v1.json");
+
+        private void RestoreWindowPlacement()
+        {
+            try
+            {
+                var saved = File.Exists(WindowPath()) ? WindowPlacement.Parse(File.ReadAllText(WindowPath())) : null;
+                var p = saved;
+                if (p == null)
+                {
+                    // first run only (a saved size always wins): about 75% of the usable screen, at least 1100x700 where it fits, centred
+                    var wa = SystemParameters.WorkArea;
+                    double w = Math.Min(wa.Width, Math.Max(1100, wa.Width * 0.75)), h = Math.Min(wa.Height, Math.Max(700, wa.Height * 0.75));
+                    p = new WindowPlacement(wa.Left + (wa.Width - w) / 2, wa.Top + (wa.Height - h) / 2, w, h, false);
+                }
+                var screens = new List<(double, double, double, double)>
+                {
+                    (SystemParameters.WorkArea.Left, SystemParameters.WorkArea.Top, SystemParameters.WorkArea.Width, SystemParameters.WorkArea.Height),
+                    (SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop, SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight)
+                };
+                p = p.Fit(screens);
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = p.Left; Top = p.Top; Width = p.Width; Height = p.Height;
+                if (p.Maximized) WindowState = WindowState.Maximized;
+            }
+            catch { }
+        }
+
+        private void SaveWindowPlacement()
+        {
+            try
+            {
+                var b = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+                if (b.IsEmpty || b.Width < 100 || b.Height < 100) return;
+                Directory.CreateDirectory(Path.GetDirectoryName(WindowPath())!);
+                File.WriteAllText(WindowPath(), new WindowPlacement(b.Left, b.Top, b.Width, b.Height, WindowState == WindowState.Maximized).ToJson(), new UTF8Encoding(false));
+            }
+            catch { }
         }
 
         private static string FindRepoRoot(string start)
@@ -173,6 +230,7 @@ document.addEventListener('keydown',function(e){
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            BringToFront();
             try
             {
                 Status("preparing governed profile…");

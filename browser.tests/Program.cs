@@ -1273,6 +1273,26 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(AddressComplete.Complete("t", acTie, null) == "two.test" && AddressComplete.Complete("o", acTie, null) == "one.test", "autofill: equal visits go to the newest");
 }
 
+{
+    // ---- window placement ----
+    var wpA = new[] { (0.0, 0.0, 1920.0, 1040.0) };
+    var wp = new WindowPlacement(100, 80, 1000, 700, false);
+    Check(WindowPlacement.Parse(wp.ToJson()) == wp, "window: size and place survive a round trip");
+    Check(WindowPlacement.Parse(new WindowPlacement(1, 2, 3, 4, true).ToJson())?.Maximized == true, "window: maximized is remembered");
+    Check(new[] { null, "", "x", "[]", "{}", "{\"left\":1}", "{\"left\":\"a\",\"top\":0,\"width\":1,\"height\":1}", "{\"left\":1e9,\"top\":0,\"width\":1,\"height\":1}" }.All(x => WindowPlacement.Parse(x) == null), "window: bad or missing saved data is ignored");
+    Check(wp.Fit(wpA) == wp, "window: a good place is kept as it is");
+    var wpSmall = new WindowPlacement(10, 10, 100, 100, false).Fit(wpA);
+    Check(wpSmall.Width == WindowPlacement.MinWidth && wpSmall.Height == WindowPlacement.MinHeight, "window: never smaller than the minimum");
+    var wpBig = new WindowPlacement(0, 0, 9000, 9000, false).Fit(wpA);
+    Check(wpBig.Width == 1920 && wpBig.Height == 1040, "window: never bigger than the screens");
+    var wpGone = new WindowPlacement(3000, 200, 1000, 700, false).Fit(wpA);
+    Check(wpGone.Left == 460 && wpGone.Top == 170, "window: a window left on an unplugged screen is centred on the main one");
+    var wpTwo = new[] { (0.0, 0.0, 1920.0, 1040.0), (-1920.0, 0.0, 1920.0, 1040.0) };
+    Check(new WindowPlacement(-1500, 100, 1000, 700, false).Fit(wpTwo).Left == -1500, "window: a place on a second screen is kept while that screen exists");
+    Check(new WindowPlacement(100, -500, 1000, 700, false).Fit(wpA).Top == 170, "window: a title bar above the screen is brought back");
+    Check(new WindowPlacement(100, 80, 1000, 700, true).Fit(wpA).Maximized, "window: maximized survives fitting");
+}
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }
