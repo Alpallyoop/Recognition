@@ -32,7 +32,9 @@ try {
 
   $shaInfo = @($rel.assets) | Where-Object { $_.name -eq ($Asset + ".sha256") } | Select-Object -First 1
   if($shaInfo){
-    $want = ((Invoke-WebRequest -Uri $shaInfo.browser_download_url -UseBasicParsing).Content.ToString().Trim() -split '\s+')[0].ToLowerInvariant()
+    $shaFile = Join-Path $work "sha256.txt"
+    Invoke-WebRequest -Uri $shaInfo.browser_download_url -OutFile $shaFile -UseBasicParsing
+    $want = ((Get-Content -LiteralPath $shaFile -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
     $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
     if($want -ne $got){ Fail ("checksum mismatch (expected " + $want + ", got " + $got + "). Nothing was installed.") }
     Write-Host "Checksum OK." -ForegroundColor Green
