@@ -29,11 +29,29 @@ if($PSVersionTable.PSVersion.Major -lt 7){ Write-Host "UPDATE_ALL_V1_FAIL: needs
 if([string]::IsNullOrWhiteSpace($RepoRoot)){ $RepoRoot = Split-Path -Parent $PSScriptRoot }
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 if([string]::IsNullOrWhiteSpace($DevRoot)){ $DevRoot = Split-Path -Parent $RepoRoot }
+# The sibling repositories are found by walking up from here, so the folder layout can change (flat dev root, or grouped under Constellation\_*-Systems).
+function FindUp([string]$start,[string[]]$rels){
+  $d = $start
+  while($d){
+    foreach($r in $rels){ $p = Join-Path $d $r; if(Test-Path -LiteralPath $p){ return (Resolve-Path -LiteralPath $p).Path } }
+    $parent = Split-Path -Parent $d
+    if([string]::IsNullOrEmpty($parent) -or $parent -eq $d){ break }
+    $d = $parent
+  }
+  return $null
+}
+$ConstellationDir = FindUp $DevRoot @("Constellation\Constellation-Network","Constellation")
+$SoteriaDir = FindUp $DevRoot @("Constellation\_Fides-Systems\soteria-vault","privacy-sector")
 $S = Join-Path $RepoRoot "scripts"
 $LogDir = Join-Path $RepoRoot "runtime\update_logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $Log = Join-Path $LogDir ("update_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
-$InstallDir = Join-Path $env:LOCALAPPDATA "Recognition"
+# Everything stays inside the project folder: the installed copy goes to <repo>\installed\Recognition (set RECOGNITION_HOME to
+# choose another folder), and temporary files go to <repo>\.scratch instead of AppData\Local\Temp.
+$InstallDir = if($env:RECOGNITION_HOME){ $env:RECOGNITION_HOME } else { Join-Path $RepoRoot "installed\Recognition" }
+$LocalTmp = Join-Path $RepoRoot ".scratch\tmp"
+New-Item -ItemType Directory -Force -Path $LocalTmp | Out-Null
+$env:TEMP = $LocalTmp; $env:TMP = $LocalTmp
 
 $script:rows = @()
 $script:failed = $false
@@ -94,13 +112,13 @@ function Pull([string]$label,[string]$path){
 }
 if(-not $script:failed){ Say "=== 2 update the source repositories ===" "Cyan" }
 Pull "Recognition" $RepoRoot
-Pull "SoteriaVault (privacy-sector)" (Join-Path $DevRoot "privacy-sector")
-Pull "Constellation" (Join-Path $DevRoot "Constellation")
+Pull "SoteriaVault" $(if($SoteriaDir){ $SoteriaDir } else { Join-Path $DevRoot "privacy-sector" })
+Pull "Constellation" $(if($ConstellationDir){ $ConstellationDir } else { Join-Path $DevRoot "Constellation" })
 
 # ---- 3 ecosystem check (read only) -------------------------------------------------------------------------------------------
 if(-not $script:failed){
   Say "=== 3 ecosystem check ===" "Cyan"
-  $con = Join-Path $DevRoot "Constellation\constellation.ps1"
+  $con = if($ConstellationDir){ Join-Path $ConstellationDir "constellation.ps1" } else { Join-Path $DevRoot "Constellation\constellation.ps1" }
   if(Test-Path -LiteralPath $con){
     $o = & pwsh -NoProfile -ExecutionPolicy Bypass -File $con validate *>&1 | ForEach-Object { "$_" }
     Add-Content -LiteralPath $Log -Value $o
@@ -156,7 +174,11 @@ else {
     }
   }
   if(-not $script:failed){
-    RunStep "install" (Join-Path $RepoRoot "dist\recognition\installer\RECOGNITION_INSTALL_V1.ps1") @() "RECOGNITION_INSTALL_V1_OK"
+    RunStep "install" (Join-Path $RepoRoot "dist\recognition\installer\RECOGNITION_INSTALL_V1.ps1") @("-InstallDir",$InstallDir,"-Portable") "RECOGNITION_INSTALL_V1_OK"
+    # remove every other copy: an old AppData install (data moved aside, not deleted), old extracted builds, update leftovers
+    if(-not $script:failed){
+      RunStep "clean up old copies" (Join-Path $S "RECOGNITION_CLEAN_OLD_V1.ps1") @("-RepoRoot",$RepoRoot,"-KeepInstall",$InstallDir) "RECOGNITION_CLEAN_OLD_V1_OK"
+    }
     if(-not $script:failed){
       try {   # lets the installed app's Settings button find this checkout
         New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "runtime") | Out-Null

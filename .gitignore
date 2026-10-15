@@ -1,6 +1,9 @@
 # Volatile / plaintext-at-rest areas (never committed)
 runtime/
 tmp/
+installed/
+.scratch/
+.update_backup/
 profiles/
 vault/
 proofs/runs/

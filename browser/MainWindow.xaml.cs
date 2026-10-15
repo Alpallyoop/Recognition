@@ -172,6 +172,10 @@ document.addEventListener('keydown',function(e){
 
         // ---- window size and place are remembered ---------------------------------------------------------------------
         private string WindowPath() => Path.Combine(_repoRoot, "runtime", "window.v1.json");
+        // Everything temporary lives inside the project folder (never AppData\Local\Temp). Emptied at start-up and on exit.
+        private string TmpRoot => Path.Combine(_repoRoot, "runtime", "tmp");
+        // Files downloaded with no folder chosen go here (inside the project folder, not the Windows Downloads folder).
+        private string DefaultDownloadDir => Path.Combine(_repoRoot, "runtime", "downloads_files");
 
         private void RestoreWindowPlacement()
         {
@@ -234,9 +238,13 @@ document.addEventListener('keydown',function(e){
             try
             {
                 Status("preparing governed profile…");
+                await Loading(1, "Unpacking files and preparing your profile…");
                 var userData = Path.Combine(_repoRoot, "runtime", "browser_profile");
                 Directory.CreateDirectory(userData);
+                try { if (Directory.Exists(TmpRoot)) Directory.Delete(TmpRoot, true); } catch { }   // leftovers from a crash
+                try { Directory.CreateDirectory(TmpRoot); } catch { }
 
+                await Loading(2, "Opening your history, bookmarks and settings…");
                 _history = new GovernedHistory(Path.Combine(_repoRoot, "runtime", "history.v1.enc"), Path.Combine(_repoRoot, "runtime", "history.v1.ndjson"));
                 _history.Load();
                 _actions = new GovernedActions(Path.Combine(_repoRoot, "runtime", "actions.v1.enc"));
@@ -254,6 +262,7 @@ document.addEventListener('keydown',function(e){
                 LoadSettings();
                 ApplyChromeTheme();
                 ApplyLayout(); RebuildBookmarksBar();
+                await Loading(3, "Loading the ad and tracker filter lists…");
                 LoadBlocklist();
                 InitFilters();
                 LoadNetworkConfig();
@@ -271,9 +280,11 @@ document.addEventListener('keydown',function(e){
                     if (_netProxyDown) Status("VPN exit unreachable — running direct this session (see the 🌐 indicator)");
                 }
 
+                await Loading(4, "Starting the web engine…");
                 Status("initializing web engine…");
                 _env = await CoreWebView2Environment.CreateAsync(null, userData, NetOpts());
 
+                await Loading(5, "Checking the app's files, signature and folder structure…");
                 Status("verifying locked startup (identity · policy · trust · evidence)…");
                 _preflightOk = await Task.Run(Preflight);
 
@@ -290,6 +301,7 @@ document.addEventListener('keydown',function(e){
                     return;
                 }
 
+                await Loading(6, "Opening your tabs…");
                 await OpenStartupTabsAsync();
                 _startupDone = true;
                 await DrainOutsideUrlsAsync();
@@ -339,7 +351,7 @@ document.addEventListener('keydown',function(e){
         private async Task<CoreWebView2Environment> EnsurePrivateEnvAsync()
         {
             if (_privateEnv != null) return _privateEnv;
-            _privateDir = Path.Combine(Path.GetTempPath(), "rb-private-" + Guid.NewGuid().ToString("N"));
+            _privateDir = Path.Combine(TmpRoot, "rb-private-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_privateDir);
             _privateEnv = await CoreWebView2Environment.CreateAsync(null, _privateDir, await PrivateEnvOptsAsync());
             return _privateEnv;
@@ -1771,7 +1783,9 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             sb.Append("<h1 style='font-size:16px'>Updates</h1>");
             sb.Append(UpdateAllHtmlRow());
             sb.Append("<div class='kv'><div class='k'>Installed version</div><div class='v'>" + Esc(InstalledVersion()) + "</div></div>");
-            sb.Append("<div class='muted' style='margin:6px 0 10px'>Recognition never checks for or downloads updates on its own. Choose an update package folder you obtained yourself: it is applied only if its signature verifies against the pinned trust root, every file hash matches, no path escapes the install or touches <code>runtime\\</code> / the trust root, and the version is strictly newer (no downgrade). Replaced files are backed up and rolled back automatically on any failure.</div>");
+            sb.Append("<div class='row'><div><div class='t'>Check for updates</div><div class='u'>Asks GitHub for the newest release only when you click. If it is newer, it downloads the zip, checks its SHA-256, closes, replaces the program files (your data stays), removes old copies, rolls back on any failure and reopens. Recognition never checks or downloads on its own.</div></div>" +
+                      "<div class='ts'><a class='btn' onclick=\"send('update-check')\">Check for updates</a></div></div>");
+            sb.Append("<div class='muted' style='margin:6px 0 10px'>Or choose a signed update package folder you obtained yourself: it is applied only if its signature verifies against the pinned trust root, every file hash matches, no path escapes the install or touches <code>runtime\\</code> / the trust root, and the version is strictly newer (no downgrade). Replaced files are backed up and rolled back automatically on any failure.</div>");
             sb.Append("<div style='margin:0 0 18px;display:flex;gap:10px;flex-wrap:wrap'>" +
                       "<a class='btn ghost' onclick=\"send('update-verify')\">Verify an update package…</a>" +
                       "<a class='btn' onclick=\"send('update-apply')\">Apply an update package…</a></div>");
@@ -1918,6 +1932,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 case "vpn-off": SetVpnOff(); break;
                 case "vpn-optimize": Status("probing endpoints for best placement…"); _ = OptimizeVpnAsync(tab); break;
                 case "vpn-apply": RestartToApply(); break;
+                case "update-check": CheckForUpdate(tab); break;
                 case "update-verify": UpdateFlow(tab, false); break;
                 case "update-apply": UpdateFlow(tab, true); break;
                 case "cookies-clear-all": ClearAllCookies(); if (tab.Internal == "settings") LoadInternal(tab, "settings"); break;
@@ -2530,7 +2545,20 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             catch { try { return EncNoBom.GetString(bytes); } catch { return ""; } }   // legacy plaintext (pre-encryption)
         }
 
-        private void Status(string s) { StatusText.Text = s; if (LoadingCover.Visibility == Visibility.Visible) LoadingText.Text = s; }
+        private void Status(string s) { StatusText.Text = s; }
+
+        // plain-words start-up steps shown on the cover inside the window (not the internal status text)
+        private const int LoadingSteps = 6;
+        private async Task Loading(int n, string text)
+        {
+            try
+            {
+                if (LoadingCover.Visibility != Visibility.Visible) return;
+                LoadingText.Text = text; LoadingCount.Text = "Step " + n + " of " + LoadingSteps;
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);   // let the new text paint before the next step blocks the window
+            }
+            catch { }
+        }
 
         // ---- governed, append-only, hash-chained history (§24) ------------------
 

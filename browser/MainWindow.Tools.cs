@@ -171,7 +171,7 @@ namespace Recognition.Browser
         // text. Small files use NavigateToString (nothing touches disk); large files are written to a private temp
         // file that is deleted when the tab closes and when the browser exits.
         private readonly Dictionary<BrowserTab, string> _viewerFiles = new();
-        private static string ViewerTempDir() => Path.Combine(Path.GetTempPath(), "recognition-viewer");
+        private string ViewerTempDir() => Path.Combine(TmpRoot, "recognition-viewer");
 
         private void ShowViewer(BrowserTab tab, string title, string text, string lang, string note)
         {

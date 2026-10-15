@@ -76,6 +76,17 @@ if($uaw -match 'msg|Dec\('){ $bad += "MainWindow.UpdateAll.cs must not use text 
 if($uas -match 'git[^\r\n]*(push|--force|reset --hard|clean -)'){ $bad += "UPDATE_ALL_V1.ps1 must never push, force, reset or clean" }
 if($uas -notmatch '--ff-only'){ $bad += "UPDATE_ALL_V1.ps1 must only fast-forward" }
 if($uas -match '[^\x00-\x7F]'){ $bad += "UPDATE_ALL_V1.ps1 must stay ASCII (Windows PowerShell 5.1 reads BOM-less files as ANSI)" }
+# Update from GitHub: user click only, GitHub hosts only, checksum required, helper keeps data and rolls back; scripts stay ASCII.
+$sus = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.SelfUpdate.cs") -Raw
+$sur = Get-Content -LiteralPath (Join-Path $bdir "SelfUpdate.cs") -Raw
+$suh = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts\recognition_self_update_v1.ps1") -Raw
+$suc = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts\RECOGNITION_CLEAN_OLD_V1.ps1") -Raw
+if($sus -notmatch 'MessageBox\.Show' -or $sus -notmatch 'IsAllowedHost' -or $sus -notmatch 'got != want'){ $bad += "the GitHub update must ask first, accept GitHub hosts only and require a matching SHA-256" }
+if($sus -match 'msg|Dec\('){ $bad += "MainWindow.SelfUpdate.cs must not use text that came from a page" }
+if($sur -match 'HttpClient|WebClient|Process\.Start|File\.|Directory\.'){ $bad += "SelfUpdate.cs must stay pure: no network, processes or files" }
+if($suh -notmatch 'Rollback' -or $suh -notmatch 'trust root' -or $suh -notmatch 'not newer'){ $bad += "the self-update helper must roll back, pin the trust root and refuse non-newer versions" }
+if($suh -match '\\runtime[^\r\n]*(Remove-Item|Move-Item)' -and $suh -notmatch 'keepTop'){ $bad += "the self-update helper must never touch runtime\" }
+foreach($t in @($suh,$suc)){ if($t -match '[^\x00-\x7F]'){ $bad += "update helper scripts must stay ASCII (Windows PowerShell 5.1)" } }
 # Home page, start background, VPN-app hint: pure rules stay pure, the start page makes no web requests.
 $sbg = Get-Content -LiteralPath (Join-Path $bdir "StartBackground.cs") -Raw
 $vdt = Get-Content -LiteralPath (Join-Path $bdir "VpnDetect.cs") -Raw

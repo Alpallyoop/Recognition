@@ -195,6 +195,37 @@ namespace Recognition.Browser
             return IsId(last) ? new Source(store, last) : null;
         }
 
+        // Firefox Add-ons (addons.mozilla.org/<language>/firefox/addon/<name>/): the add-on's name in the address (its "slug")
+        private static readonly Regex SlugRx = new("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", RegexOptions.Compiled);
+        public static string? ParseFirefox(string? input)
+        {
+            var s = (input ?? "").Trim();
+            if (s.Length == 0 || s.Length > 500 || s.Any(char.IsControl)) return null;
+            if (!Uri.TryCreate(s, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps || u.UserInfo.Length > 0 || !u.Host.Equals("addons.mozilla.org", StringComparison.OrdinalIgnoreCase)) return null;
+            var parts = u.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            int i = Array.FindIndex(parts, p => p == "addon");
+            if (i < 1 || parts[i - 1] != "firefox" || i + 1 >= parts.Length) return null;
+            return SlugRx.IsMatch(parts[i + 1]) ? parts[i + 1] : null;
+        }
+
+        public static string FirefoxApiUrl(string slug) => "https://addons.mozilla.org/api/v5/addons/addon/" + Uri.EscapeDataString(slug) + "/";
+
+        // the add-on file address inside Mozilla's answer; only Mozilla's own https hosts are accepted
+        public static string? FirefoxFileUrl(string? apiJson)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(apiJson) || apiJson.Length > 2_000_000) return null;
+                using var d = JsonDocument.Parse(apiJson);
+                if (!d.RootElement.TryGetProperty("current_version", out var cv) || !cv.TryGetProperty("file", out var f) || !f.TryGetProperty("url", out var u) || u.ValueKind != JsonValueKind.String) return null;
+                var url = u.GetString() ?? "";
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length > 0) return null;
+                var h = uri.Host.ToLowerInvariant();
+                return h == "addons.mozilla.org" || h == "addons.cdn.mozilla.net" ? uri.AbsoluteUri : null;
+            }
+            catch { return null; }
+        }
+
         public static string Url(Source s, string engineMajor)
         {
             var major = new string((engineMajor ?? "").Where(char.IsAsciiDigit).Take(4).ToArray());

@@ -284,7 +284,7 @@ namespace Recognition.Browser
                 if (msg == "ext-open-policy") { OpenFolder(Path.Combine(_repoRoot, "config")); return; }
                 if (msg == "ext-pick-file")
                 {
-                    var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Choose an extension package", Filter = "Extension package (*.crx;*.zip)|*.crx;*.zip|All files|*.*" };
+                    var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Choose an extension package", Filter = "Extension package (*.crx;*.zip;*.xpi)|*.crx;*.zip;*.xpi|All files|*.*" };
                     if (dlg.ShowDialog(this) != true) return;
                     var fi = new FileInfo(dlg.FileName);
                     if (fi.Length > ExtPackage.MaxPackageBytes) { ExtReport("that file is larger than " + ExtPackage.MaxPackageBytes / 1024 / 1024 + " MB", false); return; }
@@ -300,17 +300,45 @@ namespace Recognition.Browser
                     _extPending = await Task.Run(() => StageFolder(dlg.FolderName, Path.GetFileName(dlg.FolderName.TrimEnd('\\', '/')) + " (folder)"));
                     SendExtSnapshot(); return;
                 }
+                if (msg.StartsWith("ext-open:"))
+                {
+                    // store pages only, opened in a new tab so this page stays where it is
+                    var link = Dec(msg.Substring("ext-open:".Length)).Trim();
+                    if (Uri.TryCreate(link, UriKind.Absolute, out var lu) && lu.Scheme == Uri.UriSchemeHttps && lu.UserInfo.Length == 0 &&
+                        (lu.Host is "chromewebstore.google.com" or "microsoftedge.microsoft.com" or "addons.mozilla.org")) OpenBookmark(lu.AbsoluteUri, true);
+                    return;
+                }
+                if (msg.StartsWith("ext-demo:"))
+                {
+                    var name = msg.Substring("ext-demo:".Length);
+                    if (name is not ("hello-good" or "hello-review")) return;
+                    var dir = Path.Combine(_repoRoot, "samples", "extensions", name);
+                    if (!Directory.Exists(dir)) { ExtReport("the demo files are not in this install (samples\\extensions\\" + name + ")", false); return; }
+                    DiscardPending();
+                    _extPending = await Task.Run(() => StageFolder(dir, "demo: " + name));
+                    ExtReport("demo loaded for review: read what it asks for below, then install it or discard it.");
+                    SendExtSnapshot(); return;
+                }
                 if (msg.StartsWith("ext-url:"))
                 {
                     var url = Dec(msg.Substring("ext-url:".Length)).Trim();
                     var store = ExtSources.Parse(url);   // a Chrome Web Store or Edge Add-ons link, or an extension id
+                    var ffSlug = store == null ? ExtSources.ParseFirefox(url) : null;
                     if (store != null) url = ExtSources.Url(store, EngineMajor());
-                    ExtReport(store != null ? "downloading from the " + (store.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store") + "…" : "downloading…");
+                    else if (ffSlug != null)
+                    {
+                        ExtReport("looking up \"" + ffSlug + "\" on Firefox Add-ons...");
+                        var api = Encoding.UTF8.GetString(await DownloadExtensionAsync(ExtSources.FirefoxApiUrl(ffSlug)));
+                        var file = ExtSources.FirefoxFileUrl(api);
+                        if (file == null) throw new ExtGovException("Mozilla did not return a download for \"" + ffSlug + "\" (the add-on may not exist, or is not public)");
+                        url = file;
+                    }
+                    ExtReport(store != null ? "downloading from the " + (store.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store") + "..." : ffSlug != null ? "downloading the Firefox add-on..." : "downloading...");
                     var bytes = await DownloadExtensionAsync(url);
                     DiscardPending();
                     var host = new Uri(url).Host;
                     _extPending = await Task.Run(() => StageBytes(bytes, host));
-                    ExtReport("downloaded " + (bytes.Length / 1024) + " KB (sha256 " + Convert.ToHexString(SHA256.HashData(bytes)).Substring(0, 12).ToLowerInvariant() + "…). Review it below before installing.");
+                    ExtReport("downloaded " + (bytes.Length / 1024) + " KB (sha256 " + Convert.ToHexString(SHA256.HashData(bytes)).Substring(0, 12).ToLowerInvariant() + "...). Review it below before installing." + (ffSlug != null ? " Note: Firefox add-ons are built for Firefox, so many will not run in this engine. Use Test first." : ""));
                     SendExtSnapshot(); return;
                 }
                 if (msg == "ext-cancel") { DiscardPending(); SendExtSnapshot(); return; }
@@ -354,7 +382,7 @@ namespace Recognition.Browser
                 if (msg.StartsWith("ext-toggle:")) { await ExtToggleAsync(msg.Substring("ext-toggle:".Length)); return; }
                 if (msg.StartsWith("ext-remove:")) { await ExtRemoveAsync(msg.Substring("ext-remove:".Length)); return; }
             }
-            catch (ExtGovException ex) { ExtReport("not accepted: " + ex.Message, false); }
+            catch (ExtGovException ex) { ExtReport("not accepted: " + ex.Message + (ex.Message.Contains("not a CRX or ZIP") ? ". That address is a web page or another kind of file, not an extension package. Paste a store page link (Chrome Web Store, Edge Add-ons or Firefox Add-ons), an extension id, or a direct .crx, .zip or .xpi address." : ""), false); }
             catch (Exception ex) { ExtReport("error: " + ex.Message, false); }
         }
 
@@ -448,7 +476,7 @@ namespace Recognition.Browser
         private async Task<CoreWebView2Environment> EnsureExtTestEnvAsync()
         {
             if (_extTestEnv != null) return _extTestEnv;
-            _extTestDir = Path.Combine(Path.GetTempPath(), "rb-exttest-" + Guid.NewGuid().ToString("N"));
+            _extTestDir = Path.Combine(TmpRoot, "rb-exttest-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_extTestDir);
             var o = await PrivateEnvOptsAsync();
             o.AreBrowserExtensionsEnabled = true;
@@ -500,64 +528,84 @@ namespace Recognition.Browser
         private string ExtensionsHtml()
         {
             var sb = new StringBuilder(PageHead);
-            sb.Append(@"<title>Extensions</title><h1>Extensions</h1>
-<div class='muted'>Every extension is <b>identified by a hash of its files</b>, judged by a written policy, recorded in a tamper-evident ledger, and re-checked every time the browser starts: if even one byte changed since you approved it, it does not load. Extensions the browser did not approve are removed from the engine at startup. Extensions that ask for broad access (all sites, debugging, proxy control, native messaging) are <b>refused</b>; ones that ask for sensitive access (tabs, cookies, history, downloads, request blocking...) need your explicit approval.</div>
-<div class='muted' style='margin-top:6px'><b>Limits:</b> Recognition uses the Chromium engine through Windows WebView2, which supports only part of the extension system. Content scripts and background workers generally work; toolbar buttons, popups and some APIs may not. Use <b>Test</b> before relying on an extension. Approving an extension means it runs with the access it declared. Chrome Web Store downloads are not built in: use a file, a folder, or an https link to the developer's own .crx or .zip.</div>
-<div id='msg' class='u' style='min-height:18px;margin:8px 0'></div>
-<div id='support' class='row' style='display:block'></div>
-
-<h1 style='font-size:16px'>Add an extension</h1>
-<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0'>
- <a class='btn' onclick=""send('ext-pick-file')"">Choose a .crx or .zip&hellip;</a>
- <a class='btn ghost' onclick=""send('ext-pick-folder')"">Choose an unpacked folder&hellip;</a>
- <input id='url' placeholder='Chrome Web Store or Edge Add-ons link, an extension id, or a .crx address' style='flex:1;min-width:260px;background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:8px'>
- <a class='btn ghost' onclick='fromUrl()'>Download and review</a></div>
-<div class='muted' style='margin-top:4px'>Find one: <a class='t' href='https://chromewebstore.google.com/category/extensions'>Chrome Web Store</a> &middot; <a class='t' href='https://microsoftedge.microsoft.com/addons'>Edge Add-ons</a> &middot; <a class='t' href='https://chromewebstore.google.com/category/themes'>Chrome themes</a>. Open an extension's page there, copy its address, and paste it above. The store's own Add button does not work in Recognition; this does the download, then you review what it asks for. Themes are used for Recognition's look (see <a class='t' href='recognition:customize'>Customize</a>).</div>
+            sb.Append(@"<title>Extensions</title><style>
+.card{background:var(--card);border:1px solid var(--cardline);border-radius:14px;padding:18px 20px;margin-bottom:12px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.card .info{flex:1 1 320px;min-width:0}.card h3{margin:0 0 4px;font-size:15px;font-weight:600}.card p{margin:0;color:#8a92a0;font-size:12.5px;line-height:1.5}
+.card .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tag{display:inline-block;font-size:10.5px;border:1px solid #333a46;border-radius:999px;padding:2px 9px;margin-left:8px;color:#9aa3b2;vertical-align:middle}
+.tag.good{border-color:#2c7a4b;color:#7fd6a0}.tag.warn{border-color:#8a6a1f;color:#e0b050}.tag.bad{border-color:#8a2f2f;color:#e57373}
+.field{display:flex;gap:8px;flex:1 1 100%;flex-wrap:wrap}.field input{flex:1 1 320px}
+.steps{margin:10px 0 0;color:#8a92a0;font-size:12.5px;line-height:1.6}
+</style><h1>Extensions</h1>
+<div class='muted'>Add features to the browser. Every extension is checked before it runs: identified by a hash of its files, judged against a written policy, and recorded in a tamper-evident ledger. If a single byte changes after you approve it, it stops loading.</div>
+<div id='msg' class='u' style='min-height:18px;margin:0 0 10px'></div>
+<div id='support'></div>
 <div id='pending'></div>
 
-<h1 style='font-size:16px'>Installed</h1>
+<h1 style='font-size:16px'>Get extensions</h1>
+<div class='card'><div class='info'><h3>Chrome Web Store <span class='tag good'>best match</span></h3><p>The largest catalogue, and the closest fit because Recognition runs on the Chromium engine. Open an extension's page, copy its address, then paste it in Add by link.</p></div>
+ <div class='acts'><a class='btn' data-c='ext-open:https%3A%2F%2Fchromewebstore.google.com%2Fcategory%2Fextensions'>Browse extensions</a></div></div>
+<div class='card'><div class='info'><h3>Edge Add-ons <span class='tag good'>works well</span></h3><p>Microsoft's store uses the same extension format as Chrome. Copy the address of an add-on's page and paste it in Add by link.</p></div>
+ <div class='acts'><a class='btn' data-c='ext-open:https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons'>Browse add-ons</a></div></div>
+<div class='card'><div class='info'><h3>Firefox Add-ons <span class='tag warn'>may not run</span></h3><p>Paste a Firefox add-on page address and Recognition will look it up and download it. Firefox add-ons are built for Firefox, so many will not work in this engine. You get a review and a Test button before anything is installed.</p></div>
+ <div class='acts'><a class='btn ghost' data-c='ext-open:https%3A%2F%2Faddons.mozilla.org%2Fen-US%2Ffirefox%2Fextensions%2F'>Browse add-ons</a></div></div>
+<div class='card'><div class='info'><h3>Themes</h3><p>A Chrome theme is not run as an extension. Recognition reads its colours and picture and applies them as its own look (see Customize).</p></div>
+ <div class='acts'><a class='btn ghost' data-c='ext-open:https%3A%2F%2Fchromewebstore.google.com%2Fcategory%2Fthemes'>Browse themes</a></div></div>
+<div class='steps'>How it works: 1. Open a store above. 2. Copy the address of the extension's page. 3. Open the Add by link tab and paste it. 4. Review what it asks for, then install.</div>
+
+<h1 style='font-size:16px'>Add by link or file</h1>
+<div class='card'><div class='info'><h3>Paste an address</h3><p>A Chrome Web Store, Edge Add-ons or Firefox Add-ons page address, a 32-letter extension id, or a direct .crx, .zip or .xpi address.</p></div>
+ <div class='field'><input id='url' placeholder='https://chromewebstore.google.com/detail/...'><a class='btn' id='dl'>Download and review</a></div></div>
+<div class='card'><div class='info'><h3>From a file</h3><p>Choose an extension package you already have (.crx, .zip or .xpi).</p></div><div class='acts'><a class='btn ghost' data-c='ext-pick-file'>Choose a file...</a></div></div>
+<div class='card'><div class='info'><h3>From a folder</h3><p>Choose an unpacked extension folder (the one that contains manifest.json). Good for extensions you are developing.</p></div><div class='acts'><a class='btn ghost' data-c='ext-pick-folder'>Choose a folder...</a></div></div>
+
+<h1 style='font-size:16px'>My installed</h1>
 <div id='list'></div>
 
-<h1 style='font-size:16px'>Governance ledger</h1>
-<div id='ledger' class='u'></div>
-<div style='margin:6px 0'><a class='btn ghost' onclick=""send('ext-verify-chain')"">Verify ledger</a> <a class='btn ghost' onclick=""send('ext-open-policy')"">Open the policy folder</a></div>
+<h1 style='font-size:16px'>Try a demo</h1>
+<div class='muted'>Two small built-in examples so you can see the whole flow without installing anything real.</div>
+<div class='card'><div class='info'><h3>Demo: safe extension <span class='tag good'>no review needed</span></h3><p>Asks for almost nothing. Shows what an easy install looks like.</p></div><div class='acts'><a class='btn' data-c='ext-demo:hello-good'>Load for review</a></div></div>
+<div class='card'><div class='info'><h3>Demo: asks for sensitive access <span class='tag warn'>needs your approval</span></h3><p>Asks to see your tabs. Shows how the review step explains what an extension wants before you approve it.</p></div><div class='acts'><a class='btn ghost' data-c='ext-demo:hello-review'>Load for review</a></div></div>
+
+<h1 style='font-size:16px'>Safety and ledger</h1>
+<div class='card'><div class='info'><h3>Governance ledger</h3><p id='ledger'>Checking...</p></div><div class='acts'><a class='btn ghost' data-c='ext-verify-chain'>Verify ledger</a><a class='btn ghost' data-c='ext-open-policy'>Open the policy folder</a></div></div>
+<div class='card'><div class='info'><h3>What is refused</h3><p>Extensions that ask for broad access (all sites, debugging, proxy control, native messaging) are refused. Ones that ask for sensitive access (tabs, cookies, history, downloads, request blocking) need your explicit approval. Extensions the browser did not approve are removed at startup.</p></div></div>
+<div class='card'><div class='info'><h3>Limits</h3><p>Recognition uses Chromium through Windows WebView2, which supports only part of the extension system. Content scripts and background workers generally work; toolbar buttons, popups and some APIs may not. Use Test before relying on an extension.</p></div></div>
 <script>
 function $(i){return document.getElementById(i)}
 function el(t,txt,cls){var e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e}
 var enc=encodeURIComponent;
 function fromUrl(){var u=$('url').value.trim();if(u)send('ext-url:'+enc(u))}
-function btn(t,cmd,ghost){var a=el('a',t,'btn'+(ghost?' ghost':''));a.style.marginLeft='6px';a.onclick=function(){send(cmd)};return a}
+document.addEventListener('click',function(e){var a=e.target.closest('[data-c]');if(a)send(a.getAttribute('data-c'))});
+$('dl').onclick=fromUrl;$('url').addEventListener('keydown',function(e){if(e.key==='Enter')fromUrl()});
+function btn(t,cmd,ghost){var a=el('a',t,'btn'+(ghost?' ghost':''));a.onclick=function(){send(cmd)};return a}
 function kb(n){return n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB'}
 function listBlock(parent,title,items){if(!items||!items.length)return;parent.appendChild(el('div',title,'t'));var d=el('div',items.join('   '),'u');d.style.wordBreak='break-all';parent.appendChild(d)}
+function card(title,text,tag,tagcls){var c=el('div',null,'card');var i=el('div',null,'info');var h=el('h3',title);if(tag){h.appendChild(el('span',tag,'tag '+(tagcls||'')))}i.appendChild(h);if(text)i.appendChild(el('p',text));c.appendChild(i);return c}
 function render(m){
   var s=$('support');s.textContent='';
-  s.appendChild(el('div','Extension support: '+(m.support?'ON':'OFF')+(m.restartNeeded?'   (restart needed to apply your change)':''),'t'));
-  var b=el('div',null,'ts');
-  b.appendChild(btn(m.supportSaved||m.supportConfig?'Turn off':'Turn on','ext-support:'+(m.supportSaved||m.supportConfig?'off':'on')));
-  if(m.restartNeeded)b.appendChild(btn('Restart Recognition','ext-restart'));
-  s.appendChild(b);
+  var sc=card('Extension support: '+(m.support?'ON':'OFF'),m.restartNeeded?'Restart Recognition to apply your change.':(m.support?'Approved extensions load when the browser starts.':'No extensions run while this is off.'),m.support?'on':'off',m.support?'good':'warn');
+  var sa=el('div',null,'acts');sa.appendChild(btn(m.supportSaved||m.supportConfig?'Turn off':'Turn on','ext-support:'+(m.supportSaved||m.supportConfig?'off':'on'),true));
+  if(m.restartNeeded)sa.appendChild(btn('Restart Recognition','ext-restart'));sc.appendChild(sa);s.appendChild(sc);
   var P=$('pending');P.textContent='';var p=m.pending;
-  if(p){var r=el('div',null,'row');r.style.display='block';
-    r.appendChild(el('div',p.name+'  '+p.version+'   (manifest v'+p.mv+')','t'));
-    if(p.description)r.appendChild(el('div',p.description,'u'));
-    r.appendChild(el('div','Source: '+p.source+'  ·  '+p.files+' files, '+kb(p.bytes)+'  ·  identity '+p.id.slice(0,16)+'…','u'));
-    var dec=el('div','Policy decision: '+p.decision.toUpperCase()+(p.reasons.length?'  —  '+p.reasons.join('; '):''),'t');dec.style.color=p.decision==='deny'?'#e57373':(p.decision==='review'?'#e0b050':'#6fcf97');r.appendChild(dec);
-    listBlock(r,'Permissions',p.permissions);listBlock(r,'Site access (host permissions)',p.hosts);listBlock(r,'Content scripts will run on (not scored by the policy)',p.contentScripts);listBlock(r,'Optional permissions it may ask for later (not scored)',p.optional);
-    var a=el('div',null,'ts');
-    if(p.theme){r.appendChild(el('div','This is a theme. Recognition cannot run Chrome themes in the engine, but it can use the theme\'s colours and picture for its own look.','t'));a.appendChild(btn('Use this theme','ext-theme-apply'));}
+  if(p){var r=card('Review: '+p.name+'  '+p.version,p.description,p.decision.toUpperCase(),p.decision==='deny'?'bad':(p.decision==='review'?'warn':'good'));r.style.display='block';r.style.borderColor='#3b6bff';var i=r.firstChild;
+    i.appendChild(el('div','Source: '+p.source+'  ·  manifest v'+p.mv+'  ·  '+p.files+' files, '+kb(p.bytes)+'  ·  identity '+p.id.slice(0,16)+'…','u'));
+    if(p.reasons.length)i.appendChild(el('div','Why: '+p.reasons.join('; '),'u'));
+    listBlock(i,'Permissions',p.permissions);listBlock(i,'Site access (host permissions)',p.hosts);listBlock(i,'Content scripts will run on (not scored by the policy)',p.contentScripts);listBlock(i,'Optional permissions it may ask for later (not scored)',p.optional);
+    var a=el('div',null,'acts');a.style.marginTop='14px';
+    if(p.theme){i.appendChild(el('div','This is a theme. Recognition cannot run Chrome themes in the engine, but it can use the theme colours and picture for its own look.','t'));a.appendChild(btn('Use this theme','ext-theme-apply'));}
     else if(p.decision==='deny'){a.appendChild(el('span','Refused by policy: it cannot be installed here.','u'));}
     else{ if(p.decision==='review')a.appendChild(btn('I reviewed these permissions: install','ext-install:approve'));else a.appendChild(btn('Install','ext-install:plain'));
           a.appendChild(btn('Test first (temporary profile)','ext-test-pending',true)); }
     a.appendChild(btn('Discard','ext-cancel',true));r.appendChild(a);P.appendChild(r);}
   var L=$('list');L.textContent='';
-  if(!m.items.length)L.appendChild(el('div','No extensions installed.','empty'));
-  m.items.forEach(function(x){var r=el('div',null,'row');var d=el('div');
-    d.appendChild(el('div',x.name+'  '+x.version,'t'));d.appendChild(el('div',x.status+'  ·  from '+x.source+'  ·  '+x.gid.slice(0,16)+'…','u'));r.appendChild(d);
-    var c=el('div',null,'ts');c.appendChild(btn(x.enabled?'Disable':'Enable','ext-toggle:'+x.gid,true));c.appendChild(btn('Test','ext-test:'+x.gid,true));c.appendChild(btn('Remove','ext-remove:'+x.gid,true));r.appendChild(c);L.appendChild(r)});
+  if(!m.items.length)L.appendChild(card('Nothing installed yet','Find one under Get extensions, or try a demo.'));
+  m.items.forEach(function(x){var c=card(x.name+'  '+x.version,x.status+'  ·  from '+x.source,x.enabled?'on':'off',x.enabled?'good':'warn');
+    var acts=el('div',null,'acts');acts.appendChild(btn(x.enabled?'Disable':'Enable','ext-toggle:'+x.gid,true));acts.appendChild(btn('Test','ext-test:'+x.gid,true));acts.appendChild(btn('Remove','ext-remove:'+x.gid,true));c.appendChild(acts);L.appendChild(c)});
   $('ledger').textContent=m.ledger.error?('PROBLEM: '+m.ledger.error+'. Extensions will not load until this is resolved.'):(m.ledger.count+' records, head '+(m.ledger.head||'').slice(0,16)+'…')}
 window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!m)return;
   if(m.type==='snapshot')render(m);else if(m.type==='action'){$('msg').textContent=m.text;$('msg').style.color=m.ok?'':'#e57373'}});
-send('ext-state');
+window.addEventListener('DOMContentLoaded',function(){send('ext-state')});
 </script>");
             sb.Append(SendScript()).Append(PageFoot);
             return sb.ToString();

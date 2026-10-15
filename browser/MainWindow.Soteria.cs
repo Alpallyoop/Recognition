@@ -76,7 +76,7 @@ namespace Recognition.Browser
 <h1 style='font-size:16px'>Choose the SoteriaVault folder</h1>
 <div class='muted'>Type the folder where SoteriaVault is installed. Nothing is searched for. The folder is only read, never changed.</div>
 <div style='margin:8px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center'>
- <input id='p' placeholder='C:\dev\privacy-sector' style='min-width:320px;background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:6px'>
+ <input id='p' placeholder='the folder that holds SoteriaVault (for example D:\path\to\privacy-sector)' style='min-width:320px;background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:6px'>
  <a class='btn' onclick=""setp()"">Link</a><a class='btn ghost' onclick=""send('sv-check')"">Check again</a><a class='btn ghost' onclick=""send('sv-clear')"">Remove link</a></div>
 <script>
 function $(i){return document.getElementById(i)}

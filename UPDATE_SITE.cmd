@@ -1,4 +1,8 @@
 @echo off
+setlocal
 rem BUTTON: update the website (theconstellationnetwork.com) from the Constellation folder: validate, rebuild site data, refresh downloads, commit, push.
-if not exist "%~dp0..\Constellation\UPDATE_SITE.cmd" (echo Constellation folder not found next to this one. & pause & exit /b 2)
-call "%~dp0..\Constellation\UPDATE_SITE.cmd" %*
+rem The Constellation folder is looked up relative to this one (it moved under Constellation\Constellation-Network), so no drive or fixed path is assumed.
+set "CN="
+for %%P in ("%~dp0..\..\Constellation-Network" "%~dp0..\Constellation-Network" "%~dp0..\Constellation" "%~dp0..\..\..\Constellation\Constellation-Network") do if not defined CN if exist "%%~fP\UPDATE_SITE.cmd" set "CN=%%~fP"
+if not defined CN (echo Constellation folder not found near this one. & pause & exit /b 2)
+call "%CN%\UPDATE_SITE.cmd" %*

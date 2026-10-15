@@ -225,6 +225,7 @@ namespace Recognition.Browser
                     e.ResultFilePath = dlg.FileName;
                 }
                 else if (DownloadDirOk()) e.ResultFilePath = UniquePath(Path.Combine(_downloadDir, name));
+                else { Directory.CreateDirectory(DefaultDownloadDir); e.ResultFilePath = UniquePath(Path.Combine(DefaultDownloadDir, name)); }
             }
             catch { }
             return true;
@@ -268,7 +269,7 @@ namespace Recognition.Browser
         {
             var sb = new StringBuilder(PageHead);
             var active = _downloads.Count(d => d.State == "InProgress");
-            var folder = DownloadDirOk() ? _downloadDir : "the Windows Downloads folder";
+            var folder = DownloadDirOk() ? _downloadDir : DefaultDownloadDir;
             sb.Append("<style>" + ToolbarCss + "</style><title>Downloads</title><h1>Downloads</h1><div class='muted'>" + _downloads.Count + " in the list" + (active > 0 ? ", " + active + " in progress" : "") +
                       ". The list is encrypted on this computer.</div>");
             sb.Append("<div class='row'><div><div class='t'>Save files to</div><div class='u'>" + Esc(folder) + "</div></div><div class='ts'><a class='btn' onclick=\"send('dl-dir')\">Change...</a> " +
@@ -315,10 +316,11 @@ namespace Recognition.Browser
                     if (f != null && SoteriaBridge.IsSafeRoot(f) && Directory.Exists(f)) { _downloadDir = f; SaveSettings(); _actions?.Append("download.folder"); Status("downloads will be saved to " + f); }
                     else if (f != null) Status("that folder cannot be used");
                 }
-                else if (msg == "dl-dir-default") { _downloadDir = ""; SaveSettings(); Status("downloads use the Windows default folder"); }
+                else if (msg == "dl-dir-default") { _downloadDir = ""; SaveSettings(); Status("downloads use the folder inside Recognition's own folder"); }
                 else if (msg == "dl-opendir")
                 {
-                    var dir = DownloadDirOk() ? _downloadDir : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    var dir = DownloadDirOk() ? _downloadDir : DefaultDownloadDir;
+                    Directory.CreateDirectory(dir);
                     OpenFolder(dir);
                     return;
                 }
@@ -357,7 +359,7 @@ namespace Recognition.Browser
 
         private string DownloadsSettingsHtml()
         {
-            var folder = DownloadDirOk() ? _downloadDir : "the Windows Downloads folder";
+            var folder = DownloadDirOk() ? _downloadDir : DefaultDownloadDir;
             return "<h1 style='font-size:16px'>Downloads</h1>" +
                 "<div class='row'><div><div class='t'>Save files to</div><div class='u'>" + Esc(folder) + "</div></div><div class='ts'><a class='btn' onclick=\"send('dl-dir')\">Change...</a> " +
                 (DownloadDirOk() ? "<a class='btn ghost' onclick=\"send('dl-dir-default')\">Use default</a> " : "") + "</div></div>" +

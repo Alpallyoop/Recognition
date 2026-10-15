@@ -614,7 +614,7 @@ Console.WriteLine("=== Extension governance (executed C#) ===");
         var egDecRev = ExtGovernance.Decide(ExtGovernance.ReadManifest(egRev), egIdRev.Id, egPol);
         Check(egDecRev.Decision == "review" && egDecRev.Reasons.SequenceEqual(new[] { "review_permission:tabs" }), "policy: tabs -> review with the exact reason");
         // tampering with a copy of the real ledger
-        var egTmp = Path.Combine(Path.GetTempPath(), "rb-egtest-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(egTmp);
+        var egTmp = Path.Combine(AppContext.BaseDirectory, "tmp", "rb-egtest-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(egTmp);
         try
         {
             var egLines = File.ReadAllLines(egLedgerReal).Where(l => l.Trim().Length > 0).ToList();
@@ -739,10 +739,38 @@ Console.WriteLine("=== Engine version, pop-up and external-link rules (executed 
 }
 
 Console.WriteLine();
+Console.WriteLine("=== Update from GitHub rules (executed C#) ===");
+{
+    string UpRel(string tag, string zipUrl, string shaUrl, long size, string extra = "") =>
+        "{\"tag_name\":\"" + tag + "\"," + extra + "\"assets\":[{\"name\":\"Recognition-win-x64.zip\",\"size\":" + size + ",\"browser_download_url\":\"" + zipUrl + "\"},{\"name\":\"Recognition-win-x64.zip.sha256\",\"size\":90,\"browser_download_url\":\"" + shaUrl + "\"}]}";
+    const string upZip = "https://github.com/Alpallyoop/Recognition/releases/download/v1.4.0/Recognition-win-x64.zip";
+    const string upSha = upZip + ".sha256";
+    var upOk = SelfUpdateRules.ParseRelease(UpRel("v1.4.0", upZip, upSha, 90_000_000));
+    Check(upOk != null && upOk.Version == new Version(1, 4, 0) && upOk.ZipUrl == upZip && upOk.ShaUrl == upSha, "update: a normal release is read (version, zip and checksum addresses)");
+    Check(SelfUpdateRules.ParseRelease(UpRel("v1.4.0", "https://evil.example/Recognition-win-x64.zip", upSha, 90_000_000)) == null, "update: a zip that is not on a GitHub host is refused");
+    Check(SelfUpdateRules.ParseRelease(UpRel("v1.4.0", "http://github.com/x/Recognition-win-x64.zip", upSha, 90_000_000)) == null, "update: a plain http download address is refused");
+    Check(SelfUpdateRules.ParseRelease(UpRel("v1.4.0", upZip, "https://github.com.evil.example/a.sha256", 90_000_000)) == null, "update: a look-alike host (github.com.evil.example) is refused");
+    Check(SelfUpdateRules.ParseRelease(UpRel("v1.4.0", upZip, upSha, 700L * 1024 * 1024)) == null, "update: a zip over the size cap is refused");
+    Check(SelfUpdateRules.ParseRelease(UpRel("v1.4.0", upZip, upSha, 90_000_000, "\"draft\":true,")) == null && SelfUpdateRules.ParseRelease(UpRel("v1.4.0", upZip, upSha, 90_000_000, "\"prerelease\":true,")) == null, "update: drafts and pre-releases are ignored");
+    Check(SelfUpdateRules.ParseRelease("{\"tag_name\":\"v1.4.0\",\"assets\":[{\"name\":\"Recognition-win-x64.zip\",\"size\":5,\"browser_download_url\":\"" + upZip + "\"}]}") == null, "update: a release without the .sha256 file is refused (no unchecked installs)");
+    Check(SelfUpdateRules.ParseRelease("not json") == null && SelfUpdateRules.ParseRelease(UpRel("latest", upZip, upSha, 5)) == null, "update: garbage and non-version tags are refused");
+    Check(SelfUpdateRules.IsNewer("1.3.9", new Version(1, 3, 10)) && SelfUpdateRules.IsNewer("1.3.9", new Version(1, 4, 0)) && !SelfUpdateRules.IsNewer("1.3.9", new Version(1, 3, 9)) && !SelfUpdateRules.IsNewer("1.4.0", new Version(1, 3, 10)), "update: only a strictly newer version counts (1.3.10 is newer than 1.3.9)");
+    Check(!SelfUpdateRules.IsNewer("unknown", new Version(9, 0, 0)), "update: an unreadable installed version never triggers an install");
+    Check(SelfUpdateRules.IsAllowedHost(new Uri("https://objects.githubusercontent.com/x")) && SelfUpdateRules.IsAllowedHost(new Uri("https://api.github.com/x")) && !SelfUpdateRules.IsAllowedHost(new Uri("https://evilgithub.com/x")) && !SelfUpdateRules.IsAllowedHost(new Uri("https://x.example/github.com")) && !SelfUpdateRules.IsAllowedHost(null), "update: only GitHub hosts are allowed");
+    var upH = new string('a', 64);
+    Check(SelfUpdateRules.ParseSha256(upH + "  Recognition-win-x64.zip\n") == upH && SelfUpdateRules.ParseSha256(upH.ToUpperInvariant()) == upH && SelfUpdateRules.ParseSha256("abc") == null && SelfUpdateRules.ParseSha256("") == null && SelfUpdateRules.ParseSha256(new string('g', 64)) == null, "update: the checksum file must be a real 64-digit SHA-256");
+    string? uRoot = null;
+    for (var ud = new DirectoryInfo(AppContext.BaseDirectory); ud != null; ud = ud.Parent)
+        if (File.Exists(Path.Combine(ud.FullName, "browser", "MainWindow.SelfUpdate.cs"))) { uRoot = ud.FullName; break; }
+    var uSrc = uRoot == null ? "" : File.ReadAllText(Path.Combine(uRoot, "browser", "MainWindow.SelfUpdate.cs"));
+    Check(uSrc.Contains("MessageBox.Show") && !uSrc.Contains("msg") && uSrc.Contains("SelfUpdateRules.IsAllowedHost") && uSrc.Contains("got != want"), "update: asks before installing, uses no page text, checks the host and the checksum");
+}
+
+Console.WriteLine();
 Console.WriteLine("=== Host message gate and download rules (executed C#) ===");
 {
     // The privilege boundary: web content must never reach the command handlers.
-    string[] commands = { "site-perm:evil.com:Camera:allow", "cert-trust:evil.com:der-0123456789abcdef:allow", "cookies-clear-all", "update-apply", "net-forget:Home", "toggle-blocking", "vpn-off", "export-session", "open-profile", "appearance-set:bg:#000000", "pw-reveal:abc", "setup-apply:{}", "tools-pdf-run:{}", "rmbookmark:https://x/", "open:https://evil.example/" };
+    string[] commands = { "site-perm:evil.com:Camera:allow", "cert-trust:evil.com:der-0123456789abcdef:allow", "cookies-clear-all", "update-apply", "update-check", "net-forget:Home", "toggle-blocking", "vpn-off", "export-session", "open-profile", "appearance-set:bg:#000000", "pw-reveal:abc", "setup-apply:{}", "tools-pdf-run:{}", "rmbookmark:https://x/", "open:https://evil.example/" };
     Check(commands.All(c => MessageGate.Classify(false, "https://evil.example/", c) == MessageVerdict.Deny), "gate: a normal web tab cannot send ANY command, whatever its origin");
     Check(commands.All(c => MessageGate.Classify(true, "https://evil.example/", c) == MessageVerdict.Deny), "gate: even in an 'internal' tab, a message that comes from an http(s) document is refused (tab navigated away, cross-origin frame)");
     Check(commands.All(c => new[] { "http://x/", "file:///c:/x.html", "ftp://x/", "ws://x/", "wss://x/", "blob:https://x/1", "filesystem:https://x/t/a", "HTTPS://X/", "  https://x/" }.All(s => MessageGate.Classify(true, s, c) == MessageVerdict.Deny)), "gate: every web-like source scheme (http, https, file, ftp, ws, wss, blob, filesystem, any case or leading space) is refused");
@@ -1347,6 +1375,15 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(pgC.Change("0000", "1357", pgT, out _) == UnlockResult.Wrong && pgC.Change("2468", "12", pgT, out var pgErr) != UnlockResult.Ok && pgErr != null && pgC.Change("2468", "1357", pgT, out _) == UnlockResult.Ok && pgC.TryUnlock("2468", pgT) == UnlockResult.Wrong && pgC.TryUnlock("1357", pgT) == UnlockResult.Ok, "pin: changing needs the old PIN and a valid new one");
     Check(pgC.Remove("0000", pgT) == UnlockResult.Wrong && pgC.IsSet && pgC.Remove("1357", pgT) == UnlockResult.Ok && !pgC.IsSet, "pin: removing needs the PIN");
     Check(PinGate.Parse("not json") == null && PinGate.Parse("{}") == null && PinGate.Parse("{\"schema\":\"recognition.pin.v1\",\"salt\":\"AAAA\",\"hash\":\"AAAA\"}") == null && PinGate.Parse("")!.IsSet == false, "pin: a damaged PIN record is refused (the caller must fail closed), an empty one means no PIN");
+}
+
+{
+    // ---- Firefox add-on links ----
+    Check(ExtSources.ParseFirefox("https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/") == "ublock-origin" && ExtSources.ParseFirefox("https://addons.mozilla.org/firefox/addon/dark-reader/?src=search") == "dark-reader", "firefox links: add-on pages are read");
+    Check(new[] { null, "", "ublock-origin", "http://addons.mozilla.org/en-US/firefox/addon/x/", "https://evil.test/en-US/firefox/addon/x/", "https://u@addons.mozilla.org/en-US/firefox/addon/x/", "https://addons.mozilla.org/en-US/firefox/", "https://addons.mozilla.org/en-US/android/addon/x/", "https://addons.mozilla.org/en-US/firefox/addon/../x/", "https://addons.mozilla.org/en-US/firefox/addon/a%20b/" }.All(x => ExtSources.ParseFirefox(x) == null), "firefox links: other hosts, plain http, user names and odd names are refused");
+    Check(ExtSources.FirefoxApiUrl("dark-reader") == "https://addons.mozilla.org/api/v5/addons/addon/dark-reader/", "firefox links: the lookup address is Mozilla's own https API");
+    Check(ExtSources.FirefoxFileUrl("{\"current_version\":{\"file\":{\"url\":\"https://addons.mozilla.org/firefox/downloads/file/123/x.xpi\"}}}") == "https://addons.mozilla.org/firefox/downloads/file/123/x.xpi" && ExtSources.FirefoxFileUrl("{\"current_version\":{\"file\":{\"url\":\"https://addons.cdn.mozilla.net/user-media/addons/1/x.xpi\"}}}") != null, "firefox links: the file address is taken from Mozilla's answer");
+    Check(new[] { null, "", "x", "{}", "{\"current_version\":{}}", "{\"current_version\":{\"file\":{\"url\":\"http://addons.mozilla.org/x.xpi\"}}}", "{\"current_version\":{\"file\":{\"url\":\"https://evil.test/x.xpi\"}}}", "{\"current_version\":{\"file\":{\"url\":\"https://addons.mozilla.org.evil.test/x.xpi\"}}}", "{\"current_version\":{\"file\":{\"url\":5}}}" }.All(x => ExtSources.FirefoxFileUrl(x) == null), "firefox links: a file address on any other host, or a broken answer, is refused");
 }
 
 Console.WriteLine();

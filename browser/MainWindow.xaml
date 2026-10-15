@@ -215,8 +215,8 @@
       <Grid x:Name="WebHost" Background="#1E1F22">
         <Grid x:Name="LoadingCover" Grid.ColumnSpan="3" Panel.ZIndex="20" Background="{DynamicResource ChromeWin}">
           <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="Recognition" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource ChromeText}" HorizontalAlignment="Center"/>
-            <TextBlock x:Name="LoadingText" Text="Starting..." FontSize="12" Foreground="{DynamicResource ChromeMuted}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+            <TextBlock x:Name="LoadingText" Text="Unpacking files..." FontSize="15" Foreground="{DynamicResource ChromeText}" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+            <TextBlock x:Name="LoadingCount" Text="" FontSize="12" Foreground="{DynamicResource ChromeMuted}" HorizontalAlignment="Center" Margin="0,0,0,18"/>
             <ProgressBar IsIndeterminate="True" Height="3" Width="180" BorderThickness="0" Background="{DynamicResource ChromeHover}" Foreground="{DynamicResource ChromeAccent}"/>
           </StackPanel>
         </Grid>

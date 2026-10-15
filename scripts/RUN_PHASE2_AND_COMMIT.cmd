@@ -1,7 +1,7 @@
 @echo off
 rem Recognition Phase 2+3 green runner; commits to git only when green.
 rem Log: proofs\runs\phase2_green_v2.log
-cd /d C:\dev\recognition
+cd /d "%~dp0.."
 if not exist proofs\runs mkdir proofs\runs
 echo RUN_STARTED > proofs\runs\phase2_green_v2.log
 "C:\Program Files\PowerShell\7\pwsh.exe" -NoProfile -ExecutionPolicy Bypass -File scripts\RUN_PHASE2_GREEN_V2.ps1 -RepoRoot . >> proofs\runs\phase2_green_v2.log 2>&1

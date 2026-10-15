@@ -1,7 +1,7 @@
 @echo off
 rem Recognition Phase 1 green runner + Phase 0 git bootstrap (double-click or run)
 rem Logs: proofs\runs\phase1_green_v2.log and proofs\runs\phase0_git_init.log
-cd /d C:\dev\recognition
+cd /d "%~dp0.."
 if not exist proofs\runs mkdir proofs\runs
 echo RUN_STARTED > proofs\runs\phase1_green_v2.log
 "C:\Program Files\PowerShell\7\pwsh.exe" -NoProfile -ExecutionPolicy Bypass -File scripts\RUN_PHASE1_GREEN_V2.ps1 -RepoRoot . >> proofs\runs\phase1_green_v2.log 2>&1

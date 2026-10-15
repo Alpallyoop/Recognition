@@ -24,6 +24,10 @@ if($stale){
   Start-Sleep -Milliseconds 800
 }
 
+# Remove old copies too: an old AppData install (its data is moved aside, not deleted) and old extracted builds in dist\.
+$cleaner = Join-Path (Split-Path -Parent $here) "scripts\RECOGNITION_CLEAN_OLD_V1.ps1"
+if(Test-Path -LiteralPath $cleaner){ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $cleaner -RepoRoot (Split-Path -Parent $here) }
+
 Write-Host ("dotnet " + (& dotnet --version))
 & dotnet build $proj -c $Configuration
 if($LASTEXITCODE -ne 0){ Write-Host "RECOGNITION_BROWSER_BUILD_FAIL: build error" -ForegroundColor Red; exit 1 }

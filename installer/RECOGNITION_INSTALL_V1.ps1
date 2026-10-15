@@ -14,8 +14,13 @@
 param(
   [string]$Source,
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Recognition"),
-  [switch]$NoShortcuts
+  [switch]$NoShortcuts,
+  [switch]$Portable          # copy the files only: no shortcuts, no registry entries, nothing outside -InstallDir
 )
+
+# RECOGNITION_HOME (if set) is the folder to install into, so nothing has to go under AppData
+if($env:RECOGNITION_HOME -and -not $PSBoundParameters.ContainsKey('InstallDir')){ $InstallDir = $env:RECOGNITION_HOME }
+if($Portable){ $NoShortcuts = $true }
 
 $ErrorActionPreference = "Stop"
 function Die([string]$m){ Write-Host ("INSTALL_FAIL: " + $m) -ForegroundColor Red; exit 1 }
@@ -43,7 +48,7 @@ Start-Sleep -Milliseconds 1500
 # --- copy files (preserve user data if reinstalling) ------------------------
 if(-not (Test-Path -LiteralPath $InstallDir)){ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null }
 # per-user state that survives a reinstall
-$exclude = @("runtime","packets","payload","dist",".git")
+$exclude = @("runtime","packets","payload","dist",".git",".scratch",".update_backup")
 # Remove the previous program files first. (Copying a folder onto an existing folder with Copy-Item -Recurse nests it inside
 # instead of replacing it, which silently left the old program in place on every reinstall.)
 Get-ChildItem -LiteralPath $InstallDir -Force | ForEach-Object {
@@ -76,6 +81,14 @@ if(-not $NoShortcuts){
     $lnk.Save()
   }
   Write-Host "  shortcuts: Start Menu + Desktop created"
+}
+
+if($Portable){
+  Write-Host ""
+  Write-Host ("Installed (portable, files only) to: " + $InstallDir) -ForegroundColor Green
+  Write-Host ("Run: " + $exe)
+  Write-Host "RECOGNITION_INSTALL_V1_OK" -ForegroundColor Green
+  exit 0
 }
 
 # --- register in Apps & features (per-user uninstall entry) ------------------

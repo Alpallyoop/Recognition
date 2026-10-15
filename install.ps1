@@ -23,7 +23,11 @@ if(-not $zipInfo){ Fail ("the latest release (" + $rel.tag_name + ") has no " + 
 # the repository was renamed (ScrappyHub -> Alpallyoop); GitHub reports the current name in asset addresses, so both are accepted
 foreach($u in @($zipInfo.browser_download_url)){ if($u -notmatch '^https://github\.com/(Alpallyoop|ScrappyHub)/Recognition/releases/download/'){ Fail ("unexpected download address: " + $u) } }
 
-$work = Join-Path ([IO.Path]::GetTempPath()) ("recognition_install_" + [Guid]::NewGuid().ToString("N"))
+# To keep everything out of AppData, set RECOGNITION_HOME to a folder first (for example $env:RECOGNITION_HOME = "S:\Apps\Recognition"):
+# the program and its data are then installed there, no shortcuts or registry entries are made, and the download is unpacked beside it.
+$home_ = $env:RECOGNITION_HOME
+if($home_){ New-Item -ItemType Directory -Force -Path $home_ | Out-Null; $work = $home_.TrimEnd('\') + "_unpack_" + [Guid]::NewGuid().ToString("N") }   # beside the install folder, never inside it (the installer clears it)
+else { $work = Join-Path ([IO.Path]::GetTempPath()) ("recognition_install_" + [Guid]::NewGuid().ToString("N")) }
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 try {
   $zip = Join-Path $work $Asset
@@ -46,10 +50,11 @@ try {
   if(-not $inst){ Fail "the download does not contain the installer" }
   $ps = (Get-Command pwsh -ErrorAction SilentlyContinue)
   $exe = if($ps){ $ps.Source } else { "powershell.exe" }
-  & $exe -NoProfile -ExecutionPolicy Bypass -File $inst.FullName
+  if($home_){ & $exe -NoProfile -ExecutionPolicy Bypass -File $inst.FullName -InstallDir $home_ -Portable }
+  else { & $exe -NoProfile -ExecutionPolicy Bypass -File $inst.FullName }
   if($LASTEXITCODE -ne 0){ Fail "the installer reported an error" }
   # open it when the install is done (set RECOGNITION_NO_LAUNCH=1 first to skip)
-  $app = Join-Path $env:LOCALAPPDATA "Recognition\browser\RecognitionBrowser.exe"
+  $app = if($home_){ Join-Path $home_ "browser\RecognitionBrowser.exe" } else { Join-Path $env:LOCALAPPDATA "Recognition\browser\RecognitionBrowser.exe" }
   if((Test-Path -LiteralPath $app) -and -not $env:RECOGNITION_NO_LAUNCH){ Write-Host "Opening Recognition..." -ForegroundColor Cyan; Start-Process -FilePath $app }
 } finally {
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
