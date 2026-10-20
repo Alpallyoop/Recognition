@@ -51,6 +51,7 @@ CopyInto "config"       "config"
 CopyInto "docs"         "docs"
 CopyInto "branding"     "branding"
 CopyInto "installer"    "installer"
+CopyInto "themes"       "themes"
 # Trust root must sit at proofs\trust\ so the runtime scripts resolve it against the
 # install root (RepoRoot). locked-startup checks proofs\trust\allowed_signers.
 New-Item -ItemType Directory -Force -Path (Join-Path $dist "proofs") | Out-Null

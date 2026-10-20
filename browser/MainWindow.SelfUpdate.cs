@@ -109,6 +109,7 @@ namespace Recognition.Browser
                 _actions?.Append("update.started", rel.Tag);
                 Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WorkingDirectory = UpdateScratch });
                 Status("closing to install " + rel.Tag + "…");
+                _closeConfirmed = true;   // the person already said yes to closing for this update
                 Application.Current.Shutdown();
             }
             catch (Exception ex)

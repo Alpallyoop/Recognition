@@ -158,12 +158,25 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
-            <Border x:Name="b" Background="{DynamicResource ChromeTab}" CornerRadius="7,7,0,0" Margin="2,0,0,0"
-                    BorderBrush="{DynamicResource ChromeLine}" BorderThickness="1,1,1,0">
-              <ContentPresenter ContentSource="Header" Margin="14,8" VerticalAlignment="Center"/>
-            </Border>
+            <!-- tabs are laid out by TabShrinkPanel, each one overlapping the one before it; the soft shadow on the left edge makes them read as a stack of cards -->
+            <!-- the shadow sits on its own layer behind the tab, so the title text stays sharp (an effect on the text's own border would blur it) -->
+            <Grid>
+              <Border x:Name="sh" Background="{DynamicResource ChromeTab}" CornerRadius="10,10,0,0">
+                <Border.Effect>
+                  <DropShadowEffect Color="Black" Direction="180" ShadowDepth="2" BlurRadius="9" Opacity="0.45"/>
+                </Border.Effect>
+              </Border>
+              <Border x:Name="b" Background="{DynamicResource ChromeTab}" CornerRadius="10,10,0,0" Margin="0"
+                      BorderBrush="{DynamicResource ChromeLine}" BorderThickness="1,1,1,0">
+                <ContentPresenter ContentSource="Header" Margin="12,8,18,8" VerticalAlignment="Center"/>
+              </Border>
+            </Grid>
             <ControlTemplate.Triggers>
               <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Panel.ZIndex" Value="10"/>
+                <Setter TargetName="sh" Property="Effect">
+                  <Setter.Value><DropShadowEffect Color="Black" Direction="90" ShadowDepth="0" BlurRadius="14" Opacity="0.6"/></Setter.Value>
+                </Setter>
                 <Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeTabSel}"/>
                 <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
               </Trigger>

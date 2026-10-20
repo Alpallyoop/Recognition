@@ -179,12 +179,14 @@
                   SelectionChanged="Tabs_SelectionChanged">
         <TabControl.Template>
           <ControlTemplate TargetType="TabControl">
+            <ControlTemplate.Resources><local:MinusConverter x:Key="Minus"/></ControlTemplate.Resources>
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                           Background="{DynamicResource ChromeSide}">
               <!-- tabs, then a "+" right after the last tab (like every mainstream browser) -->
               <StackPanel Orientation="Horizontal" Margin="8,8,8,0">
-                <TabPanel IsItemsHost="True"/>
-                <Button Command="ApplicationCommands.New" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Style="{StaticResource IconBtn}" Width="28" Height="28" FontSize="12" Margin="10,2,0,0" VerticalAlignment="Center"/>
+                <local:TabShrinkPanel IsItemsHost="True" HorizontalAlignment="Left"
+                    MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource Minus}, ConverterParameter=80}"/>
+                <Button Command="ApplicationCommands.New" Content="&#xE710;" ToolTip="New tab (Ctrl+T)" Style="{StaticResource IconBtn}" Width="28" Height="28" FontSize="12" Margin="14,2,0,0" VerticalAlignment="Center"/>
               </StackPanel>
             </ScrollViewer>
           </ControlTemplate>

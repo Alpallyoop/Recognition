@@ -132,7 +132,9 @@ namespace Recognition.Browser
             try
             {
                 var saved = FavSaved(); bool dirty = false;
-                var keep = new HashSet<string>(_bookmarks.Select(b => FavKey(b.Url)).Where(k => k.Length > 0));
+                // icons of bookmarks, and of the tabs that will be reopened next time (so a restored tab shows its icon before it loads)
+                var keep = new HashSet<string>(_bookmarks.Select(b => FavKey(b.Url))
+                    .Concat(_tabs.Where(t => !t.Private && !t.IsInternal).Select(t => FavKey(t.CurrentUrl))).Where(k => k.Length > 0));
                 foreach (var k in keep) if (_favSeen.TryGetValue(k, out var png) && !(saved.TryGetValue(k, out var o) && o.AsSpan().SequenceEqual(png))) { saved[k] = png; dirty = true; }
                 foreach (var k in saved.Keys.Where(k => !keep.Contains(k)).ToList()) { saved.Remove(k); dirty = true; }
                 if (dirty) { Directory.CreateDirectory(Path.GetDirectoryName(FavPath())!); WriteSecure(FavPath(), JsonSerializer.Serialize(saved.ToDictionary(kv => kv.Key, kv => Convert.ToBase64String(kv.Value)))); }
@@ -356,6 +358,7 @@ namespace Recognition.Browser
 
         // ---- start page: most visited and counters ----------------------------------------------------------------------
         private const string StartExtraCss =
+            "html,body{height:auto}body{min-height:100vh;justify-content:flex-start;padding-top:max(24px,5vh);padding-bottom:40px}" +   // the page may be taller than the window (radar card): it scrolls instead of clipping the top
             ".sites{margin-top:30px;display:grid;grid-template-columns:repeat(4,minmax(110px,150px));gap:12px;justify-content:center}" +
             ".site{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;color:var(--txt);text-decoration:none;font-size:12.5px;min-width:0;transition:transform .12s,border-color .12s}" +
             ".site:hover{transform:translateY(-2px);border-color:#3a4150}" +
@@ -382,6 +385,7 @@ namespace Recognition.Browser
                 if (_tilesCustom.Count < TileRules.MaxCustom)
                     sb.Append("<a class='site addsite' href='#' onclick='tileAdd(event)'><span class='nm'>+ Add a site</span></a>");
                 sb.Append("</div>");
+                sb.Append(WeatherCardHtml());
                 var sitesSeen = _history.Items.Select(h => TryHost(h.Url)).Where(h => !string.IsNullOrEmpty(h)).Distinct().Count();
                 sb.Append("<div class='stats'><div class='stat'><b>" + Counts.Pretty(_statsBlocked) + "</b><span>trackers and ads blocked</span></div>" +
                           "<div class='stat'><b>" + Counts.Pretty(_statsStripped) + "</b><span>tracking links cleaned</span></div>" +

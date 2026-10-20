@@ -739,6 +739,150 @@ Console.WriteLine("=== Engine version, pop-up and external-link rules (executed 
 }
 
 Console.WriteLine();
+Console.WriteLine("=== Closing and start-up choices (executed C#) ===");
+{
+    var none = new List<string>();
+    Check(StartupRules.Effective("start", "", true) == "fresh" && StartupRules.Effective("restore", "", true) == "restore" && StartupRules.Effective("ask", "", true) == "ask", "start-up: home page / continue / ask me behave as named");
+    Check(StartupRules.Effective("restore", "", false) == "fresh" && StartupRules.Effective("ask", "", false) == "fresh" && StartupRules.Effective("start", "restore", false) == "fresh", "start-up: with no saved tabs there is nothing to reopen or ask about");
+    Check(StartupRules.Effective("start", "restore", true) == "restore" && StartupRules.Effective("restore", "fresh", true) == "fresh" && StartupRules.Effective("ask", "restore", true) == "restore" && StartupRules.Effective("ask", "fresh", true) == "fresh", "start-up: the choice made in the close window wins, once");
+    Check(StartupRules.NormalizeMode("RESTORE") == "restore" && StartupRules.NormalizeMode("ask") == "ask" && StartupRules.NormalizeMode("bogus") == "start" && StartupRules.NormalizeMode(null) == "start", "start-up: unknown modes mean the home page");
+    Check(StartupRules.NormalizeNext("Fresh") == "fresh" && StartupRules.NormalizeNext("restore") == "restore" && StartupRules.NormalizeNext("x") == "" && StartupRules.NormalizeCloseAsk("OFF") == "off" && StartupRules.NormalizeCloseAsk("whatever") == "on", "start-up: the saved one-time choice and the close-question switch are checked");
+
+    Check(!CloseRules.Plan(new CloseFacts(1, 1, 0, none, none, true)).Prompt, "close: one ordinary tab closes without a question");
+    var several = CloseRules.Plan(new CloseFacts(3, 3, 0, none, none, true));
+    Check(several.Prompt && several.OfferSession && several.Warnings.Count == 0, "close: several tabs ask and offer 'reopen these tabs' or 'start fresh'");
+    Check(!CloseRules.Plan(new CloseFacts(3, 3, 0, none, none, false)).Prompt, "close: with the question switched off several tabs close quietly");
+    Check(!CloseRules.Plan(new CloseFacts(3, 0, 0, none, none, true)).OfferSession, "close: nothing restorable means no reopen choice");
+    var dl = CloseRules.Plan(new CloseFacts(1, 1, 2, none, none, false));
+    Check(dl.Prompt && !dl.OfferSession && dl.Warnings.Count == 1 && dl.Warnings[0].Contains("2 downloads"), "close: a download in progress always asks, even with the switch off");
+    var un = CloseRules.Plan(new CloseFacts(2, 2, 0, new[] { "Order form" }, none, true));
+    Check(un.Prompt && un.Warnings.Any(x => x.Contains("Order form")), "close: a page with unsaved typing is named");
+    var pdfPlan = CloseRules.Plan(new CloseFacts(1, 1, 0, none, new[] { "report.pdf" }, true));
+    Check(pdfPlan.Prompt && pdfPlan.Warnings.Any(x => x.Contains("report.pdf") && x.Contains("PDF")), "close: an open PDF asks, naming it");
+    Check(!CloseRules.Plan(new CloseFacts(1, 1, 0, new[] { "x" }, new[] { "y.pdf" }, false)).Prompt, "close: unsaved pages and PDFs are ignored when the switch is off");
+    var many = CloseRules.Plan(new CloseFacts(9, 9, 0, Enumerable.Range(1, 9).Select(i => "Page " + i).ToList(), none, true));
+    Check(many.Warnings.Any(x => x.Contains("and 5 more")) && !many.Warnings.Any(x => x.Contains("Page 9")), "close: a long list of pages is shortened");
+    Check(CloseRules.Clean("a\u0007b\r\nc", "x") == "abc" && CloseRules.Clean("", "fallback") == "fallback" && CloseRules.Clean(new string('z', 80), "x").Length == 50, "close: titles shown in the window lose control characters and are shortened");
+    Check(CloseRules.LooksLikePdf("https://x.example/a/Report.PDF") && CloseRules.LooksLikePdf("file:///C:/docs/a.pdf") && !CloseRules.LooksLikePdf("https://x.example/a.pdf.html") && !CloseRules.LooksLikePdf("javascript:alert(1)//.pdf") && !CloseRules.LooksLikePdf(null), "close: PDF addresses are recognised (and nothing else)");
+    Check(CloseRules.DefaultNext("start") == "fresh" && CloseRules.DefaultNext("restore") == "restore" && CloseRules.DefaultNext("ask") == "restore", "close: the window pre-selects what matches your start-up setting");
+    Check(CloseRules.PageScript.Contains("beforeunload") && CloseRules.PageScript.Contains("isTrusted") && !CloseRules.PageScript.Contains("fetch(") && !CloseRules.PageScript.Contains("XMLHttpRequest") && !CloseRules.PageScript.Contains("postMessage") && !CloseRules.PageScript.Contains("http"), "close: the page note-taker only records two flags and sends nothing anywhere");
+}
+
+Console.WriteLine();
+Console.WriteLine("=== Weather radar rules (executed C#) ===");
+{
+    Check(WeatherRadar.NormalizeMode("LIVE") == "live" && WeatherRadar.NormalizeMode("click") == "click" && WeatherRadar.NormalizeMode("zzz") == "auto" && WeatherRadar.NormalizeMode(null) == "auto" && WeatherRadar.NormalizeProvider("RainViewer") == "rainviewer" && WeatherRadar.NormalizeProvider("evil") == "windy", "radar: unknown modes fall back to automatic (shows with my location, asks first if location is off) and unknown services to Windy");
+    Check(WeatherRadar.TryCoord("39.5", "-98.35", "4", out var la, out var lo, out var z) && la == 39.5 && lo == -98.35 && z == 4, "radar: good coordinates are accepted");
+    Check(!WeatherRadar.TryCoord("91", "0", "4", out _, out _, out _) && !WeatherRadar.TryCoord("0", "181", "4", out _, out _, out _) && !WeatherRadar.TryCoord("0", "0", "1", out _, out _, out _) && !WeatherRadar.TryCoord("0", "0", "12", out _, out _, out _) && !WeatherRadar.TryCoord("abc", "0", "4", out _, out _, out _) && !WeatherRadar.TryCoord("NaN", "0", "4", out _, out _, out _) && !WeatherRadar.TryCoord("1e999", "0", "4", out _, out _, out _) && !WeatherRadar.TryCoord("0", "0", "4.5", out _, out _, out _), "radar: out-of-range, non-numeric and infinite values are refused");
+    Check(WeatherRadar.Regions.Select(r => r.Id).Distinct().Count() == WeatherRadar.Regions.Length && WeatherRadar.Regions.All(r => WeatherRadar.TryCoord(r.Lat.ToString(System.Globalization.CultureInfo.InvariantCulture), r.Lon.ToString(System.Globalization.CultureInfo.InvariantCulture), r.Zoom.ToString(), out _, out _, out _)), "radar: every built-in region has a unique id and valid coordinates");
+    {
+        var fu = WeatherForecast.Url(41.88, -87.63, true);
+        Check(fu.StartsWith("https://api.open-meteo.com/v1/forecast?latitude=41.88&longitude=-87.63") && fu.Contains("forecast_days=5") && fu.Contains("temperature_unit=fahrenheit") && fu.Contains("wind_speed_unit=mph") && fu.Contains("hourly=") && fu.Contains("daily="), "forecast: the request is https to Open-Meteo with only a latitude and longitude, 5 days, hourly and daily");
+        Check(WeatherForecast.Url(0, 0, false).Contains("temperature_unit=celsius") && WeatherForecast.Url(0, 0, false).Contains("wind_speed_unit=kmh"), "forecast: Celsius uses km/h");
+        Check(WeatherForecast.Describe(0) == "Clear" && WeatherForecast.Describe(63) == "Rain" && WeatherForecast.Describe(75) == "Snow" && WeatherForecast.Describe(95) == "Thunderstorm" && WeatherForecast.Describe(12345) == "Mixed", "forecast: weather codes become plain words");
+        Check(WeatherForecast.Emoji(0, true) == "☀️" && WeatherForecast.Emoji(0, false) == "\U0001F319" && WeatherForecast.Emoji(63, true) == "\U0001F327️" && WeatherForecast.Emoji(95, true) == "⛈️" && WeatherForecast.Emoji(12345, true).Length > 0, "forecast: the hidden-card chip shows an emoji for the weather (moon at night)");
+        Check(WeatherForecast.CityFromZone("America/Chicago") == "Chicago" && WeatherForecast.CityFromZone("America/Argentina/Buenos_Aires") == "Buenos Aires" && WeatherForecast.CityFromZone("<b>x</b>") == "" && WeatherForecast.CityFromZone(null) == "", "forecast: a place name is taken from the time zone only when it is plain letters");
+        var fj = ("{'timezone':'America/Chicago','current':{'time':'2026-10-20T14:00','temperature_2m':61.4,'weather_code':2,'is_day':1,'wind_speed_10m':9.6}," +
+                  "'hourly':{'time':['2026-10-20T13:00','2026-10-20T14:00','2026-10-20T15:00'],'temperature_2m':[60,61.4,62],'weather_code':[2,2,61],'precipitation_probability':[0,5,40],'is_day':[1,1,1]}," +
+                  "'daily':{'time':['2026-10-20','2026-10-21','2026-10-22','2026-10-23','2026-10-24'],'weather_code':[2,61,3,0,71],'temperature_2m_max':[64,58,55,60,40],'temperature_2m_min':[48,44,41,39,30],'precipitation_probability_max':[40,80,20,0,60]}}").Replace('\'', '"');
+        Check(WeatherForecast.TryParse(fj, out var fc) && fc != null && fc.Now.Temp == 61 && fc.Now.Wind == 10 && fc.City == "Chicago", "forecast: the current weather and the place are read");
+        Check(fc != null && WeatherForecast.ChipText(fc) == "⛅ 61°  \U0001F4A7" + "40%", "forecast: the small chip shows the emoji, temperature and the chance of rain in the next hour");
+        Check(fc != null && fc.Hours.Length == 2&& fc.Hours[0].Label == "Now" && fc.Hours[1].Label == "3 PM" && fc.Hours[1].Rain == 40, "forecast: the hour by hour list starts at the current hour");
+        Check(fc != null && fc.Days.Length == 5 && fc.Days[0].Name == "Today" && fc.Days[1].Name == "Wednesday" && fc.Days[4].Lo == 30 && fc.Days[1].Text == "Rain", "forecast: five days are listed with names, highs, lows and conditions");
+        var fh = fc == null ? "" : WeatherForecast.BodyHtml(fc, true, "");
+        Check(fh.Contains("Hour by hour") && fh.Contains("Next 5 days") && fh.Contains("61°F") && fh.Contains("10 mph") && !fh.Contains("Eye"), "forecast: the card shows now, hour by hour and 5 days");
+        Check(!WeatherForecast.TryParse("{}", out _) && !WeatherForecast.TryParse("not json", out _) && !WeatherForecast.TryParse(null, out _) && !WeatherForecast.TryParse(new string('x', 500_000), out _), "forecast: broken or oversized answers are refused");
+        Check(WeatherForecast.BodyHtml(new Forecast(new WxNow(1, "<script>", 1, true, 0), new[] { new WxHour("Now", 1, 0, "<b>", 0, true) }, new[] { new WxDay("Today", 1, 0, 0, "<i>", 0) }, "x"), true, "<img onerror=1>").Contains("<script>") == false, "forecast: text from the answer is encoded before it is shown");
+        var weatherFiles = new[] { "MainWindow.Weather.cs", "MainWindow.WeatherData.cs", "WeatherForecast.cs", "WeatherRadar.cs" };
+        var dirWx = AppContext.BaseDirectory; string? browserDir = null;
+        for (var dd = new DirectoryInfo(dirWx); dd != null; dd = dd.Parent) if (File.Exists(Path.Combine(dd.FullName, "browser", "MainWindow.Weather.cs"))) { browserDir = Path.Combine(dd.FullName, "browser"); break; }
+        if (browserDir != null)
+            Check(weatherFiles.All(n => !File.ReadAllText(Path.Combine(browserDir, n)).Contains("God's Eye", StringComparison.OrdinalIgnoreCase) && !File.ReadAllText(Path.Combine(browserDir, n)).Contains("GEV")), "weather: no weather file names God's Eye View anywhere");
+    }
+    var wEmbed = WeatherRadar.EmbedUrl("windy", 39.5, -98.35, 4, null);
+    Check(wEmbed != null && wEmbed.StartsWith("https://embed.windy.com/embed2.html?lat=39.5&lon=-98.35&") && wEmbed.Contains("overlay=radar") && wEmbed.Contains("zoom=4"), "radar: the Windy address carries the chosen place and the radar layer");
+    var rEmbed = WeatherRadar.EmbedUrl("rainviewer", 51.5, -0.12, 6, null);
+    Check(rEmbed != null && rEmbed.StartsWith("https://www.rainviewer.com/map.html?loc=51.5,-0.12,6"), "radar: the RainViewer address carries the chosen place");
+    Check(WeatherRadar.OpenUrl("windy", 39.5, -98.35, 4, null) == "https://www.windy.com/-Weather-radar-radar?radar,39.5,-98.35,4", "radar: the 'open in a tab' link is the provider's own page");
+    Check(WeatherRadar.EmbedUrl("custom", 0, 0, 4, null) == null && WeatherRadar.EmbedUrl("custom", 0, 0, 4, "https://eye.example/radar") == "https://eye.example/radar", "radar: your own address is used only when set");
+    Check(WeatherRadar.CustomUrl("example.com/radar") == "https://example.com/radar" && WeatherRadar.CustomUrl("https://example.com/a?b=1") == "https://example.com/a?b=1", "radar: a bare site name becomes https");
+    foreach (var bad in new[] { "http://example.com/", "javascript:alert(1)", "data:text/html,x", "file:///c:/x.html", "https://user:pw@example.com/", "https://exa mple.com/", "https://localhost/", "https://example.com/\"onload=x", "https://example.com/<b>", "", "   ", null })
+        Check(WeatherRadar.CustomUrl(bad) == null, "radar: refused address '" + (bad ?? "null") + "'");
+    Check(WeatherRadar.CustomUrl("https://example.com/" + new string('a', 450)) == null, "radar: an over-long address is refused");
+}
+
+Console.WriteLine();
+Console.WriteLine("=== Themes, top bar styles and the theme library (executed C#) ===");
+{
+    Check(TopBarStyles.All.Select(s => s.Id).Distinct().Count() == TopBarStyles.All.Length && TopBarStyles.All[0].Id == "match", "top bar: unique styles, 'match theme' first");
+    Check(TopBarStyles.Normalize("OCEAN") == "ocean" && TopBarStyles.Normalize("match") == "" && TopBarStyles.Normalize("<script>") == "" && TopBarStyles.Normalize(null) == "", "top bar: only a known style name is kept");
+    foreach (var (nm, bar, txt) in new[] { ("dark", "#1b1e24", "#d6dae2"), ("light", "#f1f3f6", "#1f2430") })
+    {
+        var baseC = ChromeColors.Derive(bar, txt, "#2b6cb0");
+        bool dk = Rgb.Luminance(baseC["Bar"]) < 0.5;
+        bool okAll = true;
+        foreach (var s in TopBarStyles.All)
+        {
+            var c = new Dictionary<string, string>(baseC);
+            TopBarStyles.Apply(c, s.Id);
+            okAll &= c.Values.All(Rgb.Valid) && c["Text"] == baseC["Text"] && (Rgb.Luminance(c["Bar"]) < 0.5) == dk && Math.Abs(Rgb.Luminance(c["Text"]) - Rgb.Luminance(c["Bar"])) > 0.3 && c.Keys.SequenceEqual(baseC.Keys);
+        }
+        Check(okAll, "top bar: every style on a " + nm + " theme gives valid colours, keeps the text colour and the light or dark feel");
+    }
+    var same = new Dictionary<string, string>(ChromeColors.Derive("#1b1e24", "#d6dae2", "#2b6cb0")); var copy = new Dictionary<string, string>(same);
+    TopBarStyles.Apply(same, "match"); TopBarStyles.Apply(same, "nonsense");
+    Check(same.OrderBy(k => k.Key).SequenceEqual(copy.OrderBy(k => k.Key)), "top bar: 'match theme' and unknown names change nothing");
+    var oceanC = new Dictionary<string, string>(ChromeColors.Derive("#1b1e24", "#d6dae2", "#2b6cb0")); TopBarStyles.Apply(oceanC, "ocean");
+    Check(oceanC["Bar"] != "#1b1e24" && oceanC["Accent"] == "#3aa0ee", "top bar: a coloured style really changes the bar and accent");
+
+    Check(StartBackground.Presets.Distinct().Count() == StartBackground.Presets.Length && StartBackground.Presets.Length >= 22, "backgrounds: 22 or more built-in, none repeated");
+    Check(StartBackground.Presets.All(p => StartBackground.Preview(p) is string pv && pv.StartsWith("background:") && !pv.Contains("url(") && !pv.Contains("<") && !pv.Contains("}") && !pv.Contains("{")), "backgrounds: every preview is a plain background declaration");
+    Check(StartBackground.Css("mint", null).Contains("--txt") && StartBackground.Css("paper", null).Contains("--txt") && !StartBackground.Css("ocean", null).Contains("--txt"), "backgrounds: light ones switch the page text to dark, dark ones do not");
+    Check(StartBackground.Preview("image") == null && StartBackground.Preview("#aabbcc") == "background:#aabbcc", "backgrounds: previews for a picture and a colour");
+    Check(ThemePacks.Presets.Length >= 22 && ThemePacks.Presets.All(p => Math.Abs(Rgb.Luminance(p.Text) - Rgb.Luminance(p.Bar)) > 0.3), "themes: 22 or more built-in looks, all with readable text");
+
+    var good = "{\"schema\":\"recognition.theme.v1\",\"id\":\"my-theme\",\"name\":\"My theme\",\"bar\":\"#1e1e2e\",\"text\":\"#cdd6f4\",\"accent\":\"#cba6f7\",\"start_bg\":\"nebula\",\"top\":\"violet\"}";
+    var gp = ThemeLibrary.ParsePack(good);
+    Check(gp != null && gp.Id == "my-theme" && gp.Bar == "#1e1e2e" && gp.StartBg == "nebula" && gp.Top == "violet" && gp.Dark, "theme file: a good pack is read");
+    Check(ThemeLibrary.ParsePack(gp != null ? ThemeLibrary.ToJson(gp) : "") is ThemePack rt && rt == gp, "theme file: what is saved reads back identical");
+    string Variant(string from, string to) => good.Replace(from, to);
+    Check(ThemeLibrary.ParsePack(Variant("#1e1e2e", "red")) == null && ThemeLibrary.ParsePack(Variant("#cba6f7", "#cba6f7;x{}")) == null && ThemeLibrary.ParsePack(Variant("\"my-theme\"", "\"Bad Id\"")) == null && ThemeLibrary.ParsePack(Variant("\"my-theme\"", "\"default\"")) == null && ThemeLibrary.ParsePack(Variant("\"my-theme\"", "\"" + new string('a', 40) + "\"")) == null, "theme file: bad colours, bad ids and built-in ids are refused");
+    Check(ThemeLibrary.ParsePack(Variant("recognition.theme.v1", "other")) == null && ThemeLibrary.ParsePack("not json") == null && ThemeLibrary.ParsePack(null) == null && ThemeLibrary.ParsePack(good + new string(' ', 25_000)) == null, "theme file: wrong schema, garbage and oversized files are refused");
+    Check(ThemeLibrary.ParsePack(Variant("#cdd6f4", "#1f1f2f")) == null, "theme file: text that cannot be read on the bar is refused");
+    var odd = ThemeLibrary.ParsePack(Variant("\"nebula\"", "\"image\"").Replace("\"violet\"", "\"nope\"").Replace("My theme", "<b>My\\u0007 theme</b>"));
+    Check(odd != null && odd.StartBg == "default" && odd.Top == "" && !odd.Name.Contains('<') && !odd.Name.Contains('>') && !odd.Name.Any(char.IsControl), "theme file: unknown or unsafe values become safe ones (no picture key, no markup in the name)");
+    Check(ThemeLibrary.IsAllowedHost(new Uri("https://raw.githubusercontent.com/a/b/main/x.json")) && !ThemeLibrary.IsAllowedHost(new Uri("https://github.com/a")) && !ThemeLibrary.IsAllowedHost(new Uri("http://raw.githubusercontent.com/x")) && !ThemeLibrary.IsAllowedHost(new Uri("https://raw.githubusercontent.com.evil.example/x")) && !ThemeLibrary.IsAllowedHost(null), "theme library: only raw.githubusercontent.com over https");
+
+    var lib70 = "{\"schema\":\"recognition.theme.library.v1\",\"themes\":[" + string.Join(",", Enumerable.Range(0, 70).Select(i => good.Replace("my-theme", "t" + i).Replace("\"schema\":\"recognition.theme.v1\",", ""))) + "]}";
+    Check(ThemeLibrary.ParseLibrary(lib70).Count == ThemeLibrary.MaxPacks, "theme library: at most 60 themes are read");
+    var dupLib = "{\"schema\":\"recognition.theme.library.v1\",\"themes\":[" + good.Replace("\"schema\":\"recognition.theme.v1\",", "") + "," + good.Replace("\"schema\":\"recognition.theme.v1\",", "") + "]}";
+    Check(ThemeLibrary.ParseLibrary(dupLib).Count == 1 && ThemeLibrary.ParseLibrary("{\"schema\":\"x\",\"themes\":[]}").Count == 0 && ThemeLibrary.ParseLibrary("[]").Count == 0 && ThemeLibrary.ParseLibrary(null).Count == 0, "theme library: duplicates are dropped; wrong shapes give an empty list");
+
+    string? tRoot = null;
+    for (var td = new DirectoryInfo(AppContext.BaseDirectory); td != null; td = td.Parent)
+        if (File.Exists(Path.Combine(td.FullName, "themes", "library.v1.json"))) { tRoot = td.FullName; break; }
+    Check(tRoot != null, "theme library: the shipped themes\\library.v1.json is found");
+    if (tRoot != null)
+    {
+        var libText = File.ReadAllText(Path.Combine(tRoot, "themes", "library.v1.json"));
+        int declared; using (var ld = JsonDocument.Parse(libText)) declared = ld.RootElement.GetProperty("themes").GetArrayLength();
+        var parsed = ThemeLibrary.ParseLibrary(libText);
+        Check(declared >= 18 && parsed.Count == declared, "theme library: all " + declared + " shipped themes pass the checks (none silently dropped)");
+        Check(libText.Length < ThemeLibrary.MaxLibraryBytes && !libText.Contains("http", StringComparison.OrdinalIgnoreCase), "theme library: the shipped list is small and holds no addresses");
+    }
+    string? wRoot = null;
+    for (var wd = new DirectoryInfo(AppContext.BaseDirectory); wd != null; wd = wd.Parent)
+        if (File.Exists(Path.Combine(wd.FullName, "browser", "MainWindow.Weather.cs"))) { wRoot = wd.FullName; break; }
+    if (wRoot != null)
+    {
+        var wsrc = File.ReadAllText(Path.Combine(wRoot, "browser", "MainWindow.Weather.cs"));
+        var tsrc = File.ReadAllText(Path.Combine(wRoot, "browser", "MainWindow.Themes.cs"));
+        Check(wsrc.Contains("Nothing is requested") && wsrc.Contains("_wxMode == \"live\"") && !wsrc.Contains("HttpClient"), "radar: the card loads nothing until clicked unless 'Always show' is chosen, and the program itself makes no request");
+        Check(tsrc.Contains("ThemeLibrary.IsAllowedHost") && tsrc.Contains("cz-lib-fetch") && tsrc.Contains("ThemeLibrary.ParsePack"), "theme library: the download checks the host and every theme is validated");
+    }
+}
+
+Console.WriteLine();
 Console.WriteLine("=== Update from GitHub rules (executed C#) ===");
 {
     string UpRel(string tag, string zipUrl, string shaUrl, long size, string extra = "") =>
@@ -770,7 +914,7 @@ Console.WriteLine();
 Console.WriteLine("=== Host message gate and download rules (executed C#) ===");
 {
     // The privilege boundary: web content must never reach the command handlers.
-    string[] commands = { "site-perm:evil.com:Camera:allow", "cert-trust:evil.com:der-0123456789abcdef:allow", "cookies-clear-all", "update-apply", "update-check", "net-forget:Home", "toggle-blocking", "vpn-off", "export-session", "open-profile", "appearance-set:bg:#000000", "pw-reveal:abc", "setup-apply:{}", "tools-pdf-run:{}", "rmbookmark:https://x/", "open:https://evil.example/" };
+    string[] commands = { "site-perm:evil.com:Camera:allow", "cert-trust:evil.com:der-0123456789abcdef:allow", "cookies-clear-all", "update-apply", "update-check", "wx-mode:live", "wx-custom:https%3A%2F%2Fevil.example", "cz-top:ocean", "cz-lib-fetch", "cz-pack-import", "ws-closeask:off", "ws-startup:ask", "net-forget:Home", "toggle-blocking", "vpn-off", "export-session", "open-profile", "appearance-set:bg:#000000", "pw-reveal:abc", "setup-apply:{}", "tools-pdf-run:{}", "rmbookmark:https://x/", "open:https://evil.example/" };
     Check(commands.All(c => MessageGate.Classify(false, "https://evil.example/", c) == MessageVerdict.Deny), "gate: a normal web tab cannot send ANY command, whatever its origin");
     Check(commands.All(c => MessageGate.Classify(true, "https://evil.example/", c) == MessageVerdict.Deny), "gate: even in an 'internal' tab, a message that comes from an http(s) document is refused (tab navigated away, cross-origin frame)");
     Check(commands.All(c => new[] { "http://x/", "file:///c:/x.html", "ftp://x/", "ws://x/", "wss://x/", "blob:https://x/1", "filesystem:https://x/t/a", "HTTPS://X/", "  https://x/" }.All(s => MessageGate.Classify(true, s, c) == MessageVerdict.Deny)), "gate: every web-like source scheme (http, https, file, ftp, ws, wss, blob, filesystem, any case or leading space) is refused");

@@ -141,12 +141,15 @@ document.addEventListener('keydown',function(e){
             RestoreWindowPlacement();
             Loaded += OnLoaded;
             Closing += OnClosing;
+            // logging off or shutting Windows down must never be held up by the close question
+            if (Application.Current != null) Application.Current.SessionEnding += (_, __) => _closeConfirmed = true;
         }
 
         private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (HoldCloseForQuestion(e)) return;   // asks first when something would be lost; closes again once answered
             SaveWindowPlacement();
-            SaveSession();
+            if (_nextStart == "fresh") ClearSession(); else SaveSession(_nextStart == "restore");
             RecordNetworkEnd();
             StopPasskeyServer();
             SaveSettings();   // keeps the lifetime counters
@@ -395,7 +398,7 @@ document.addEventListener('keydown',function(e){
             tab.Web = web;
             WebHost.Children.Add(web);
 
-            var panel = new StackPanel { Orientation = Orientation.Horizontal };
+            var panel = new DockPanel { LastChildFill = true };   // icon left, close right, the title fills the rest and is cut with "..." when the tab is narrow
             var fav = new Image { Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
             tab.Fav = fav;
             var hdr = new TextBlock
@@ -413,10 +416,11 @@ document.addEventListener('keydown',function(e){
             close.Click += (_, __) => CloseTab(tab);
             var gmark = new TextBlock { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 6, 0), FontSize = 11, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
             tab.GroupMark = gmark;
+            DockPanel.SetDock(gmark, Dock.Left); DockPanel.SetDock(fav, Dock.Left); DockPanel.SetDock(close, Dock.Right);
             panel.Children.Add(gmark);
             panel.Children.Add(fav);
-            panel.Children.Add(hdr);
             panel.Children.Add(close);
+            panel.Children.Add(hdr);
             tab.Header = hdr; tab.CloseBtn = close;
 
             tab.Item = new TabItem { Header = panel, Tag = tab };
@@ -475,6 +479,7 @@ document.addEventListener('keydown',function(e){
             HookExternalUri(web.CoreWebView2, tab);
             ApplyTrackingPrevention(web.CoreWebView2);
             try { await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ShortcutScript); } catch { }
+            try { await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(CloseRules.PageScript); } catch { }   // notes pages with unsaved typing, for the close question
             await RegisterShieldAsync(tab);
             await RegisterPasskeyGuardAsync(tab);
             await ApplyAppearanceAsync(tab);
@@ -632,7 +637,11 @@ document.addEventListener('keydown',function(e){
             catch { }
         }
 
-        private async void OnFaviconChanged(BrowserTab tab)
+        // The engine reports a new icon address before the image itself has arrived, and then hands back its grey globe placeholder;
+        // asking once more a little later picks up the real icon (that is why some tabs showed a globe).
+        private async void OnFaviconChanged(BrowserTab tab) { await FetchFaviconAsync(tab); await Task.Delay(1500); if (_tabs.Contains(tab)) await FetchFaviconAsync(tab); }
+
+        private async Task FetchFaviconAsync(BrowserTab tab)
         {
             try
             {
@@ -957,6 +966,7 @@ document.addEventListener('keydown',function(e){
                 // process to release the profile, then starts a fresh instance that reads the new configuration.
                 var args = "/c ping -n 3 127.0.0.1 >nul & start \"\" \"" + exe + "\" --restart";
                 Process.Start(new ProcessStartInfo("cmd.exe", args) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
+                _closeConfirmed = true;   // a restart the person asked for does not ask again
                 Application.Current.Shutdown();
             }
             catch (Exception ex) { Status("restart failed: " + ex.Message); }
@@ -973,7 +983,7 @@ document.addEventListener('keydown',function(e){
                 if (!File.Exists(p)) return;
                 using var doc = JsonDocument.Parse(File.ReadAllText(p));
                 var r = doc.RootElement;
-                if (r.TryGetProperty("blocking_enabled", out var b)) _blockingEnabled = b.GetBoolean();
+                if (r.TryGetProperty("blocking_enabled", out var b) && (b.ValueKind == JsonValueKind.True || b.ValueKind == JsonValueKind.False)) _blockingEnabled = b.GetBoolean();
                 if (r.TryGetProperty("strip_tracking", out var st) && (st.ValueKind == JsonValueKind.True || st.ValueKind == JsonValueKind.False)) _stripTracking = st.GetBoolean();
                 if (r.TryGetProperty("send_gpc", out var gp) && (gp.ValueKind == JsonValueKind.True || gp.ValueKind == JsonValueKind.False)) _sendGpc = gp.GetBoolean();
                 if (r.TryGetProperty("shield_level", out var sl) && sl.ValueKind == JsonValueKind.String && sl.GetString() is "off" or "standard" or "strict") _shieldLevel = sl.GetString()!;
@@ -986,7 +996,7 @@ document.addEventListener('keydown',function(e){
                 if (r.TryGetProperty("sidebar", out var sdb) && (sdb.ValueKind == JsonValueKind.True || sdb.ValueKind == JsonValueKind.False)) _sideBarOn = sdb.GetBoolean();
                 if (r.TryGetProperty("stats_blocked", out var sbl) && sbl.ValueKind == JsonValueKind.Number && sbl.TryGetInt64(out var sblv) && sblv >= 0) _statsBlocked = sblv;
                 if (r.TryGetProperty("stats_stripped", out var ssp) && ssp.ValueKind == JsonValueKind.Number && ssp.TryGetInt64(out var sspv) && sspv >= 0) _statsStripped = sspv;
-                if (r.TryGetProperty("home_url", out var hu)) { var s = StartBackground.HomeUrl(hu.GetString(), File.Exists); if (s != null) _homeUrl = s; }
+                if (r.TryGetProperty("home_url", out var hu) && hu.ValueKind == JsonValueKind.String) { var s = StartBackground.HomeUrl(hu.GetString(), File.Exists); if (s != null) _homeUrl = s; }
                 if (r.TryGetProperty("chrome_bar", out var cbr) && cbr.ValueKind == JsonValueKind.String && Rgb.Valid(cbr.GetString())
                     && r.TryGetProperty("chrome_text", out var ctx) && Rgb.Valid(ctx.GetString()) && r.TryGetProperty("chrome_accent", out var cac) && Rgb.Valid(cac.GetString()))
                 { _chromeBar = Rgb.Norm(cbr.GetString()); _chromeText = Rgb.Norm(ctx.GetString()); _chromeAccent = Rgb.Norm(cac.GetString()); }
@@ -994,13 +1004,14 @@ document.addEventListener('keydown',function(e){
                 if (r.TryGetProperty("taskbar_recent", out var tbr) && (tbr.ValueKind == JsonValueKind.True || tbr.ValueKind == JsonValueKind.False)) _taskbarRecent = tbr.GetBoolean();
                 if (r.TryGetProperty("download_dir", out var ddr) && ddr.ValueKind == JsonValueKind.String && SoteriaBridge.IsSafeRoot(ddr.GetString())) _downloadDir = ddr.GetString()!.Trim();
                 if (r.TryGetProperty("download_ask", out var dak) && (dak.ValueKind == JsonValueKind.True || dak.ValueKind == JsonValueKind.False)) _downloadAsk = dak.GetBoolean();
-                if (r.TryGetProperty("startup_mode", out var sm) && sm.ValueKind == JsonValueKind.String && sm.GetString() is "start" or "restore") _startupMode = sm.GetString()!;
+                if (r.TryGetProperty("startup_mode", out var sm) && sm.ValueKind == JsonValueKind.String) _startupMode = StartupRules.NormalizeMode(sm.GetString());
                 if (r.TryGetProperty("translate_lang", out var tlg) && tlg.ValueKind == JsonValueKind.String) _translateLang = TranslateRules.NormalizeLang(tlg.GetString());
                 if (r.TryGetProperty("translate_service", out var tsv) && tsv.ValueKind == JsonValueKind.String) _translateService = TranslateRules.NormalizeService(tsv.GetString());
                 if (r.TryGetProperty("tiles", out var tls) && tls.ValueKind == JsonValueKind.Object)
                     TileRules.Load(tls.TryGetProperty("custom", out var tc) ? tc : (JsonElement?)null, tls.TryGetProperty("hidden", out var th) ? th : (JsonElement?)null, _tilesCustom, _tilesHidden);
                 if (r.TryGetProperty("prefs_utc", out var pu) && pu.ValueKind == JsonValueKind.String && DateTime.TryParse(pu.GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind, out var puv)) _prefsChangedUtc = puv.ToUniversalTime();
                 LoadSyncSettings(r);
+                LoadExtraSettings(r);
                 if (r.TryGetProperty("appearance", out var ap) && ap.ValueKind == JsonValueKind.Object) _appearance.FromJson(ap);
             }
             catch { }
@@ -1013,7 +1024,7 @@ document.addEventListener('keydown',function(e){
                 Directory.CreateDirectory(Path.GetDirectoryName(p)!);
                 File.WriteAllText(p, "{" + J("blocking_enabled") + ":" + (_blockingEnabled ? "true" : "false") + "," +
                                           J("strip_tracking") + ":" + (_stripTracking ? "true" : "false") + "," + J("send_gpc") + ":" + (_sendGpc ? "true" : "false") + "," + J("shield_level") + ":" + J(_shieldLevel) + "," + J("passkeys_level") + ":" + J(_passkeyLevel) + "," + J("tracking_level") + ":" + J(_trackingLevel) + "," +
-                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("search_engine") + ":" + J(_searchEngine) + "," + J("bookmarks_bar") + ":" + (_bookmarksBarOn ? "true" : "false") + "," + J("sidebar") + ":" + (_sideBarOn ? "true" : "false") + "," + J("stats_blocked") + ":" + _statsBlocked + "," + J("stats_stripped") + ":" + _statsStripped + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("chrome_bar") + ":" + J(_chromeBar) + "," + J("chrome_text") + ":" + J(_chromeText) + "," + J("chrome_accent") + ":" + J(_chromeAccent) + "," + J("theme_name") + ":" + J(_themeName) + "," + J("taskbar_recent") + ":" + (_taskbarRecent ? "true" : "false") + "," + J("download_dir") + ":" + J(_downloadDir) + "," + J("download_ask") + ":" + (_downloadAsk ? "true" : "false") + "," + J("startup_mode") + ":" + J(_startupMode) + "," + J("translate_lang") + ":" + J(_translateLang) + "," + J("translate_service") + ":" + J(_translateService) + "," + J("tiles") + ":" + TileRules.ToJson(_tilesCustom, _tilesHidden) + "," + J("prefs_utc") + ":" + J(_prefsChangedUtc.ToString("o")) + "," + SyncSettingsJson() + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
+                                          J("soteria_root") + ":" + J(_soteriaRoot) + "," + J("search_engine") + ":" + J(_searchEngine) + "," + J("bookmarks_bar") + ":" + (_bookmarksBarOn ? "true" : "false") + "," + J("sidebar") + ":" + (_sideBarOn ? "true" : "false") + "," + J("stats_blocked") + ":" + _statsBlocked + "," + J("stats_stripped") + ":" + _statsStripped + "," + J("start_bg") + ":" + J(_startBg) + "," + J("home_url") + ":" + J(_homeUrl) + "," + J("chrome_bar") + ":" + J(_chromeBar) + "," + J("chrome_text") + ":" + J(_chromeText) + "," + J("chrome_accent") + ":" + J(_chromeAccent) + "," + J("theme_name") + ":" + J(_themeName) + "," + J("taskbar_recent") + ":" + (_taskbarRecent ? "true" : "false") + "," + J("download_dir") + ":" + J(_downloadDir) + "," + J("download_ask") + ":" + (_downloadAsk ? "true" : "false") + "," + J("startup_mode") + ":" + J(_startupMode) + "," + J("translate_lang") + ":" + J(_translateLang) + "," + J("translate_service") + ":" + J(_translateService) + "," + J("tiles") + ":" + TileRules.ToJson(_tilesCustom, _tilesHidden) + "," + J("prefs_utc") + ":" + J(_prefsChangedUtc.ToString("o")) + "," + SyncSettingsJson() + ExtraSettingsJson() + J("appearance") + ":" + _appearance.ToJson() + "}\n", new UTF8Encoding(false));
             }
             catch { }
         }
@@ -1561,7 +1572,7 @@ body{font-family:'Segoe UI Variable Text','Segoe UI',Arial,sans-serif;color:var(
   radial-gradient(900px 480px at 50% -8%,rgba(76,155,240,.16),transparent 70%),
   radial-gradient(700px 420px at 85% 105%,rgba(124,108,240,.12),transparent 70%),var(--bg);
   display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;padding:24px}
-.mark{width:68px;height:68px;filter:drop-shadow(0 6px 22px rgba(76,155,240,.35))}
+.mark{height:84px;width:auto;filter:drop-shadow(0 6px 22px rgba(76,155,240,.35))}
 h1{font-weight:600;font-size:34px;letter-spacing:.4px;margin:16px 0 4px}
 .tag{color:var(--mut);font-size:13.5px;margin-bottom:34px}
 .hello{color:var(--mut);font-size:12.5px;height:16px;margin-bottom:10px}
@@ -1584,8 +1595,7 @@ button:hover{filter:brightness(1.12)}
 @media(max-width:760px){.tiles{grid-template-columns:repeat(3,minmax(84px,104px))}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head><body>
-<svg class='mark' viewBox='0 0 64 64' aria-hidden='true'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#4c9bf0'/><stop offset='1' stop-color='#7c6cf0'/></linearGradient></defs>
-<circle cx='32' cy='32' r='27' fill='none' stroke='url(#g)' stroke-width='5'/><circle cx='32' cy='32' r='10' fill='url(#g)'/><path d='M32 5v9M32 50v9M5 32h9M50 32h9' stroke='url(#g)' stroke-width='4' stroke-linecap='round'/></svg>
+<img class='mark' alt='' src='RECOGNITION_LOGO'>
 <h1>Recognition</h1>
 <div class='tag'>Private by design. Governed by proof.</div>
 <div class='hello' id='hi'></div>
@@ -1608,7 +1618,7 @@ if(/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)){location.href=v;}
 else if(v.indexOf('.')>-1&&v.indexOf(' ')===-1){location.href='https://'+v;}
 else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 </script></body></html>";
-            html = html.Replace("https://duckduckgo.com/?q=", SearchEngines.Prefix(_searchEngine)).Replace("<div class='facts'>", StartExtraHtml() + "<div class='facts'>");
+            html = html.Replace("RECOGNITION_LOGO", StartLogo.DataUri).Replace("https://duckduckgo.com/?q=", SearchEngines.Prefix(_searchEngine)).Replace("<div class='facts'>", StartExtraHtml() + "<div class='facts'>");
             return html.Replace("</style></head>", "</style><style>" + StartExtraCss + StartBackgroundCss() + "</style></head>");
         }
 
@@ -1983,6 +1993,8 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             else if (msg.StartsWith("ov-") && tab.Internal == "overview") HandleOverviewMessage(tab, msg);
             else if (msg.StartsWith("tile-") && (tab.Internal == "start" || tab.Internal == "settings")) HandleTileMessage(tab, msg);
             else if (msg.StartsWith("ws-") && tab.Internal == "settings") HandleWorkspaceMessage(tab, msg);
+            else if ((msg == "wxf-get" || msg == "wxf-here" || msg == "wxf-auto" || msg == "wxf-min:0" || msg == "wxf-min:1") && tab.Internal == "start") HandleForecastMessage(tab, msg);
+            else if (msg.StartsWith("wx-") && (tab.Internal == "settings" || tab.Internal == "customize" || (tab.Internal == "start" && msg == "wx-mode:off"))) HandleWeatherMessage(tab, msg);
             else if (msg.StartsWith("sync-") && tab.Internal == "settings") HandleSyncMessage(tab, msg);
             else if (msg.StartsWith("appearance-set:"))
             {

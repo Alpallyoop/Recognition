@@ -64,12 +64,13 @@ namespace Recognition.Browser
                       "<a class='btn' onclick=\"send('home-set:'+encodeURIComponent(document.getElementById('hm').value))\">Set</a> " +
                       "<a class='btn ghost' onclick=\"send('home-set:recognition%3Astart')\">Use start page</a></div></div>");
             var cur = _startBg == "image" ? "your picture" : (_startBg.StartsWith("#") ? "colour " + Esc(_startBg) : _startBg);
-            sb.Append("<div class='row'><div><div class='t'>Start page background</div><div class='u'>Now: " + cur + ". The start page is what new tabs show when your home page is the start page. A picture is shrunk and kept on this computer only.</div></div><div class='ts'>");
-            foreach (var p in StartBackground.Presets) sb.Append("<a class='btn ghost' onclick=\"send('bg-set:" + p + "')\">" + (p == "default" ? "Default" : char.ToUpperInvariant(p[0]) + p.Substring(1)) + "</a> ");
-            sb.Append("<input type='color' id='bgc' value='#1b1f27' style='vertical-align:middle;height:30px;width:42px;background:none;border:0'> <a class='btn ghost' onclick=\"send('bg-set:'+document.getElementById('bgc').value)\">Use colour</a> ");
+            sb.Append("<div class='row' style='display:block'><div class='t'>Start page background</div><div class='u' style='margin-bottom:10px'>Now: " + cur + ". Backgrounds come with Recognition and work offline. The start page is what new tabs show when your home page is the start page. A picture is shrunk and kept on this computer only.</div>");
+            sb.Append(BackgroundGridHtml());
+            sb.Append("<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px'><input type='color' id='bgc' value='#1b1f27' style='vertical-align:middle;height:30px;width:42px;background:none;border:0'> <a class='btn ghost' onclick=\"send('bg-set:'+document.getElementById('bgc').value)\">Use colour</a> ");
             sb.Append("<a class='btn' onclick=\"send('bg-image')\">Choose a picture...</a>");
             if (File.Exists(StartImagePath())) sb.Append(" <a class='btn ghost' onclick=\"send('bg-clear')\">Remove picture</a>");
             sb.Append("</div></div>");
+            sb.Append(WeatherSettingsHtml());
             return sb.ToString();
         }
 

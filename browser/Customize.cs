@@ -13,7 +13,7 @@ namespace Recognition.Browser
     //  * ExtSources: turning a Chrome Web Store or Edge Add-ons link (or a bare extension id) into the official download address.
     // Every colour that leaves this file is a validated #rrggbb value, so nothing a theme file says can reach the window as anything else.
 
-    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null);
+    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null, string Top = "");
 
     internal static class Rgb
     {
@@ -59,7 +59,21 @@ namespace Recognition.Browser
             new("forest",   "Forest",        "#18261f", "#e4f0e8", "#4fb477", "forest",  true),
             new("ember",    "Ember",         "#2a1f1c", "#f3e8e2", "#e8743b", "default", true),
             new("paper",    "Paper",         "#f1f3f6", "#1f2430", "#2b6cb0", "light",   false),
-            new("sand",     "Sand",          "#efe7d8", "#2b2418", "#b7791f", "light",   false),
+            new("sand",     "Sand",          "#efe7d8", "#2b2418", "#b7791f", "sand",    false),
+            new("graphite", "Graphite",      "#202226", "#dcdfe4", "#8a9ba8", "graphite", true),
+            new("ink",      "Ink",           "#0a0b0d", "#e4e6ea", "#6aa9e9", "midnight", true),
+            new("ocean",    "Ocean",         "#10202e", "#e2eef7", "#2f9de0", "ocean",   true),
+            new("sunset",   "Sunset",        "#2b1d33", "#f6e9ee", "#f2784b", "sunset",  true),
+            new("nebula",   "Nebula",        "#1a1428", "#ece6f8", "#b266f0", "nebula",  true),
+            new("rose",     "Rose",          "#2a1a21", "#f6e6ec", "#e5527f", "rose",    true),
+            new("lava",     "Lava",          "#241512", "#f6e7e2", "#ff6a2f", "lava",    true),
+            new("nord",     "Nord",          "#2e3440", "#e5e9f0", "#88c0d0", "slate",   true),
+            new("solar-dark", "Solar dark",  "#073642", "#d6e0e0", "#2aa198", "default", true),
+            new("mint",     "Mint",          "#e6f4ec", "#16301f", "#1f9d6e", "mint",    false),
+            new("ice",      "Ice",           "#e4eef8", "#13263a", "#2b78c2", "ice",     false),
+            new("snow",     "Snow",          "#fafbfc", "#1d2430", "#3b82f6", "paper",   false),
+            new("rosewater", "Rosewater",    "#f8e9ee", "#3a1a26", "#d9486f", "light",   false),
+            new("solar-light", "Solar light", "#fdf6e3", "#2a3a3d", "#268bd2", "sand",   false),
         };
 
         public static ThemePack? Find(string? id) => Presets.FirstOrDefault(p => string.Equals(p.Id, (id ?? "").Trim(), StringComparison.OrdinalIgnoreCase));

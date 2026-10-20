@@ -218,13 +218,14 @@ namespace Recognition.Browser
         }
 
         // Only when you chose "continue where I left off". Encrypted like history and bookmarks (Windows DPAPI, this user only).
-        private void SaveSession()
+        private void SaveSession(bool force = false)
         {
             try
             {
-                if (_startupMode != "restore" || !_preflightOk) return;
+                // saved while the start-up choice keeps tabs ("continue" or "ask me"), or once when the close window said "reopen these tabs"
+                if ((!force && _startupMode == "start") || !_preflightOk) return;
                 var d = SnapshotSession();
-                if (d == null) ClearSession(); else WriteSecure(SessionPath(), SessionRules.Serialize(d));
+                if (d == null) ClearSession(); else { WriteSecure(SessionPath(), SessionRules.Serialize(d)); SaveBookmarkIcons(); }
             }
             catch { }
         }
@@ -233,12 +234,8 @@ namespace Recognition.Browser
 
         private async Task OpenStartupTabsAsync()
         {
-            if (_startupMode == "restore")
-            {
-                SessionData? d = null;
-                try { d = SessionRules.Parse(ReadSecure(SessionPath())); } catch { }
-                if (d != null) { await RestoreSessionAsync(d); if (_tabs.Count > 0) { StartSessionTimer(); return; } }
-            }
+            var d = ChooseStartupSession();   // reopen last time's tabs, ask, or start fresh (see MainWindow.CloseGuard.cs)
+            if (d != null) { await RestoreSessionAsync(d); if (_tabs.Count > 0) { StartSessionTimer(); return; } }
             await OpenNewTabAsync();
             StartSessionTimer();
         }
@@ -264,6 +261,7 @@ namespace Recognition.Browser
                 if (t == null) { i++; continue; }
                 t.Internal = ""; t.CurrentUrl = st.Url; t.PendingUrl = st.Url; t.Pinned = st.Pinned; t.Group = st.Group;
                 t.CurrentTitle = TileRules.HostOf(st.Url) ?? st.Url;
+                try { t.Fav.Source = BookmarkIcon(TileRules.HostOf(st.Url) ?? ""); } catch { }   // the saved icon until the page loads
                 if (st.Pinned) { t.CloseBtn.Visibility = Visibility.Collapsed; t.Header.MaxWidth = 70; }
                 if (i == d.Active) sel = t;
                 i++;
@@ -271,6 +269,7 @@ namespace Recognition.Browser
             RefreshTabsUi();
             if (sel != null) Tabs.SelectedItem = sel.Item;
             ShowActiveWebView();
+            if (sel != null) LoadPending(sel);   // selecting the tab that was already selected (the last one) does not fire SelectionChanged
         }
 
         // ---- reader mode and picture-in-picture ---------------------------------------------------------------------------
@@ -396,9 +395,7 @@ namespace Recognition.Browser
         {
             var sb = new StringBuilder();
             sb.Append("<h1 style='font-size:16px'>Tabs, startup and tools</h1>");
-            sb.Append("<div class='row'><div><div class='t'>When Recognition starts</div><div class='u'>" +
-                      (_startupMode == "restore" ? "Your tabs from last time reopen (only the tab you were on loads at once). The list is encrypted on this computer and never includes private tabs." : "A new tab opens with your home page.") +
-                      "</div></div><div class='ts'><a class='btn" + (_startupMode == "start" ? "" : " ghost") + "' onclick=\"send('ws-startup:start')\">Open my home page</a> <a class='btn" + (_startupMode == "restore" ? "" : " ghost") + "' onclick=\"send('ws-startup:restore')\">Continue where I left off</a></div></div>");
+            sb.Append(StartupSettingsRowsHtml());
             sb.Append("<div class='row'><div><div class='t'>Translate</div><div class='u'>Menu, Page tools, Translate this page opens a translated copy in a new tab and asks first, because the service you choose sees the page address. Translating happens in that service, not on this computer.</div></div><div class='ts'>" +
                       "<select onchange=\"send('ws-lang:'+this.value)\" style='background:#0e1015;color:#e8e8e8;border:1px solid #333844;border-radius:6px;padding:6px'>" +
                       string.Concat(TranslateRules.Languages.Select(l => "<option value='" + l.Code + "'" + (l.Code == _translateLang ? " selected" : "") + ">" + Esc(l.Name) + "</option>")) + "</select> " +
@@ -415,6 +412,9 @@ namespace Recognition.Browser
             {
                 if (msg == "ws-startup:start") { _startupMode = "start"; ClearSession(); }
                 else if (msg == "ws-startup:restore") { _startupMode = "restore"; SaveSession(); }
+                else if (msg == "ws-startup:ask") { _startupMode = "ask"; SaveSession(); }
+                else if (msg == "ws-closeask:on") _closeAsk = "on";
+                else if (msg == "ws-closeask:off") _closeAsk = "off";
                 else if (msg.StartsWith("ws-lang:", StringComparison.Ordinal)) _translateLang = TranslateRules.NormalizeLang(msg.Substring("ws-lang:".Length));
                 else if (msg.StartsWith("ws-svc:", StringComparison.Ordinal)) _translateService = TranslateRules.NormalizeService(msg.Substring("ws-svc:".Length));
                 else return;

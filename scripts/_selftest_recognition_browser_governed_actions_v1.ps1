@@ -87,6 +87,22 @@ if($sur -match 'HttpClient|WebClient|Process\.Start|File\.|Directory\.'){ $bad +
 if($suh -notmatch 'Rollback' -or $suh -notmatch 'trust root' -or $suh -notmatch 'not newer'){ $bad += "the self-update helper must roll back, pin the trust root and refuse non-newer versions" }
 if($suh -match '\\runtime[^\r\n]*(Remove-Item|Move-Item)' -and $suh -notmatch 'keepTop'){ $bad += "the self-update helper must never touch runtime\" }
 foreach($t in @($suh,$suc)){ if($t -match '[^\x00-\x7F]'){ $bad += "update helper scripts must stay ASCII (Windows PowerShell 5.1)" } }
+# Closing and start-up, weather radar, themes: pure rules stay pure; settings messages come only from internal pages; nothing is requested without a click.
+foreach($pf in @("CloseGuard.cs","WeatherRadar.cs","WeatherForecast.cs","ThemeLibrary.cs","SelfUpdate.cs")){
+  $pt = Get-Content -LiteralPath (Join-Path $bdir $pf) -Raw
+  if($pt -cmatch 'HttpClient|WebClient|WebRequest|Process\.Start|File\.|Directory\.'){ $bad += ($pf + " must stay pure: no network, processes or files") }
+}
+$mwx = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Weather.cs") -Raw
+$mwd = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.WeatherData.cs") -Raw
+if($mwd -cmatch 'WebClient|WebRequest' -or $mwd -notmatch 'api\.open-meteo|WeatherForecast\.Host' -or ([regex]::Matches($mwd,'new HttpClient\(')).Count -ne 1){ $bad += "MainWindow.WeatherData.cs may make only the one Open-Meteo forecast request" }
+if($mwf -notmatch 'msg == "wxf-get" \|\| msg == "wxf-here" \|\| msg == "wxf-auto" \|\| msg == "wxf-min:0" \|\| msg == "wxf-min:1"\) && tab\.Internal == "start"'){ $bad += "the forecast may be requested only by the start page" }
+$mcg = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.CloseGuard.cs") -Raw
+$mth = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Themes.cs") -Raw
+if($mwx -cmatch 'HttpClient|WebClient|WebRequest|Process\.Start|File\.'){ $bad += "MainWindow.Weather.cs must not make web requests, start processes or touch files (the card loads only on a click)" }
+if($mcg -cmatch 'HttpClient|WebClient|WebRequest|Process\.Start'){ $bad += "MainWindow.CloseGuard.cs must not make web requests or start processes" }
+if($mwf -notmatch 'StartsWith\("wx-"\) && \(tab\.Internal == "settings" \|\| tab\.Internal == "customize" \|\| \(tab\.Internal == "start" && msg == "wx-mode:off"\)\)'){ $bad += "wx- radar messages must only be accepted from settings, customize (and Hide from the start page)" }
+if($mth -notmatch 'IsAllowedHost' -or $mth -notmatch 'ParsePack'){ $bad += "the theme library download must check the host and validate every theme" }
+if($mcg -notmatch 'Task\.WhenAny' -or $mcg -notmatch 'catch \{ proceed = true; \}'){ $bad += "the close question must have a time limit and must never trap the person in the window" }
 # Home page, start background, VPN-app hint: pure rules stay pure, the start page makes no web requests.
 $sbg = Get-Content -LiteralPath (Join-Path $bdir "StartBackground.cs") -Raw
 $vdt = Get-Content -LiteralPath (Join-Path $bdir "VpnDetect.cs") -Raw

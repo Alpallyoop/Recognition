@@ -42,7 +42,8 @@ namespace Recognition.Browser
         {
             try
             {
-                var colors = _chromeBar.Length == 0 ? ChromeDefaults : ChromeColors.Derive(_chromeBar, _chromeText, _chromeAccent);
+                var colors = new Dictionary<string, string>(_chromeBar.Length == 0 ? ChromeDefaults : ChromeColors.Derive(_chromeBar, _chromeText, _chromeAccent));
+                TopBarStyles.Apply(colors, _topStyle);   // the chosen top bar finish, if any
                 var res = Application.Current.Resources;
                 foreach (var k in ChromeColors.Keys) if (colors.TryGetValue(k, out var hex) && Rgb.Valid(hex)) res["Chrome" + k] = FrozenBrush(hex);
                 ApplyCaptionColors(colors["Bar"], colors["Text"], colors["Line"], Rgb.Luminance(colors["Bar"]) < 0.5);
@@ -76,6 +77,7 @@ namespace Recognition.Browser
                 _chromeBar = p.Bar; _chromeText = p.Text; _chromeAccent = p.Accent; _themeName = p.Name;
                 _appearance.Set("theme", p.Dark ? "dark" : "light");
             }
+            if (p.Id != "custom") _topStyle = TopBarStyles.Normalize(p.Top);   // your own three colours keep the top bar finish you chose
             var bg = StartBackground.Normalize(p.StartBg);
             if (ntpImagePath != null && File.Exists(ntpImagePath) && ImportStartPicture(ntpImagePath) == null) { _startImageUrl = null; _startBg = "image"; }
             else _startBg = bg;
@@ -117,7 +119,7 @@ namespace Recognition.Browser
             var cur = _chromeBar.Length == 0 ? ChromeDefaults["Bar"] : _chromeBar;
             var curText = _chromeBar.Length == 0 ? ChromeDefaults["Text"] : _chromeText;
             var curAcc = _chromeBar.Length == 0 ? ChromeDefaults["Accent"] : _chromeAccent;
-            sb.Append("<style>" + ToolbarCss + ".sw{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid #333844;border-radius:12px;cursor:pointer;min-width:132px}.sw:hover{border-color:#6fa8f0}.sw.on{border-color:#6fa8f0;box-shadow:0 0 0 1px #6fa8f0 inset}.dot{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:4px;vertical-align:middle}</style>");
+            sb.Append("<style>" + ToolbarCss + ".sw{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid #333844;border-radius:12px;cursor:pointer;min-width:132px}.sw:hover{border-color:#6fa8f0}.sw.on{border-color:#6fa8f0;box-shadow:0 0 0 1px #6fa8f0 inset}.dot{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:4px;vertical-align:middle}" + ThemeSwatchCss + "</style>");
             sb.Append("<title>Customize</title><h1>Customize</h1><div class='muted'>Looks for the window, the start page and web pages. Current look: <b>" + Esc(_themeName) + "</b>. Nothing here is sent anywhere.</div>");
             sb.Append("<div class='sec'>Themes</div><div style='display:flex;gap:12px;flex-wrap:wrap'>");
             foreach (var p in ThemePacks.Presets)
@@ -126,6 +128,7 @@ namespace Recognition.Browser
                 sb.Append("<div class='sw" + (on ? " on" : "") + "' style='background:" + p.Bar + ";color:" + p.Text + "' onclick=\"send('cz-apply:" + p.Id + "')\"><b>" + Esc(p.Name) + "</b><span><span class='dot' style='background:" + p.Accent + "'></span><span style='font-size:11px;opacity:.8'>" + (p.Dark ? "dark" : "light") + "</span></span></div>");
             }
             sb.Append("</div>");
+            sb.Append(TopBarSectionHtml());
             sb.Append("<div class='sec'>Your own colours</div><div class='row'><div><div class='t'>Bar, text and accent</div><div class='u'>The toolbar, tabs, side bar and menus follow these three colours. Light bars get dark text automatically if you pick dark text.</div>" +
                       "<div style='margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center'><label>Bar <input type='color' id='cb' value='" + cur + "'></label><label>Text <input type='color' id='ct' value='" + curText + "'></label><label>Accent <input type='color' id='ca' value='" + curAcc + "'></label></div></div>" +
                       "<div class='ts'><a class='btn' onclick=\"send('cz-custom:'+encodeURIComponent(document.getElementById('cb').value)+'|'+encodeURIComponent(document.getElementById('ct').value)+'|'+encodeURIComponent(document.getElementById('ca').value))\">Use these</a> <a class='btn ghost' onclick=\"send('cz-apply:default')\">Reset</a></div></div>");
@@ -133,6 +136,7 @@ namespace Recognition.Browser
             sb.Append(StartSettingsHtml());
             sb.Append("<div class='sec'>Layout</div>");
             sb.Append(FeelSettingsHtml());
+            sb.Append(ThemeLibrarySectionHtml());
             sb.Append("<div class='sec'>Get a theme</div><div class='row'><div><div class='t'>Chrome themes</div><div class='u'>Paste a Chrome Web Store or Edge Add-ons theme link, or choose a theme file you have. Recognition uses the theme's colours and start page picture for its own look; it does not run the theme as an extension.</div>" +
                       "<div style='margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center'><input id='sl' class='in' placeholder='https://chromewebstore.google.com/detail/...' style='flex:1;min-width:260px'><a class='btn' onclick=\"var v=document.getElementById('sl').value.trim();if(v)send('cz-store:'+encodeURIComponent(v))\">Get theme</a></div>" +
                       "<div style='margin-top:8px'><a class='btn ghost' onclick=\"send('cz-import')\">Choose a .crx or .zip...</a> <a class='btn ghost' onclick=\"send('cz-import-folder')\">Choose a folder...</a> <a class='btn ghost t' href='https://chromewebstore.google.com/category/themes'>Browse Chrome themes</a> <a class='btn ghost' href='recognition:extensions'>Extensions</a></div>" +
@@ -147,6 +151,13 @@ namespace Recognition.Browser
             void Note(string t) { Status(t); try { tab.Web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "note", text = t })); } catch { } }
             try
             {
+                if (msg.StartsWith("cz-top:", StringComparison.Ordinal) || msg == "cz-lib-fetch" || msg.StartsWith("cz-lib-add:", StringComparison.Ordinal) ||
+                    msg.StartsWith("cz-mine-", StringComparison.Ordinal) || msg == "cz-pack-import")
+                {
+                    if (tab.Internal != "customize") return;
+                    await HandleThemeExtraAsync(tab, msg, Note);
+                    return;
+                }
                 if (msg == "cz-taskbar:on" || msg == "cz-taskbar:off")
                 {
                     _taskbarRecent = msg.EndsWith("on"); SaveSettings(); UpdateJumpList();

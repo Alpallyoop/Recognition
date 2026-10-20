@@ -76,8 +76,7 @@ if(-not $NoShortcuts){
     $lnk = $ws.CreateShortcut($lnkPath)
     $lnk.TargetPath       = $exe
     $lnk.WorkingDirectory = (Join-Path $InstallDir "browser")
-    $lnk.IconLocation     = $exe + ",0"
-    $lnk.Description       = "Recognition - governed, private browser"
+    $lnk.IconLocation     = $exe + ",0"    $lnk.Description       = "Recognition - governed, private browser"
     $lnk.Save()
   }
   Write-Host "  shortcuts: Start Menu + Desktop created"

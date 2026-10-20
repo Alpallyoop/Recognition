@@ -42,6 +42,11 @@
     <Compile Include="..\browser\BrowserFeel.cs" Link="BrowserFeel.cs" />
     <Compile Include="..\browser\Workspace.cs" Link="Workspace.cs" />
     <Compile Include="..\browser\Customize.cs" Link="Customize.cs" />
+    <Compile Include="..\browser\SelfUpdate.cs" Link="SelfUpdate.cs" />
+    <Compile Include="..\browser\CloseGuard.cs" Link="CloseGuard.cs" />
+    <Compile Include="..\browser\WeatherRadar.cs" Link="WeatherRadar.cs" />
+    <Compile Include="..\browser\WeatherForecast.cs" Link="WeatherForecast.cs" />
+    <Compile Include="..\browser\ThemeLibrary.cs" Link="ThemeLibrary.cs" />
     <!-- Pinned. PDFsharp is MIT-licensed and has no native or Windows-only dependencies. -->
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

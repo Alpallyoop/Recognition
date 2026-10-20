@@ -24,8 +24,14 @@ namespace Recognition.Browser
         private Mutex? _mutex;
         private CancellationTokenSource? _cts;
 
+        // A fixed taskbar identity: Windows ties the taskbar button, its icon, pinning and the right-click menu to this name instead of
+        // guessing from the file path (a copy run from a build folder, dist\ or the installed folder is the same program to the taskbar).
+        [System.Runtime.InteropServices.DllImport("shell32.dll")]
+        private static extern int SetCurrentProcessExplicitAppUserModelID([System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPWStr)] string appId);
+
         protected override void OnStartup(StartupEventArgs e)
         {
+            try { SetCurrentProcessExplicitAppUserModelID("Recognition.Browser"); } catch { }
             var url = LaunchArgs.FromArgs(e.Args, File.Exists);
             // the taskbar menu starts the program with one of two fixed switches; nothing else is read from them
             string? special = Array.IndexOf(e.Args, "--private") >= 0 ? "--private" : Array.IndexOf(e.Args, "--new-tab") >= 0 ? "--new-tab" : null;

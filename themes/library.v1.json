@@ -1,0 +1,23 @@
+{
+  "schema": "recognition.theme.library.v1",
+  "themes": [
+    {"id": "dracula", "name": "Dracula", "bar": "#282a36", "text": "#f8f8f2", "accent": "#bd93f9", "start_bg": "nebula", "top": "violet"},
+    {"id": "gruvbox-dark", "name": "Gruvbox dark", "bar": "#282828", "text": "#ebdbb2", "accent": "#fabd2f", "start_bg": "graphite", "top": "amber"},
+    {"id": "tokyo-night", "name": "Tokyo Night", "bar": "#1a1b26", "text": "#c0caf5", "accent": "#7aa2f7", "start_bg": "midnight", "top": "ocean"},
+    {"id": "catppuccin-mocha", "name": "Catppuccin Mocha", "bar": "#1e1e2e", "text": "#cdd6f4", "accent": "#cba6f7", "start_bg": "nebula", "top": "violet"},
+    {"id": "monokai", "name": "Monokai", "bar": "#272822", "text": "#f8f8f2", "accent": "#a6e22e", "start_bg": "dots", "top": "emerald"},
+    {"id": "one-dark", "name": "One Dark", "bar": "#21252b", "text": "#abb2bf", "accent": "#61afef", "start_bg": "graphite", "top": "ocean"},
+    {"id": "everforest", "name": "Everforest", "bar": "#2d353b", "text": "#d3c6aa", "accent": "#a7c080", "start_bg": "forest", "top": "emerald"},
+    {"id": "rose-pine", "name": "Rose Pine", "bar": "#191724", "text": "#e0def4", "accent": "#eb6f92", "start_bg": "rose", "top": "rose"},
+    {"id": "material-ocean", "name": "Material Ocean", "bar": "#0f111a", "text": "#a6accd", "accent": "#82aaff", "start_bg": "ocean", "top": "ocean"},
+    {"id": "cobalt", "name": "Cobalt", "bar": "#002240", "text": "#e6f0ff", "accent": "#ffc600", "start_bg": "blueprint", "top": "frosted"},
+    {"id": "coffee", "name": "Coffee", "bar": "#2b211c", "text": "#eadfd2", "accent": "#c8935a", "start_bg": "lava", "top": "amber"},
+    {"id": "sunrise", "name": "Sunrise", "bar": "#2a1d24", "text": "#fbeee8", "accent": "#ffa24d", "start_bg": "horizon", "top": "amber"},
+    {"id": "deep-space", "name": "Deep space", "bar": "#0d0b1a", "text": "#e7e4f5", "accent": "#8b5cf6", "start_bg": "stars", "top": "deep"},
+    {"id": "terminal", "name": "Terminal", "bar": "#0b120d", "text": "#c8f7d0", "accent": "#3ddc84", "start_bg": "stripes", "top": "mono"},
+    {"id": "gruvbox-light", "name": "Gruvbox light", "bar": "#fbf1c7", "text": "#3c3836", "accent": "#b57614", "start_bg": "sand", "top": "flat"},
+    {"id": "paper-white", "name": "Paper white", "bar": "#ffffff", "text": "#24292f", "accent": "#0969da", "start_bg": "paper", "top": "flat"},
+    {"id": "sakura", "name": "Sakura", "bar": "#fdeef3", "text": "#3b2330", "accent": "#e0568a", "start_bg": "light", "top": "rose"},
+    {"id": "arctic", "name": "Arctic", "bar": "#e8f1f8", "text": "#12283a", "accent": "#2a8bd6", "start_bg": "ice", "top": "ocean"}
+  ]
+}
