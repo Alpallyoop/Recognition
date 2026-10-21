@@ -296,7 +296,7 @@ window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!
   else if(m.type==='added'){$('u').value='';$('p').value='';$('p').type='password';$('n').value='';$('msg').textContent='Saved.'}
   else if(m.type==='reveal'){var s=$('pv_'+m.id);if(s){s.textContent='Password: '+m.pw+'   (hides in 10 s)';setTimeout(function(){s.textContent=''},10000)}}
   else if(m.type==='action'){$('msg').textContent=m.text}});
-window.addEventListener('DOMContentLoaded',function(){send('pw-list')});
+window.addEventListener('load',function(){send('pw-list')});   // the vault page lists its own entries once loaded (internal page only; never fills web pages)
 setInterval(function(){send('pin-state')},15000);
 </script>");
             sb.Append(SendScript()).Append(PageFoot);
