@@ -303,6 +303,9 @@ Receipt states as of 2026-10-21: 13 `emitting` (below), none `witnessed` yet, ev
   the workbench) and the extension UI kit `themeforge.tokens.v1` for `cookiegate > themeforge` and `shadowprofile >
   themeforge` (specified).
 - Website: theme.theconstellationnetwork.com (Vercel project `themeforge-site`).
+- Store publishing (proposal 0022, external stores, not Constellation integrations): listings `themeforge.listing.v1`,
+  submission to Chrome Web Store, Firefox Add-ons and Edge Add-ons after a one-time connection, kits for Opera and
+  GX.store; log `proofs/store_submissions/<store>.ndjson`. Owner: connect the stores once (docs/STORES.md).
 
 ## veritas-engine
 - Veritas's side of every AION record is built and tested; callers write the receipts (fill rules in its

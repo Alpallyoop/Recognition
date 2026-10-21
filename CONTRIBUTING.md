@@ -6,7 +6,7 @@
 ```powershell
 dotnet build browser -c Release
 dotnet run --project browser.tests -c Release
-$env:RECOGNITION_PASSPHRASE = "any-value-for-selftests"
+$env:RECOGNITION_PASSPHRASE = "<passphrase>"   # any value works for the selftests
 pwsh -File scripts\_selftest_recognition_browser_governed_actions_v1.ps1
 pwsh -File scripts\RUN_RELEASE_GATE_V1.ps1 -RepoRoot . -RequireBrowserBuild
 ```

@@ -24,6 +24,7 @@ formal/*.old
 # contain user data (e.g. installed-extension host permissions). Publish the
 # spec + code + trust root + attestation bundles, not raw local receipts.
 proofs/receipts/
+proofs/integration_receipts/
 proofs/identity/
 proofs/software/
 packets/outbox/
@@ -35,6 +36,11 @@ proofs/keys/
 id_ed25519*
 *.pem
 *_private*
+*.key
+*.pfx
+*.p12
+.env
+.env.*
 
 # Backup litter
 *.bak

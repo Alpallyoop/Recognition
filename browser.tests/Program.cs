@@ -1652,6 +1652,231 @@ Console.WriteLine("=== Start page animation (StartMotion, theme v2, ThemeForge r
     }
 }
 
+// ==== extension developer area (ExtensionDev.cs; docs\proposals\0003) ====
+Console.WriteLine();
+Console.WriteLine("== extension developer area ==");
+{
+    string? dvRoot = null;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+        if (File.Exists(Path.Combine(d.FullName, "browser", "ExtensionDev.cs"))) { dvRoot = d.FullName; break; }
+    Check(dvRoot != null, "dev: repository root found");
+    var dvTmp = Path.Combine(Path.GetTempPath(), "rb-extdev-test-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var pol = dvRoot == null ? null : File.ReadAllText(Path.Combine(dvRoot, "config", "extension_policy.v1.json"));
+        string Mk(string name, string manifest, params (string Path, string Text)[] files)
+        {
+            var dir = Path.Combine(dvTmp, name); Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest, new UTF8Encoding(false));
+            foreach (var f in files) { var fp = Path.Combine(dir, f.Path.Replace('/', Path.DirectorySeparatorChar)); Directory.CreateDirectory(Path.GetDirectoryName(fp)!); File.WriteAllText(fp, f.Text, new UTF8Encoding(false)); }
+            return dir;
+        }
+        bool Has(ExtDevReport r, ExtDevLevel l, string code) => r.Findings.Any(f => f.Level == l && f.Code == code);
+
+        // a clean MV3 build
+        var good = Mk("good", "{\"manifest_version\":3,\"name\":\"Dev Sample\",\"version\":\"1.0.0\",\"permissions\":[\"storage\"],\"icons\":{\"48\":\"i/48.png\"},\"background\":{\"service_worker\":\"sw.js\"},\"action\":{\"default_popup\":\"popup.html\"},\"options_ui\":{\"page\":\"opt.html\"},\"content_scripts\":[{\"matches\":[\"https://example.com/*\"],\"js\":[\"cs.js\"],\"css\":[\"cs.css\"]}],\"web_accessible_resources\":[{\"resources\":[\"img/*\",\"w.js\"],\"matches\":[\"https://example.com/*\"]}]}",
+            ("i/48.png", "png"), ("sw.js", "//sw"), ("popup.html", "<p>"), ("opt.html", "<p>"), ("cs.js", "//cs"), ("cs.css", "p{}"), ("w.js", "//w"));
+        var rg = ExtDevCheck.Run(good, pol);
+        Check(rg.Errors == 0 && rg.Runnable && rg.Name == "Dev Sample" && rg.Version == "1.0.0" && rg.ManifestVersion == 3, "dev check: a complete MV3 build has no errors");
+        Check(Has(rg, ExtDevLevel.Info, "policy_allow") && Has(rg, ExtDevLevel.Info, "engine_popup"), "dev check: the policy preview and the engine popup note are reported as information");
+
+        // every reference to a missing file is reported, by where it is used
+        var miss = Mk("miss", "{\"manifest_version\":3,\"name\":\"M\",\"version\":\"1\",\"icons\":{\"16\":\"nope.png\"},\"background\":{\"service_worker\":\"gone.js\"},\"action\":{\"default_popup\":\"pop.html\",\"default_icon\":\"ic.png\"},\"options_page\":\"o.html\",\"content_scripts\":[{\"matches\":[\"https://a.example/*\"],\"js\":[\"x.js\"],\"css\":[\"y.css\"]}],\"web_accessible_resources\":[{\"resources\":[\"r.js\",\"glob/*\"],\"matches\":[\"<all_urls>\"]}]}");
+        var rm = ExtDevCheck.Run(miss, pol);
+        var missTexts = rm.Findings.Where(f => f.Code == "file_ref").Select(f => f.Text).ToList();
+        Check(new[] { "icons: missing file: nope.png", "background.service_worker: missing file: gone.js", "action.default_popup: missing file: pop.html", "action.default_icon: missing file: ic.png", "options_page: missing file: o.html", "content_scripts[0].js: missing file: x.js", "content_scripts[0].css: missing file: y.css", "web_accessible_resources: missing file: r.js" }.All(missTexts.Contains) && missTexts.Count == 8, "dev check: each missing file is named with the manifest key that uses it (globs are not checked)");
+        Check(!rm.Runnable, "dev check: a build with missing files cannot run");
+
+        // paths that leave the build, absolute paths and backslashes
+        var esc = Mk("esc", "{\"manifest_version\":3,\"name\":\"E\",\"version\":\"1\",\"background\":{\"service_worker\":\"../outside.js\"},\"options_page\":\"C:/x.html\",\"icons\":{\"16\":\"a\\\\b.png\"}}");
+        File.WriteAllText(Path.Combine(dvTmp, "outside.js"), "x");
+        var re = ExtDevCheck.Run(esc, pol);
+        Check(re.Findings.Count(f => f.Code == "file_ref" && (f.Text.Contains("outside the extension") || f.Text.Contains("not a path inside") || f.Text.Contains("backslash"))) == 3, "dev check: '..', drive paths and backslashes are refused even when the target exists");
+        Check(ExtDevCheck.PathProblem(good, "sw.js") == null && ExtDevCheck.PathProblem(good, "/sw.js") == null && ExtDevCheck.PathProblem(good, "sw.js?x=1") == null && ExtDevCheck.PathProblem(good, "") != null && ExtDevCheck.PathProblem(good, "https://x/y.js") != null, "dev check: path rules (leading slash and query allowed, empty and URLs refused)");
+
+        // version strings
+        Check(new[] { "1", "1.0", "1.2.3.4", "0.0.1", "65535.0" }.All(ExtDevCheck.IsValidVersion) && !new[] { "", "1.", ".1", "1.2.3.4.5", "01.2", "1.65536", "1.0-beta", "v1", "1..2", "１" }.Any(ExtDevCheck.IsValidVersion), "dev check: Chrome version rules (1-4 parts, 0-65535, no leading zeros, digits only)");
+        var badv = Mk("badv", "{\"manifest_version\":3,\"name\":\"V\",\"version\":\"1.0-beta\"}");
+        Check(Has(ExtDevCheck.Run(badv, pol), ExtDevLevel.Error, "version"), "dev check: a bad version is an error");
+
+        // manifest problems
+        var nom = Path.Combine(dvTmp, "nomanifest"); Directory.CreateDirectory(nom);
+        Check(Has(ExtDevCheck.Run(nom, pol), ExtDevLevel.Error, "no_manifest") && Has(ExtDevCheck.Run(Path.Combine(dvTmp, "absent"), pol), ExtDevLevel.Error, "no_folder"), "dev check: no manifest / no folder are errors, not exceptions");
+        var badj = Mk("badj", "{ \"name\": \"x\",\n \"version\": }");
+        var rj = ExtDevCheck.Run(badj, pol);
+        Check(Has(rj, ExtDevLevel.Error, "manifest_json") && rj.Findings.Any(f => f.Text.Contains("line 2")), "dev check: invalid JSON is reported with its line");
+        var arr = Mk("arr", "[1,2]");
+        Check(Has(ExtDevCheck.Run(arr, pol), ExtDevLevel.Error, "manifest_json"), "dev check: a manifest that is not an object is refused");
+
+        // manifest_version 2 parts in a manifest_version 3 build, and plain MV2
+        var mix = Mk("mix", "{\"manifest_version\":3,\"name\":\"X\",\"version\":\"1\",\"background\":{\"scripts\":[\"b.js\"],\"persistent\":false},\"browser_action\":{},\"web_accessible_resources\":[\"b.js\"]}", ("b.js", "//"));
+        var rx = ExtDevCheck.Run(mix, pol);
+        Check(Has(rx, ExtDevLevel.Error, "mv3_background") && Has(rx, ExtDevLevel.Error, "mv3_action") && Has(rx, ExtDevLevel.Error, "mv3_war") && Has(rx, ExtDevLevel.Warning, "mv3_persistent"), "dev check: MV2-only keys in an MV3 build are errors");
+        var mv2 = Mk("mv2", "{\"manifest_version\":2,\"name\":\"Old\",\"version\":\"1\",\"background\":{\"scripts\":[\"b.js\"]}}", ("b.js", "//"));
+        var rv2 = ExtDevCheck.Run(mv2, pol);
+        Check(Has(rv2, ExtDevLevel.Warning, "mv2") && !Has(rv2, ExtDevLevel.Error, "mv3_background"), "dev check: manifest_version 2 is a warning (retired), its own keys are fine");
+        Check(Has(ExtDevCheck.Run(Mk("mv4", "{\"manifest_version\":4,\"name\":\"F\",\"version\":\"1\"}"), pol), ExtDevLevel.Error, "manifest_version"), "dev check: manifest_version other than 2 or 3 is an error");
+
+        // locales
+        Check(Has(ExtDevCheck.Run(Mk("loc1", "{\"manifest_version\":3,\"name\":\"__MSG_n__\",\"version\":\"1\"}"), pol), ExtDevLevel.Error, "locale"), "dev check: __MSG_ without default_locale is an error");
+        Check(Has(ExtDevCheck.Run(Mk("loc2", "{\"manifest_version\":3,\"name\":\"__MSG_n__\",\"version\":\"1\",\"default_locale\":\"en\"}"), pol), ExtDevLevel.Error, "locale"), "dev check: default_locale without _locales/<l>/messages.json is an error");
+        Check(!Has(ExtDevCheck.Run(Mk("loc3", "{\"manifest_version\":3,\"name\":\"__MSG_n__\",\"version\":\"1\",\"default_locale\":\"en\"}", ("_locales/en/messages.json", "{}")), pol), ExtDevLevel.Error, "locale"), "dev check: a complete locale is accepted");
+        Check(Has(ExtDevCheck.Run(Mk("loc4", "{\"manifest_version\":3,\"name\":\"n\",\"version\":\"1\",\"default_locale\":\"../x\"}"), pol), ExtDevLevel.Error, "locale"), "dev check: a default_locale that is a path is refused");
+
+        // the policy preview is the governance policy itself
+        var deny = Mk("deny", "{\"manifest_version\":3,\"name\":\"All\",\"version\":\"1\",\"host_permissions\":[\"<all_urls>\"]}");
+        var rd = ExtDevCheck.Run(deny, pol);
+        Check(Has(rd, ExtDevLevel.Error, "policy_deny") && !rd.Runnable, "dev check: a build the policy denies is an error, so it is not run");
+        var rev = Mk("rev", "{\"manifest_version\":3,\"name\":\"Tabs\",\"version\":\"1\",\"permissions\":[\"tabs\"]}");
+        var rr = ExtDevCheck.Run(rev, pol);
+        Check(Has(rr, ExtDevLevel.Warning, "policy_review") && rr.Runnable, "dev check: a build that needs review can run in the developer tab (installing still needs the review)");
+        Check(!ExtDevCheck.Run(rev, null).Findings.Any(f => f.Code.StartsWith("policy")), "dev check: without a policy file there is no policy preview (and no invented decision)");
+
+        // leftovers
+        var junk = Mk("junk", "{\"manifest_version\":3,\"name\":\"J\",\"version\":\"1\"}", ("node_modules/x/index.js", "//"), ("a.js.map", "{}"));
+        var rjk = ExtDevCheck.Run(junk, pol);
+        Check(Has(rjk, ExtDevLevel.Warning, "junk_node_modules") && Has(rjk, ExtDevLevel.Info, "sourcemaps") && rjk.Runnable, "dev check: node_modules and source maps are pointed out, not refused");
+        Check(Has(ExtDevCheck.Run(Mk("eng", "{\"manifest_version\":3,\"name\":\"S\",\"version\":\"1\",\"side_panel\":{\"default_path\":\"s.html\"},\"commands\":{}}", ("s.html", "x")), pol), ExtDevLevel.Info, "engine_side_panel"), "dev check: parts the engine may not support are information, never errors");
+        var bom = Path.Combine(dvTmp, "bom"); Directory.CreateDirectory(bom);
+        File.WriteAllBytes(Path.Combine(bom, "manifest.json"), new byte[] { 0xEF, 0xBB, 0xBF }.Concat(Encoding.UTF8.GetBytes("{\"manifest_version\":3,\"name\":\"B\",\"version\":\"1\"}")).ToArray());
+        var rbom = ExtDevCheck.Run(bom, pol);
+        Check(Has(rbom, ExtDevLevel.Warning, "manifest_bom") && rbom.Name == "B", "dev check: a byte-order mark is a warning and the manifest is still read");
+
+        // check is deterministic
+        Check(string.Join("\n", ExtDevCheck.Run(miss, pol).Findings) == string.Join("\n", ExtDevCheck.Run(miss, pol).Findings), "dev check: the same build gives the same findings in the same order");
+
+        // diff between builds
+        var idA = ExtGovernance.ComputeIdentity(good); var manA = ExtGovernance.ReadManifest(good);
+        var good2 = Path.Combine(dvTmp, "good2"); ExtPackage.CopyDirectory(good, good2);
+        File.WriteAllText(Path.Combine(good2, "manifest.json"), File.ReadAllText(Path.Combine(good, "manifest.json")).Replace("\"version\":\"1.0.0\"", "\"version\":\"1.0.1\"").Replace("[\"storage\"]", "[\"storage\",\"tabs\"],\"host_permissions\":[\"https://b.example/*\"]"));
+        File.WriteAllText(Path.Combine(good2, "cs.js"), "//cs changed"); File.Delete(Path.Combine(good2, "w.js")); File.WriteAllText(Path.Combine(good2, "new.js"), "//n");
+        var idB = ExtGovernance.ComputeIdentity(good2); var manB = ExtGovernance.ReadManifest(good2);
+        var dc = ExtDevDiff.Compare(idA.Files, manA, idB.Files, manB);
+        Check(dc.OldVersion == "1.0.0" && dc.NewVersion == "1.0.1" && dc.FilesAdded.SequenceEqual(new[] { "new.js" }) && dc.FilesRemoved.SequenceEqual(new[] { "w.js" }) && dc.FilesChanged.SequenceEqual(new[] { "cs.js", "manifest.json" }), "dev diff: files added, removed and changed (sorted)");
+        Check(dc.PermsAdded.SequenceEqual(new[] { "tabs" }) && dc.HostsAdded.SequenceEqual(new[] { "https://b.example/*" }) && dc.AccessGrew && dc.PermsRemoved.Count == 0, "dev diff: new permissions and site access are flagged as more access");
+        var back = ExtDevDiff.Compare(idB.Files, manB, idA.Files, manA);
+        Check(back.PermsRemoved.SequenceEqual(new[] { "tabs" }) && !back.AccessGrew && ExtDevDiff.Compare(idA.Files, manA, idA.Files, manA).Same, "dev diff: removing access is not 'more access'; identical builds are the same");
+
+        // deterministic package
+        var z1 = ExtDevPack.Zip(good);
+        File.SetLastWriteTimeUtc(Path.Combine(good, "sw.js"), new DateTime(2031, 5, 6, 7, 8, 9, DateTimeKind.Utc));
+        var z2 = ExtDevPack.Zip(good);
+        Check(z1.SequenceEqual(z2), "dev package: the same files give byte-identical packages (file times do not leak in)");
+        var gitDir = Path.Combine(good, ".git"); Directory.CreateDirectory(gitDir); File.WriteAllText(Path.Combine(gitDir, "HEAD"), "ref");
+        Check(ExtDevPack.Zip(good).SequenceEqual(z1), "dev package: .git is never packaged (same as the identity)");
+        var unz = Path.Combine(dvTmp, "unz"); var unRoot = ExtPackage.Unpack(z1, unz);
+        Check(ExtGovernance.ComputeIdentity(unRoot).Id == idA.Id, "dev package: unpacking it gives exactly the build's identity");
+        using (var za = new System.IO.Compression.ZipArchive(new MemoryStream(z1)))
+            Check(za.Entries.Select(e => e.FullName).SequenceEqual(idA.Files.Select(f => f.Path)) && za.Entries.All(e => e.LastWriteTime.Year == 1980 && e.CompressedLength == e.Length), "dev package: entries in identity order, fixed 1980 time, stored");
+        Check(!z1.SequenceEqual(ExtDevPack.Zip(good2)), "dev package: different files give a different package");
+
+        // state file
+        var up = Path.Combine(dvTmp, "uploads"); Directory.CreateDirectory(up);
+        var st = new ExtDevStateFile();
+        var pa = new ExtDevProject { Id = "0123456789abcdef", Label = "A", Folder = good };
+        var pb = new ExtDevProject { Id = "fedcba9876543210", Label = "B", Folder = Path.Combine(up, new string('a', 64)), Uploaded = true };
+        st.Projects.Add(pa); st.Projects.Add(pb);
+        for (int i = 0; i < 40; i++) ExtDevState.AddBuild(pa, new ExtDevBuild { Gid = i.ToString("x64"), Version = "1." + i, Utc = "2026-10-21T00:00:00Z" });
+        Check(pa.Builds.Count == ExtDevState.MaxBuilds && pa.Builds[^1].Version == "1.39", "dev state: build history keeps the newest " + ExtDevState.MaxBuilds);
+        ExtDevState.AddBuild(pa, new ExtDevBuild { Gid = 39.ToString("x64"), Version = "1.39", Errors = 2 });
+        Check(pa.Builds.Count == ExtDevState.MaxBuilds && pa.Builds[^1].Errors == 2, "dev state: the same bytes again refresh the last build instead of adding one");
+        var json = ExtDevState.ToJson(st);
+        var st2 = ExtDevState.Parse(json, up);
+        Check(st2.Projects.Count == 2 && ExtDevState.ToJson(st2) == json, "dev state: round-trips byte for byte");
+        var evil = json.Replace(Path.Combine(up, new string('a', 64)).Replace("\\", "\\\\"), Path.Combine(dvTmp, "elsewhere").Replace("\\", "\\\\"));
+        Check(ExtDevState.Parse(evil, up).Projects.Count == 1, "dev state: an 'uploaded' build pointing outside the upload folder is dropped");
+        Check(ExtDevState.Parse(json.Replace("0123456789abcdef", "../../etc"), up).Projects.Count == 1 && ExtDevState.Parse(json.Replace("\"Label\":\"A\"", "\"Label\":\"A\\u0007\""), up).Projects.Count == 1, "dev state: a bad id or a control character drops only that entry");
+        Check(ExtDevState.Parse(json.Replace("recognition.extensions_dev.v1", "recognition.extensions_dev.v9"), up).Projects.Count == 0 && ExtDevState.Parse("{nope", up).Projects.Count == 0 && ExtDevState.Parse(null, up).Projects.Count == 0, "dev state: another schema, garbage or no file give an empty list, never an exception");
+        Check(ExtDevState.Parse(json.Replace(good.Replace("\\", "\\\\"), "relative\\\\path"), up).Projects.Count == 1, "dev state: a relative folder is dropped");
+        Check(ExtDevState.NewId("x").Length == 16 && ExtDevState.NewId("x") != ExtDevState.NewId("x"), "dev state: project ids are 16 hex and unique");
+    }
+    finally { try { Directory.Delete(dvTmp, true); } catch { } }
+
+    // ---- static checks on the developer glue: what it must never do ----
+    if (dvRoot != null)
+    {
+        var dg = File.ReadAllText(Path.Combine(dvRoot, "browser", "MainWindow.ExtensionDev.cs"));
+        var ex = File.ReadAllText(Path.Combine(dvRoot, "browser", "MainWindow.Extensions.cs"));
+        var mw = File.ReadAllText(Path.Combine(dvRoot, "browser", "MainWindow.xaml.cs"));
+        Check(!dg.Contains("ExtGovernance.Record(") && !dg.Contains("ExtLedgerPath") && !dg.Contains("_extState.Items.Add"), "dev glue: never writes the governance ledger or the installed list");
+        Check(!dg.Contains("AnyMainProfile(") && !dg.Contains("_env") && dg.Contains("EnsureExtDevEnvAsync()") && dg.Contains("NewTabCoreAsync(\"Extension developer\", true, env)"), "dev glue: builds run only in the separate developer profile, in a private tab");
+        Check(dg.Contains("AddBrowserExtensionAsync(res.Snapshot)") && dg.Contains("if (!res.Report.Runnable || res.Snapshot == null || res.Gid == null)") && dg.Contains("ExtGovernance.ComputeIdentity(tmp).Id != id.Id"), "dev glue: runs the checked, re-hashed snapshot and refuses a build with errors (including a policy deny)");
+        Check(dg.Contains("StageFolder(res.Snapshot") && ex.Contains("if (decision == \"deny\")") , "dev glue: Send to review goes through the normal review card, policy and approval");
+        Check(ex.Contains("if (msg.StartsWith(\"ext-dev-\")) { await HandleExtDevMessage(msg); return; }") && mw.Contains("else if (msg.StartsWith(\"ext-\") && tab.Internal == \"extensions\") HandleExtMessage(msg);"), "dev glue: developer commands are accepted only from the Extensions page");
+        Check(dg.Contains("CleanupExtDevOnExit") && ex.Contains("CleanupExtDevOnExit();") && dg.Contains("Path.Combine(TmpRoot, \"rb-extdev-\""), "dev glue: the developer profile and snapshots live in runtime\\tmp and are deleted on exit");
+        Check(!dg.Contains("HttpClient") && !dg.Contains("DownloadExtensionAsync"), "dev glue: makes no network request");
+        Check(dg.Contains("_actions?.Append(\"extension.dev_build\"") && dg.Contains("_actions?.Append(\"extension.dev_run\"") && dg.Contains("_actions?.Append(\"extension.dev_pack\"") && dg.Contains("_actions?.Append(\"extension.dev_upload\""), "dev glue: builds, runs, uploads and packages are receipted");
+        Check(ex.Contains("\" + ExtDevSectionHtml + @\"") && ex.Contains("renderDev(m.dev);") && ex.Contains("dev = ExtDevView()"), "dev glue: the Developer tab is part of the Extensions page");
+    }
+}
+
+// ==== constellation.integration.receipt.v1 (IntegrationReceipts.cs) ====
+Console.WriteLine();
+Console.WriteLine("== integration receipts ==");
+{
+    var z = IntegrationReceipts.Genesis; var h1 = new string('a', 64); var h2 = new string('b', 64);
+    var irGolden = "{\"schema\":\"constellation.integration.receipt.v1\",\"consumer\":\"recognition\",\"provider\":\"soteriavault\",\"emitted_by\":\"consumer\",\"contract\":\"soteriavault.connector_contract.v1\",\"request_sha256\":null,\"response_sha256\":\"" + h1 + "\",\"carried\":[],\"outcome\":\"deferred\",\"error_token\":\"SOTERIA_LINK_NOT_ENABLED\",\"prev_sha256\":\"" + z + "\"}";
+    Check(IntegrationReceipts.Line("recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, h1, Array.Empty<IntegrationCarried>(), "deferred", "SOTERIA_LINK_NOT_ENABLED", z) == irGolden, "receipt: exact byte form (schema key order, no whitespace, nulls)");
+    Check(IntegrationReceipts.Line("a", "b", "provider", null, h1, h2, new[] { new IntegrationCarried("arbiter.policy.decision.v1", h2) }, "ok", null, z).Contains(",\"carried\":[{\"contract\":\"arbiter.policy.decision.v1\",\"sha256\":\"" + h2 + "\"}],"), "receipt: carried entries in contract, sha256 order");
+    bool Refused(Func<string> f) { try { f(); return false; } catch (IntegrationReceiptException) { return true; } }
+    var irNone = Array.Empty<IntegrationCarried>();
+    Check(Refused(() => IntegrationReceipts.Line("Recognition", "b", "consumer", null, null, null, irNone, "ok", null, z)) && Refused(() => IntegrationReceipts.Line("a", "-b", "consumer", null, null, null, irNone, "ok", null, z)) &&
+          Refused(() => IntegrationReceipts.Line("a", "b", "both", null, null, null, irNone, "ok", null, z)) && Refused(() => IntegrationReceipts.Line("a", "b", "consumer", "no-version", null, null, irNone, "ok", null, z)) &&
+          Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, "ABC", null, irNone, "ok", null, z)) && Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, irNone, "great", null, z)) &&
+          Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, irNone, "ok", "X", z)) && Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, irNone, "failed", null, z)) &&
+          Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, irNone, "failed", "lower_case", z)) && Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, irNone, "ok", null, "0")) &&
+          Refused(() => IntegrationReceipts.Line("a", "b", "consumer", null, null, null, new[] { new IntegrationCarried("x", h1) }, "ok", null, z)), "receipt: everything the schema forbids is refused (ids, emitted_by, contract, hashes, outcome/error_token rule, carried)");
+    Check(IntegrationReceipts.ContractId("soteriavault.connector_contract.v1") && IntegrationReceipts.ContractId("neverlost.trust_bundle.v12") && !IntegrationReceipts.ContractId("x.v") && !IntegrationReceipts.ContractId("x.va") && !IntegrationReceipts.ContractId(".v1"), "receipt: contract id pattern");
+    Check(IntegrationReceipts.SoteriaOutcome(SoteriaState.NotConfigured) == null && IntegrationReceipts.SoteriaOutcome(SoteriaState.Ready) == ("ok", null) &&
+          IntegrationReceipts.SoteriaOutcome(SoteriaState.ContractOnly)!.Value.Outcome == "deferred" && IntegrationReceipts.SoteriaOutcome(SoteriaState.Unavailable)!.Value.Outcome == "unavailable" &&
+          IntegrationReceipts.SoteriaOutcome(SoteriaState.Invalid)!.Value.Outcome == "refused", "receipt: SoteriaVault link states map to explicit outcomes (nothing chosen = no exchange, no receipt)");
+
+    var irDir = Path.Combine(Path.GetTempPath(), "rb-ir-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var f = Path.Combine(irDir, "sub", "r.ndjson");
+        Check(IntegrationReceipts.Verify(f) == (0, z), "receipt chain: no file = empty chain at genesis");
+        var a1 = IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, h1, irNone, "deferred", "SOTERIA_LINK_NOT_ENABLED");
+        var a2 = IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, null, irNone, "unavailable", "SOTERIA_NOT_FOUND");
+        var a3 = IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, h2, irNone, "ok", null);
+        var irLines = File.ReadAllText(f).Split('\n');
+        Check(irLines.Length == 4 && irLines[3] == "" && irLines[0] == irGolden && a1 == IntegrationReceipts.Hash(irGolden), "receipt chain: first line is the golden bytes, LF-terminated; hash = SHA-256 of the line without LF");
+        Check(irLines[1].EndsWith("\"prev_sha256\":\"" + a1 + "\"}") && irLines[2].EndsWith("\"prev_sha256\":\"" + a2 + "\"}") && IntegrationReceipts.Verify(f) == (3, a3), "receipt chain: each receipt links to the previous one; verify recomputes the head");
+        Check(!File.ReadAllText(f).Contains('\r') && !File.ReadAllText(f).Contains("ts") && !File.ReadAllText(f).Contains("time"), "receipt chain: LF only, no timestamps");
+        var irGood = File.ReadAllBytes(f);
+        bool Broken(Func<byte[], byte[]> mutate)
+        {
+            File.WriteAllBytes(f, mutate((byte[])irGood.Clone()));
+            bool broke = false; try { IntegrationReceipts.Verify(f); } catch (IntegrationReceiptException) { broke = true; }
+            bool refusedAppend = false; try { IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, irNone, "failed", "X"); } catch (IntegrationReceiptException) { refusedAppend = true; }
+            File.WriteAllBytes(f, irGood); return broke && refusedAppend;
+        }
+        var irTxt = Encoding.UTF8.GetString(irGood); var irLs = irTxt.TrimEnd('\n').Split('\n');
+        Check(Broken(b => Encoding.UTF8.GetBytes(irTxt.Replace("\"unavailable\"", "\"ok\"").Replace("\"SOTERIA_NOT_FOUND\"", "null"))), "receipt chain: an edited receipt breaks the chain, and nothing more is appended");
+        Check(Broken(b => Encoding.UTF8.GetBytes(irLs[0] + "\n" + irLs[2] + "\n")), "receipt chain: a removed receipt is detected");
+        Check(Broken(b => Encoding.UTF8.GetBytes(irLs[1] + "\n" + irLs[0] + "\n" + irLs[2] + "\n")), "receipt chain: reordered receipts are detected");
+        Check(Broken(b => b.Take(b.Length - 1).ToArray()), "receipt chain: a partial (unterminated) last receipt is detected");
+        Check(Broken(b => Encoding.UTF8.GetBytes(irTxt.Replace("\n", "\r\n"))) && Broken(b => Encoding.UTF8.GetBytes(irTxt.Replace("{\"schema\":", "{ \"schema\":"))) && Broken(b => new byte[] { 0xEF, 0xBB, 0xBF }.Concat(b).ToArray()), "receipt chain: CRLF, extra whitespace and a byte-order mark are not canonical");
+        Check(IntegrationReceipts.Verify(f) == (3, a3), "receipt chain: the original file still verifies after the negative cases");
+    }
+    finally { try { Directory.Delete(irDir, true); } catch { } }
+
+    string? irRoot = null;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser", "MainWindow.Soteria.cs"))) { irRoot = d.FullName; break; }
+    if (irRoot != null)
+    {
+        var sv = File.ReadAllText(Path.Combine(irRoot, "browser", "MainWindow.Soteria.cs"));
+        var schemaPath = Path.Combine(irRoot, ".constellation", "constellation.integration.receipt.v1.json");
+        Check(sv.Contains("if (record) WriteSoteriaReceipt(st);") && sv.Contains("IntegrationReceipts.Append(SoteriaReceiptPath, \"recognition\", \"soteriavault\", \"consumer\", SoteriaBridge.ContractSchema"), "receipt glue: every SoteriaVault link check writes a recognition > soteriavault receipt");
+        if (File.Exists(schemaPath))
+        {
+            var sch = File.ReadAllText(schemaPath);
+            var order = new[] { "schema", "consumer", "provider", "emitted_by", "contract", "request_sha256", "response_sha256", "carried", "outcome", "error_token", "prev_sha256" };
+            Check(sch.Contains("\"required\": [\"" + string.Join("\", \"", order) + "\"]") || sch.Contains("\"required\":[\"" + string.Join("\",\"", order) + "\"]"), "receipt: the key order matches the published schema copy");
+        }
+    }
+}
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }

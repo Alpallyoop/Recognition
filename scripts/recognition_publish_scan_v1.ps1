@@ -57,7 +57,9 @@ foreach($rel in $tracked){
     if($text -match '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'){
       Add-Finding "CRITICAL" $rel $ln "private key material (PEM block)" "-----BEGIN ... PRIVATE KEY-----"
     }
-    if(-not $isTest -and $text -match 'RECOGNITION_PASSPHRASE\s*=\s*\S' -and $text -notmatch '<passphrase>' -and $text -notmatch '\$env:RECOGNITION_PASSPHRASE_NEW' -and $text -notmatch '=\s*\$null'){
+    # Not a finding: a value converted from a SecureString variable the script just prompted for (Read-Host -AsSecureString), e.g.
+    # UPDATE_ALL. Only that exact form is exempt; any literal or other expression is still flagged.
+    if(-not $isTest -and $text -match 'RECOGNITION_PASSPHRASE\s*=\s*\S' -and $text -notmatch '<passphrase>' -and $text -notmatch '\$env:RECOGNITION_PASSPHRASE_NEW' -and $text -notmatch '=\s*\$null' -and $text -notmatch '=\s*\[System\.Net\.NetworkCredential\]::new\(""\s*,\s*\$[A-Za-z_]\w*\)\.Password\s*$'){
       Add-Finding "CRITICAL" $rel $ln "passphrase assigned a value" ($text.Trim())
     }
     # Require an actual value/variable after -Passphrase (quote or $), so prose

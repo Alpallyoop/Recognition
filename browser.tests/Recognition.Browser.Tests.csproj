@@ -32,6 +32,8 @@
     <Compile Include="..\browser\FilterEngine.cs" Link="FilterEngine.cs" />
     <Compile Include="..\browser\ImagePdf.cs" Link="ImagePdf.cs" />
     <Compile Include="..\browser\ExtensionGovernance.cs" Link="ExtensionGovernance.cs" />
+    <Compile Include="..\browser\ExtensionDev.cs" Link="ExtensionDev.cs" />
+    <Compile Include="..\browser\IntegrationReceipts.cs" Link="IntegrationReceipts.cs" />
     <Compile Include="..\browser\RuntimeCheck.cs" Link="RuntimeCheck.cs" />
     <Compile Include="..\browser\SoteriaBridge.cs" Link="SoteriaBridge.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />

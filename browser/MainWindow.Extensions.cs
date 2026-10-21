@@ -263,7 +263,8 @@ namespace Recognition.Browser
                     chromiumId = i.ChromiumId
                 }).ToList(),
                 pending = PendingView(),
-                ledger = new { count = ledger.Count, head = ledger.Head, error = ledger.Error }
+                ledger = new { count = ledger.Count, head = ledger.Head, error = ledger.Error },
+                dev = ExtDevView()
             });
         }
 
@@ -275,6 +276,7 @@ namespace Recognition.Browser
             try
             {
                 if (msg == "ext-state") { SendExtSnapshot(); return; }
+                if (msg.StartsWith("ext-dev-")) { await HandleExtDevMessage(msg); return; }
                 if (msg.StartsWith("ext-support:"))
                 {
                     var on = msg.EndsWith(":on"); _extState.Enabled = on; SaveExtState(); _actions?.Append("extensions.support", on ? "on" : "off");
@@ -519,6 +521,7 @@ namespace Recognition.Browser
         private void CleanupExtensionsOnExit()
         {
             DiscardPending();
+            CleanupExtDevOnExit();
             if (_extTestDir != null) { try { if (Directory.Exists(_extTestDir)) Directory.Delete(_extTestDir, true); } catch { } }
             try { var s = Path.Combine(_repoRoot, "runtime", "extensions_staging"); if (Directory.Exists(s)) Directory.Delete(s, true); } catch { }
         }
@@ -557,7 +560,9 @@ namespace Recognition.Browser
 <div class='card'><div class='info'><h3>Paste an address</h3><p>A Chrome Web Store, Edge Add-ons or Firefox Add-ons page address, a 32-letter extension id, or a direct .crx, .zip or .xpi address.</p></div>
  <div class='field'><input id='url' placeholder='https://chromewebstore.google.com/detail/...'><a class='btn' id='dl'>Download and review</a></div></div>
 <div class='card'><div class='info'><h3>From a file</h3><p>Choose an extension package you already have (.crx, .zip or .xpi).</p></div><div class='acts'><a class='btn ghost' data-c='ext-pick-file'>Choose a file...</a></div></div>
-<div class='card'><div class='info'><h3>From a folder</h3><p>Choose an unpacked extension folder (the one that contains manifest.json). Good for extensions you are developing.</p></div><div class='acts'><a class='btn ghost' data-c='ext-pick-folder'>Choose a folder...</a></div></div>
+<div class='card'><div class='info'><h3>From a folder</h3><p>Choose an unpacked extension folder (the one that contains manifest.json) to install it. Writing your own? Use the Developer tab to check, run, reload and package builds first.</p></div><div class='acts'><a class='btn ghost' data-c='ext-pick-folder'>Choose a folder...</a></div></div>
+
+" + ExtDevSectionHtml + @"
 
 <h1 style='font-size:16px'>My installed</h1>
 <div id='list'></div>
@@ -602,7 +607,9 @@ function render(m){
   if(!m.items.length)L.appendChild(card('Nothing installed yet','Find one under Get extensions, or try a demo.'));
   m.items.forEach(function(x){var c=card(x.name+'  '+x.version,x.status+'  ·  from '+x.source,x.enabled?'on':'off',x.enabled?'good':'warn');
     var acts=el('div',null,'acts');acts.appendChild(btn(x.enabled?'Disable':'Enable','ext-toggle:'+x.gid,true));acts.appendChild(btn('Test','ext-test:'+x.gid,true));acts.appendChild(btn('Remove','ext-remove:'+x.gid,true));c.appendChild(acts);L.appendChild(c)});
+  renderDev(m.dev);
   $('ledger').textContent=m.ledger.error?('PROBLEM: '+m.ledger.error+'. Extensions will not load until this is resolved.'):(m.ledger.count+' records, head '+(m.ledger.head||'').slice(0,16)+'…')}
+" + ExtDevScript + @"
 window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!m)return;
   if(m.type==='snapshot')render(m);else if(m.type==='action'){$('msg').textContent=m.text;$('msg').style.color=m.ok?'':'#e57373'}});
 window.addEventListener('DOMContentLoaded',function(){send('ext-state')});

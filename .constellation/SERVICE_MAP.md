@@ -2273,11 +2273,16 @@ Constellation (`governance.ecosystem-authority`) sits beside this stack as a gov
 - Theme build and package receipts, sha256sums and the append-only build ledger
 - ThemeForge Studio (no-code editor) and its website theme.theconstellationnetwork.com
 - Local engine contract themeforge.api.v1
+- Store listings (themeforge.listing.v1), store categories and their mapping to each store's categories
+- Store submission kits (themeforge.store.kit.v1) and submission to Chrome Web Store, Firefox Add-ons and Edge Add-ons through the owner's own accounts; kits for Opera add-ons and GX.store
+- The append-only store submission log (themeforge.store.submission.v1)
+- Opera wallpaper archives (persona.ini with video or picture) for animated Opera start pages
 
 **Does not own:**
 - Recognition's theme acceptance rules, start page or theme library (recognition)
 - The Global Workbench shell, its plugin contract or its shell tokens (global-workbench)
-- Browser store accounts, listings, signing or publishing
+- Store accounts, their credentials and the stores' review, signing and listing decisions
+- Hosted store submission: store credentials stay on the owner's computer (.work/, never committed, never returned by the API)
 - Identity, signing or provenance of builds (neverlost)
 - The content or licensing of pictures and videos supplied by theme authors
 

@@ -42,7 +42,7 @@ Interaction Infrastructure* (v1.0, Feb 2026). Implementation status vs. the pape
 
 ```powershell
 pwsh -File browser\build.ps1                                  # build the browser
-$env:RECOGNITION_PASSPHRASE = "any-value-for-selftests"
+$env:RECOGNITION_PASSPHRASE = "<passphrase>"   # any value works for the selftests
 pwsh -File scripts\RUN_RELEASE_GATE_V1.ps1 -RepoRoot . -RequireBrowserBuild
 #   -> RECOGNITION_RELEASE_GATE_V1_OK  (packet law + prove-all + publish scan + browser build)
 pwsh -File scripts\RUN_PACKAGE_DIST_V1.ps1 -RepoRoot .        # build the downloadable zip

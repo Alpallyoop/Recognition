@@ -32,7 +32,7 @@ pwsh -File scripts\RUN_RELEASE_GATE_V1.ps1 -RepoRoot . -RequirePublishClean -Req
 ## Honest open items (not release-blocking, tracked)
 
 - Ecosystem canon (`C:\dev\_ecosystem\*`) unavailable to the auditor — release criteria there, if any, not reflected.
-- Browser: tabs, VPN policy and workspace features exist (see CURRENT_STATE.md); locked-startup gating (§20) in front of launch is not yet wired.
-- Everything from v1.3.8 onward must be built and run on a real machine before release: build, tests, selftest, UPDATE_ALL, and the smoke tests in docs/SMOKE_TEST_REAL_SITES.md.
+- Browser: tabs, VPN policy and workspace features exist (see CURRENT_STATE.md). Locked-startup gating (§20) is wired: the browser runs `scripts\recognition_locked_startup_browser_v1.ps1` before the web view opens (`MainWindow.xaml.cs`) and prove-all requires `RECOGNITION_LOCKED_STARTUP_OK` (this item said "not yet wired" until the 2026-10-21 audit).
+- Everything from v1.3.8 onward must be built and run on a real machine before release: build, tests, selftest, UPDATE_ALL, and the smoke tests in docs/SMOKE_TEST_REAL_SITES.md (now including section X, extension developer area). Windows CI (release-gate) was green for commit cffdd46 on 2026-10-21.
 - No LICENSE file is present; choosing one is the owner's decision.
 - §31 "clean browser session" remains synthetic until the WebView2 shell's real sessions feed the timeline.
