@@ -77,7 +77,7 @@ namespace Recognition.Browser
                 _chromeBar = p.Bar; _chromeText = p.Text; _chromeAccent = p.Accent; _themeName = p.Name;
                 _appearance.Set("theme", p.Dark ? "dark" : "light");
             }
-            if (p.Id != "custom") _topStyle = TopBarStyles.Normalize(p.Top);   // your own three colours keep the top bar finish you chose
+            if (p.Id != "custom") { _topStyle = TopBarStyles.Normalize(p.Top); ApplyPackMotion(p); }   // your own three colours keep the top bar finish and animation you chose
             var bg = StartBackground.Normalize(p.StartBg);
             if (ntpImagePath != null && File.Exists(ntpImagePath) && ImportStartPicture(ntpImagePath) == null) { _startImageUrl = null; _startBg = "image"; }
             else _startBg = bg;
@@ -95,8 +95,9 @@ namespace Recognition.Browser
                 var root = await Task.Run(() => ExtPackage.Unpack(package, Path.Combine(staging, "x")));
                 var mp = Path.Combine(root, "manifest.json");
                 if (!File.Exists(mp)) return "that package has no manifest.json";
-                var pack = ThemePacks.FromChromeTheme(File.ReadAllText(mp, Encoding.UTF8).TrimStart('﻿'));
-                if (pack == null) return "that is not a theme (it has no colours or picture to use). Extensions are added on the Extensions page.";
+                var pack = ThemeLibrary.FromPackage(File.ReadAllText(mp, Encoding.UTF8).TrimStart('﻿'), ReadPackageTheme(root, out var tooBig), out var perr);
+                if (tooBig) return "that theme's " + ThemeLibrary.PackageThemeFile + " is larger than 20 KB, so the theme was not applied";
+                if (pack == null) return perr ?? "that is not a theme";
                 string? img = null;
                 if (pack.NtpImage != null)
                 {
@@ -108,6 +109,16 @@ namespace Recognition.Browser
             }
             catch (Exception ex) { return "could not use that theme: " + ex.Message; }
             finally { try { Directory.Delete(staging, true); } catch { } }
+        }
+
+        // recognition.theme.json at the root of a theme package (ThemeForge ships one): null when absent; tooBig when over 20 KB.
+        private static string? ReadPackageTheme(string root, out bool tooBig)
+        {
+            tooBig = false;
+            var f = Path.Combine(root, ThemeLibrary.PackageThemeFile);
+            if (!File.Exists(f)) return null;
+            if (new FileInfo(f).Length > ThemeLibrary.MaxPackBytes) { tooBig = true; return null; }
+            return File.ReadAllText(f, Encoding.UTF8);
         }
 
         // ---- the Customize page ---------------------------------------------------------------------------------------------
@@ -193,8 +204,9 @@ namespace Recognition.Browser
                         var f = PickFolder("Choose an unpacked Chrome theme folder (it contains manifest.json)"); if (f == null) return;
                         var mp = Path.Combine(f, "manifest.json");
                         if (!File.Exists(mp)) { Note("that folder has no manifest.json"); return; }
-                        var pack = ThemePacks.FromChromeTheme(File.ReadAllText(mp, Encoding.UTF8).TrimStart('﻿'));
-                        if (pack == null) { Note("that is not a theme"); return; }
+                        var pack = ThemeLibrary.FromPackage(File.ReadAllText(mp, Encoding.UTF8).TrimStart('﻿'), ReadPackageTheme(f, out var tooBig), out var perr);
+                        if (tooBig) { Note("that theme's " + ThemeLibrary.PackageThemeFile + " is larger than 20 KB, so the theme was not applied"); return; }
+                        if (pack == null) { Note(perr ?? "that is not a theme"); return; }
                         string? img = null;
                         if (pack.NtpImage != null) { var full = Path.GetFullPath(Path.Combine(f, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar))); if (full.StartsWith(Path.GetFullPath(f).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full; }
                         ApplyPack(pack, img); Note("applied the theme \"" + pack.Name + "\""); RefreshCustomize(tab); return;

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media.Imaging;
 
@@ -16,6 +17,9 @@ namespace Recognition.Browser
     {
         private string _startBg = "default";                 // persisted as start_bg in browser_settings.json
         private string? _startImageUrl;                      // cached data: URL of runtime\start_bg.jpg
+        private MotionRecipe _startMotion = StartMotion.None;  // persisted as start_motion (StartMotion.cs validates it)
+        private bool _startMotionFromTheme;                  // persisted as start_motion_theme: the animation came with the current theme
+        private string? _motionJs;                           // the vendored ThemeForge runtime (embedded shield\motion.js), checked by hash before use
         private VpnFound? _sysVpn;
         private bool _sysVpnHooked;
 
@@ -36,6 +40,58 @@ namespace Recognition.Browser
         }
 
         private string StartBackgroundCss() => StartBackground.Css(_startBg, _startBg == "image" ? StartImageDataUrl() : null);
+
+        // The animated background: a canvas behind the start page running the vendored runtime with the validated recipe. Nothing is loaded
+        // from the network; the runtime is used only if its bytes match StartMotion.RuntimeSha256, otherwise the page stays still.
+        private string StartMotionHtml(string html)
+        {
+            if (!_startMotion.IsOn) return html;
+            _motionJs ??= ReadResource(StartMotion.RuntimeResource) ?? "";
+            var look = StartMotion.Look(_chromeBar.Length == 0 ? null : _chromeAccent, _chromeBar.Length == 0 ? null : _chromeText, _startBg,
+                                        _startBg == "image" && StartImageDataUrl() != null);
+            return StartMotion.Inject(html, _startMotion, look, _motionJs);
+        }
+
+        private string MotionSettingsHtml()
+        {
+            var sb = new StringBuilder();
+            var m = _startMotion;
+            sb.Append("<div class='row' style='display:block'><div class='t'>Animation</div><div class='u' style='margin-bottom:10px'>Now: " + Esc(StartMotion.EffectName(m.Effect)) +
+                      (m.IsOn ? " (" + (_startMotionFromTheme ? "from the theme, " : "") + "about " + (m.DurationMs / 1000) + " s per cycle, strength " + m.IntensityPct + "%)" : "") +
+                      ". The start page background moves gently. Slow zoom, Pan, Drift, Breathe and Parallax move your picture, so choose a picture first; the others draw over any background. " +
+                      "It runs only while the start page is visible, stays still when Windows is set to reduce animations, and loads nothing from the internet.</div>");
+            sb.Append("<div style='display:flex;gap:6px;flex-wrap:wrap'>");
+            foreach (var (id, name) in StartMotion.Effects)
+                sb.Append("<a class='btn" + (m.Effect == id ? "" : " ghost") + "' onclick=\"send('bg-motion:" + id + "')\">" + Esc(name) + "</a>");
+            sb.Append("</div>");
+            if (m.IsOn)
+            {
+                sb.Append("<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px'><span class='u' style='width:64px'>Speed</span>");
+                foreach (var (id, name, v) in StartMotion.Speeds)
+                    sb.Append("<a class='btn" + (m.DurationMs == v ? "" : " ghost") + "' onclick=\"send('bg-motion-speed:" + id + "')\">" + name + "</a>");
+                sb.Append("<span class='u' style='width:64px;margin-left:12px'>Strength</span>");
+                foreach (var (id, name, v) in StartMotion.Strengths)
+                    sb.Append("<a class='btn" + (m.IntensityPct == v ? "" : " ghost") + "' onclick=\"send('bg-motion-strength:" + id + "')\">" + name + "</a>");
+                sb.Append("</div>");
+            }
+            return sb.Append("</div>").ToString();
+        }
+
+        private void LoadMotionSettings(JsonElement r)
+        {
+            _startMotion = StartMotion.Normalize(r.TryGetProperty("start_motion", out var v) ? v : (JsonElement?)null);
+            _startMotionFromTheme = _startMotion.IsOn && r.TryGetProperty("start_motion_theme", out var t) && t.ValueKind == JsonValueKind.True;
+        }
+
+        private string MotionSettingsJson() => J("start_motion") + ":" + StartMotion.ToJson(_startMotion) + "," + J("start_motion_theme") + ":" + (_startMotionFromTheme ? "true" : "false") + ",";
+
+        // A theme with an animation sets it; a theme without one turns off only an animation that came from a theme (your own choice stays).
+        private void ApplyPackMotion(ThemePack p)
+        {
+            var m = StartMotion.Normalize(p.Motion);
+            if (m.IsOn) { _startMotion = m; _startMotionFromTheme = true; }
+            else if (_startMotionFromTheme) { _startMotion = StartMotion.None; _startMotionFromTheme = false; }
+        }
 
         // ---- VPN app hint --------------------------------------------------------------------------------------------------
         private void RefreshSysVpn()
@@ -70,6 +126,7 @@ namespace Recognition.Browser
             sb.Append("<a class='btn' onclick=\"send('bg-image')\">Choose a picture...</a>");
             if (File.Exists(StartImagePath())) sb.Append(" <a class='btn ghost' onclick=\"send('bg-clear')\">Remove picture</a>");
             sb.Append("</div></div>");
+            sb.Append(MotionSettingsHtml());
             sb.Append(WeatherSettingsHtml());
             return sb.ToString();
         }
@@ -96,6 +153,18 @@ namespace Recognition.Browser
                     var k = StartBackground.Normalize(msg.Substring("bg-set:".Length));
                     if (k == "image" && StartImageDataUrl() == null) { Status("no picture is saved yet; choose one first"); return; }
                     _startBg = k; SaveSettings(); Status("start page background: " + (k == "image" ? "your picture" : k));
+                }
+                else if (msg.StartsWith("bg-motion:", StringComparison.Ordinal) || msg.StartsWith("bg-motion-speed:", StringComparison.Ordinal) || msg.StartsWith("bg-motion-strength:", StringComparison.Ordinal))
+                {
+                    var arg = msg.Substring(msg.IndexOf(':') + 1);
+                    var before = _startMotion;
+                    _startMotion = msg.StartsWith("bg-motion:", StringComparison.Ordinal) ? StartMotion.WithEffect(_startMotion, arg)
+                                 : msg.StartsWith("bg-motion-speed:", StringComparison.Ordinal) ? StartMotion.WithSpeed(_startMotion, arg)
+                                 : StartMotion.WithStrength(_startMotion, arg);
+                    if (_startMotion == before) return;
+                    _startMotionFromTheme = false; _prefsChangedUtc = DateTime.UtcNow; SaveSettings();
+                    _actions?.Append("start.motion", _startMotion.Effect);
+                    Status("start page animation: " + StartMotion.EffectName(_startMotion.Effect));
                 }
                 else if (msg == "bg-clear")
                 {

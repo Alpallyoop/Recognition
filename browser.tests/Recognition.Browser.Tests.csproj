@@ -47,6 +47,9 @@
     <Compile Include="..\browser\WeatherRadar.cs" Link="WeatherRadar.cs" />
     <Compile Include="..\browser\WeatherForecast.cs" Link="WeatherForecast.cs" />
     <Compile Include="..\browser\ThemeLibrary.cs" Link="ThemeLibrary.cs" />
+    <Compile Include="..\browser\StartMotion.cs" Link="StartMotion.cs" />
+    <!-- the same vendored runtime the browser embeds, so the test checks the embedded bytes' SHA-256 -->
+    <EmbeddedResource Include="..\browser\shield\motion.js" LogicalName="motion.js" />
     <!-- Pinned. PDFsharp is MIT-licensed and has no native or Windows-only dependencies. -->
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

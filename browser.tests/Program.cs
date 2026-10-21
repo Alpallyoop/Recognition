@@ -1531,6 +1531,128 @@ Console.WriteLine("=== Password vault (executed C#) ===");
 }
 
 Console.WriteLine();
+Console.WriteLine("=== Start page animation (StartMotion, theme v2, ThemeForge runtime) ===");
+{
+    // ---- recipes ----
+    var mGood = StartMotion.Parse("{\"effect\":\"aurora\",\"duration_ms\":30000,\"intensity_pct\":60,\"seed\":42}");
+    Check(mGood != null && mGood.Effect == "aurora" && mGood.DurationMs == 30000 && mGood.IntensityPct == 60 && mGood.Seed == 42 && mGood.IsOn, "motion: a good recipe is read");
+    Check(StartMotion.Effects.Length == 12 && StartMotion.Effects.Select(e => e.Id).SequenceEqual(new[] { "none", "kenburns", "pan", "drift", "breathe", "parallax", "particles", "aurora", "rain", "snow", "shimmer", "fireflies" }), "motion: exactly the 12 runtime effects (Still plus 11)");
+    Check(StartMotion.Effects.All(e => StartMotion.Parse("{\"effect\":\"" + e.Id + "\"}") is MotionRecipe r && r.Effect == e.Id), "motion: every listed effect is accepted");
+    Check(StartMotion.Parse("{\"effect\":\"snow\"}") == new MotionRecipe("snow", 24000, 50, 1), "motion: missing numbers take the defaults (24 s, 50%, seed 1)");
+    Check(StartMotion.Parse("{\"effect\":\"kenburns\",\"duration_ms\":4000,\"intensity_pct\":0,\"seed\":0}") != null && StartMotion.Parse("{\"effect\":\"kenburns\",\"duration_ms\":120000,\"intensity_pct\":100,\"seed\":2147483647}") != null, "motion: the range ends are accepted");
+    var badRecipes = new[]
+    {
+        "{\"effect\":\"explode\"}", "{\"effect\":\"Aurora\"}", "{\"effect\":\"aurora \"}", "{\"effect\":5}", "{\"duration_ms\":30000}", "{}", "[]", "\"aurora\"", "null", "not json", "",
+        "{\"effect\":\"aurora\",\"duration_ms\":3999}", "{\"effect\":\"aurora\",\"duration_ms\":120001}", "{\"effect\":\"aurora\",\"duration_ms\":30000.5}", "{\"effect\":\"aurora\",\"duration_ms\":3e4}",
+        "{\"effect\":\"aurora\",\"duration_ms\":30000.0}", "{\"effect\":\"aurora\",\"duration_ms\":\"30000\"}", "{\"effect\":\"aurora\",\"intensity_pct\":-1}", "{\"effect\":\"aurora\",\"intensity_pct\":101}",
+        "{\"effect\":\"aurora\",\"intensity_pct\":50.5}", "{\"effect\":\"aurora\",\"seed\":-1}", "{\"effect\":\"aurora\",\"seed\":2147483648}", "{\"effect\":\"aurora\",\"seed\":99999999999999999999}",
+        "{\"effect\":\"aurora\",\"seed\":1.0}", "{\"effect\":\"aurora\",\"seed\":true}", "{\"effect\":\"aurora\",\"image\":\"https://evil.example/x.png\"}", "{\"effect\":\"aurora\",\"effect\":\"snow\"}",
+        "{\"effect\":\"aurora</script><script>alert(1)//\"}",
+    };
+    Check(badRecipes.All(j => StartMotion.Parse(j) == null), "motion: unknown effects, floats, exponents, strings, out-of-range, negative and huge seeds, extra or repeated keys are refused (" + badRecipes.Length + " cases)");
+    Check(badRecipes.All(j => StartMotion.Normalize(j) == StartMotion.None) && StartMotion.Normalize((string?)null) == StartMotion.None && StartMotion.Normalize((JsonElement?)null) == StartMotion.None, "motion: anything invalid becomes 'none' (fail closed, never throws)");
+    Check(StartMotion.Normalize(new MotionRecipe("aurora", 1, 50, 1)) == StartMotion.None && StartMotion.Normalize(new MotionRecipe("bogus", 24000, 50, 1)) == StartMotion.None && StartMotion.Normalize(new MotionRecipe("snow", 24000, 50, -5)) == StartMotion.None, "motion: a recipe built in code with bad values is also 'none'");
+    Check(StartMotion.ToJson(mGood) == "{\"effect\":\"aurora\",\"duration_ms\":30000,\"intensity_pct\":60,\"seed\":42}" && StartMotion.Parse(StartMotion.ToJson(mGood)) == mGood && StartMotion.ToJson(null) == "{\"effect\":\"none\",\"duration_ms\":24000,\"intensity_pct\":50,\"seed\":1}", "motion: canonical JSON (fixed order, integers) reads back identical");
+    var mw = StartMotion.WithEffect(StartMotion.None, "rain");
+    Check(mw.Effect == "rain" && StartMotion.WithSpeed(mw, "fast").DurationMs == 8000 && StartMotion.WithSpeed(mw, "slow").DurationMs == 60000 && StartMotion.WithStrength(mw, "high").IntensityPct == 85, "motion: the Settings buttons set effect, speed and strength");
+    Check(StartMotion.WithEffect(mw, "nope") == mw && StartMotion.WithSpeed(mw, "warp") == mw && StartMotion.WithStrength(mw, "max") == mw && StartMotion.WithEffect(mw, "none") == StartMotion.None && StartMotion.WithSpeed(StartMotion.None, "fast") == StartMotion.None, "motion: unknown button values change nothing; Still turns it off");
+    Check(StartMotion.Speeds.All(s => s.Value >= StartMotion.MinDuration && s.Value <= StartMotion.MaxDuration) && StartMotion.Strengths.All(s => s.Value >= 0 && s.Value <= 100), "motion: every speed and strength choice is inside the allowed range");
+
+    // ---- the page configuration ----
+    var lkDark = StartMotion.Look("#cba6f7", "#cdd6f4", "nebula", false);
+    var cfg = StartMotion.ConfigJson(mGood, lkDark);
+    Check(cfg == "{\"effect\":\"aurora\",\"duration_ms\":30000,\"intensity_pct\":60,\"seed\":42,\"fit\":\"cover\",\"position\":\"center\",\"overlay_color\":\"#0a0c10\",\"overlay_opacity_pct\":0,\"blur_px\":0,\"respect_reduced_motion\":true,\"colors\":{\"accent\":\"#cba6f7\",\"text\":\"#cdd6f4\",\"background\":\"#000000\"}}", "motion: boot configuration is exact (theme colours, reduced motion always respected)");
+    using (var cd = JsonDocument.Parse(cfg)) Check(cd.RootElement.EnumerateObject().All(p => p.Value.ValueKind != JsonValueKind.Number || !p.Value.GetRawText().Contains('.')) && cd.RootElement.GetProperty("respect_reduced_motion").GetBoolean(), "motion: the configuration is valid JSON with integers only");
+    var lkLight = StartMotion.Look("#2b6cb0", "#ffffff", "mint", false);
+    Check(lkLight.LightBackground && lkLight.Text == "#1b2230" && StartMotion.ConfigJson(mGood, lkLight).Contains("\"background\":\"#ffffff\""), "motion: on a light background the text colour is dark and the canvas blends from white");
+    var lkPic = StartMotion.Look("#2b6cb0", "#d6dae2", "image", true);
+    Check(lkPic.UsePicture && StartMotion.ConfigJson(mGood, lkPic).Contains("\"overlay_opacity_pct\":48") && !StartMotion.Look(null, null, "image", false).UsePicture, "motion: your picture is drawn by the runtime with the same darkening; no picture saved means no picture");
+    var lkBad = StartMotion.Look("red;}", "url(x)", "#zzzzzz", false);
+    Check(lkBad.Accent == "#4c9bf0" && lkBad.Text == "#e9ebef" && !lkBad.LightBackground, "motion: colours that are not #rrggbb fall back to the start page's own");
+
+    // ---- the vendored runtime ----
+    string? rt = null;
+    using (var rs = typeof(StartMotion).Assembly.GetManifestResourceStream("motion.js"))
+        if (rs != null) { using var ms = new MemoryStream(); rs.CopyTo(ms); var bytes = ms.ToArray(); rt = Encoding.UTF8.GetString(bytes);
+            Check(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant() == StartMotion.RuntimeSha256 && StartMotion.RuntimeSha256 == "074198d978e3f01bb4729775c5643659dba2b06906838152591c1f992f2679ce", "motion runtime: the embedded motion.js is ThemeForge's runtime byte-for-byte (SHA-256 074198d9...79ce)"); }
+    Check(rt != null && StartMotion.RuntimeOk(rt) && rt.Contains("ThemeForgeMotion") && !Regex.IsMatch(rt, "fetch\\(|XMLHttpRequest|importScripts|WebSocket|https?://|eval\\(|new Function"), "motion runtime: it is found, passes the hash check and makes no network request");
+    Check(!StartMotion.RuntimeOk(rt + " ") && !StartMotion.RuntimeOk((rt ?? "").Replace("0.16", "0.17")) && !StartMotion.RuntimeOk(null) && !StartMotion.RuntimeOk(""), "motion runtime: a changed or missing runtime is refused");
+
+    // ---- the start page ----
+    const string page = "<!doctype html><html><head><style>body{}</style></head><body>\n<h1>Recognition</h1>\n<script>var a=1;</script></body></html>";
+    var on = StartMotion.Inject(page, mGood, lkDark, rt);
+    Check(on.Contains("<canvas id='rec-motion'") && on.Contains("z-index:-1") && on.Contains("pointer-events:none") && on.Contains("ThemeForgeMotion.create") && on.Contains(cfg) && on.Contains(rt ?? "\u0000"), "start page: with an animation it gets the canvas, the runtime and the validated configuration");
+    Check(on.IndexOf("<canvas", StringComparison.Ordinal) < on.IndexOf("<h1>", StringComparison.Ordinal) && on.IndexOf("ThemeForgeMotion.create", StringComparison.Ordinal) > on.IndexOf("<h1>", StringComparison.Ordinal) && on.EndsWith("</body></html>") && on.Contains("mix-blend-mode:screen"), "start page: the canvas sits first behind the content, the scripts at the end, blended over the CSS background");
+    Check(!on.Contains("http://") && !on.Contains("https://") && !on.Contains(" src=") && Regex.Matches(on, "<script>").Count == 3, "start page: nothing is loaded from the network; the runtime is inline like the page's own script");
+    Check(StartMotion.Inject(page, StartMotion.None, lkDark, rt) == page && StartMotion.Inject(page, null, lkDark, rt) == page, "start page: with no animation the page is unchanged (no canvas, no runtime)");
+    Check(StartMotion.Inject(page, mGood, lkDark, rt + "//x") == page && StartMotion.Inject(page, mGood, lkDark, null) == page && StartMotion.Inject("<p>no body</p>", mGood, lkDark, rt) == "<p>no body</p>", "start page: a tampered or missing runtime, or a page without a body, leaves the page still");
+    Check(StartMotion.Inject(page, new MotionRecipe("aurora</script>", 24000, 50, 1), lkDark, rt) == page, "start page: an effect name that is not on the list never reaches the page");
+    var onPic = StartMotion.Inject(page, StartMotion.Parse("{\"effect\":\"kenburns\"}"), lkPic, rt);
+    Check(onPic.Contains("getComputedStyle(document.body).backgroundImage") && onPic.Contains("data:image\\/jpeg;base64,") && onPic.Contains("mix-blend-mode:normal") && !onPic.Contains("go(null)"), "start page: with your picture the script reuses the picture already in the CSS (embedded once)");
+    Check(StartMotion.Inject(page, mGood, lkLight, rt).Contains("mix-blend-mode:multiply"), "start page: light backgrounds blend with multiply");
+    // the two pages are run in a simulated browser by browser.tests\shield\motion.test.js (node), after this program
+    try { File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "motion_page_dark.html"), on); File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "motion_page_picture.html"), onPic); } catch { }
+
+    // ---- theme files v2 ----
+    var v1 = "{\"schema\":\"recognition.theme.v1\",\"id\":\"my-theme\",\"name\":\"My theme\",\"bar\":\"#1e1e2e\",\"text\":\"#cdd6f4\",\"accent\":\"#cba6f7\",\"start_bg\":\"nebula\",\"top\":\"violet\"}";
+    var motionJ = "\"motion\":{\"effect\":\"fireflies\",\"duration_ms\":20000,\"intensity_pct\":70,\"seed\":7}";
+    var v2 = v1.Replace("recognition.theme.v1", "recognition.theme.v2").Replace("}", "," + motionJ + "}");
+    var p2 = ThemeLibrary.ParsePack(v2);
+    Check(p2 != null && p2.Motion == new MotionRecipe("fireflies", 20000, 70, 7) && p2.Bar == "#1e1e2e" && p2.StartBg == "nebula" && p2.Top == "violet", "theme v2: a theme with motion is read");
+    Check(p2 != null && ThemeLibrary.ToJson(p2) == "{\"schema\":\"recognition.theme.v2\",\"id\":\"my-theme\",\"name\":\"My theme\",\"bar\":\"#1e1e2e\",\"text\":\"#cdd6f4\",\"accent\":\"#cba6f7\",\"start_bg\":\"nebula\",\"top\":\"violet\"," + motionJ + "}\n" && ThemeLibrary.ParsePack(ThemeLibrary.ToJson(p2)) == p2, "theme v2: saved as v2 with motion last, and reads back identical");
+    var p1 = ThemeLibrary.ParsePack(v1);
+    Check(p1 != null && p1.Motion == null && ThemeLibrary.ToJson(p1) == "{\"schema\":\"recognition.theme.v1\",\"id\":\"my-theme\",\"name\":\"My theme\",\"bar\":\"#1e1e2e\",\"text\":\"#cdd6f4\",\"accent\":\"#cba6f7\",\"start_bg\":\"nebula\",\"top\":\"violet\"}\n", "theme v1: unchanged, still saved as v1 byte-for-byte");
+    var v1WithMotion = ThemeLibrary.ParsePack(v1.Replace("}", "," + motionJ.Replace("fireflies", "bogus") + "}"));
+    Check(v1WithMotion != null && v1WithMotion.Motion == null, "theme v1: a 'motion' key in a v1 file is ignored, as unknown keys always were");
+    Check(ThemeLibrary.ParsePack(v2.Replace("fireflies", "explode")) == null && ThemeLibrary.ParsePack(v2.Replace("20000", "20000.5")) == null && ThemeLibrary.ParsePack(v2.Replace("\"seed\":7", "\"seed\":-7")) == null &&
+          ThemeLibrary.ParsePack(v2.Replace("\"seed\":7", "\"seed\":7,\"url\":\"https://x\"")) == null && ThemeLibrary.ParsePack(v2.Replace(motionJ, "\"motion\":\"aurora\"")) == null && ThemeLibrary.ParsePack(v2.Replace("70", "700")) == null, "theme v2: a bad motion refuses the whole theme");
+    var v2None = ThemeLibrary.ParsePack(v2.Replace("fireflies", "none"));
+    var v2NoMotion = ThemeLibrary.ParsePack(v1.Replace("recognition.theme.v1", "recognition.theme.v2"));
+    Check(v2None != null && v2None.Motion == null && ThemeLibrary.ToJson(v2None).Contains("recognition.theme.v1") && v2NoMotion != null && v2NoMotion == p1, "theme v2: motion 'none' or no motion is the same as a v1 theme and is saved as v1");
+    Check(ThemeLibrary.ParsePack(v2.Replace("recognition.theme.v2", "recognition.theme.v3")) == null && ThemeLibrary.ParsePack(v2.Replace("#cdd6f4", "#1f1f2f")) == null, "theme v2: other schema versions and unreadable colours are still refused");
+
+    // ---- library entries with motion (ThemeForge publishes into themes\library.v1.json) ----
+    string Entry(string id, string extra) => "{\"id\":\"" + id + "\",\"name\":\"T " + id + "\",\"bar\":\"#1e1e2e\",\"text\":\"#cdd6f4\",\"accent\":\"#cba6f7\",\"start_bg\":\"nebula\",\"top\":\"\"" + extra + "}";
+    var libM = "{\"schema\":\"recognition.theme.library.v1\",\"themes\":[" + Entry("plain", "") + "," + Entry("moving", "," + motionJ) + "," + Entry("broken", "," + motionJ.Replace("fireflies", "lava-lamp")) + "," + Entry("floaty", "," + motionJ.Replace("70", "70.5")) + "]}";
+    var libP = ThemeLibrary.ParseLibrary(libM);
+    Check(libP.Count == 2 && libP[0].Id == "plain" && libP[0].Motion == null && libP[1].Id == "moving" && libP[1].Motion == new MotionRecipe("fireflies", 20000, 70, 7), "theme library: an entry with motion is read with its recipe (schema stays recognition.theme.library.v1)");
+    Check(!libP.Any(x => x.Id == "broken" || x.Id == "floaty"), "theme library: an entry with a bad motion is dropped like any other invalid entry");
+    Check(ThemeLibrary.ToJson(libP[1]).Contains("recognition.theme.v2") && ThemeLibrary.ParsePack(ThemeLibrary.ToJson(libP[1])) == libP[1], "theme library: an added library theme with motion is kept as a v2 file that reads back identical");
+
+    // ---- Chrome theme package with recognition.theme.json ----
+    var manifest = "{\"manifest_version\":3,\"name\":\"Chrome name\",\"version\":\"1.0\",\"theme\":{\"images\":{\"theme_ntp_background\":\"images/ntp.png\"},\"colors\":{\"toolbar\":[30,30,46],\"toolbar_text\":[205,214,244]}}}";
+    var fp = ThemeLibrary.FromPackage(manifest, v2, out var fperr);
+    Check(fperr == null && fp != null && fp.Id == "my-theme" && fp.Name == "My theme" && fp.Accent == "#cba6f7" && fp.Motion == new MotionRecipe("fireflies", 20000, 70, 7) && fp.NtpImage == "images/ntp.png", "theme package: recognition.theme.json supplies colours and motion; the Chrome manifest supplies the picture");
+    var fp1 = ThemeLibrary.FromPackage(manifest, "﻿" + v1, out var fperr1);
+    Check(fperr1 == null && fp1 != null && fp1.Motion == null && fp1.Name == "My theme" && fp1.NtpImage == "images/ntp.png", "theme package: a v1 recognition.theme.json (with a byte-order mark) works too");
+    var fpc = ThemeLibrary.FromPackage(manifest, null, out var fperrc);
+    Check(fperrc == null && fpc != null && fpc.Id == "imported" && fpc.Name == "Chrome name" && fpc.Motion == null, "theme package: without recognition.theme.json the Chrome theme is used as before");
+    Check(ThemeLibrary.FromPackage(manifest, v2.Replace("fireflies", "explode"), out var e1) == null && e1 != null && ThemeLibrary.FromPackage(manifest, "garbage", out var e2) == null && e2 != null &&
+          ThemeLibrary.FromPackage(manifest, v2 + new string(' ', 21_000), out var e3) == null && e3 != null && ThemeLibrary.FromPackage(manifest, v2.Replace("#cdd6f4", "#1f1f2f"), out _) == null, "theme package: a bad, oversized or unreadable recognition.theme.json refuses the import (no silent fall back)");
+    Check(ThemeLibrary.FromPackage("{\"name\":\"not a theme\"}", v2, out var e4) is ThemePack np && e4 == null && np.NtpImage == null && ThemeLibrary.FromPackage("{\"name\":\"x\"}", null, out var e5) == null && e5 != null, "theme package: a valid recognition.theme.json works even when the manifest has no picture; neither file usable is refused");
+    var fpEvil = ThemeLibrary.FromPackage(manifest.Replace("images/ntp.png", "../../secret.png"), v2, out _);
+    Check(fpEvil != null && fpEvil.NtpImage == null, "theme package: the picture path is still checked (no escaping the package)");
+
+    // ---- static checks on the browser glue ----
+    string? mRoot = null;
+    for (var md = new DirectoryInfo(AppContext.BaseDirectory); md != null; md = md.Parent)
+        if (File.Exists(Path.Combine(md.FullName, "browser", "MainWindow.Start.cs"))) { mRoot = md.FullName; break; }
+    Check(mRoot != null, "motion glue: the browser sources are found");
+    if (mRoot != null)
+    {
+        var startSrc = File.ReadAllText(Path.Combine(mRoot, "browser", "MainWindow.Start.cs"));
+        var mainSrc = File.ReadAllText(Path.Combine(mRoot, "browser", "MainWindow.xaml.cs"));
+        var czSrc = File.ReadAllText(Path.Combine(mRoot, "browser", "MainWindow.Customize.cs"));
+        var proj = File.ReadAllText(Path.Combine(mRoot, "browser", "Recognition.Browser.csproj"));
+        var fileBytes = File.ReadAllBytes(Path.Combine(mRoot, "browser", "shield", "motion.js"));
+        Check(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fileBytes)).ToLowerInvariant() == StartMotion.RuntimeSha256 && proj.Contains("<EmbeddedResource Include=\"shield\\motion.js\" LogicalName=\"motion.js\" />"), "motion glue: browser\\shield\\motion.js has the recorded hash and is embedded in the browser");
+        Check(mainSrc.Contains("return StartMotionHtml(html.Replace(") && startSrc.Contains("StartMotion.Inject(html, _startMotion, look, _motionJs)") && startSrc.Contains("ReadResource(StartMotion.RuntimeResource)"), "motion glue: the start page goes through StartMotion.Inject with the embedded runtime");
+        Check(startSrc.Contains("StartMotion.Normalize(r.TryGetProperty(\"start_motion\"") && startSrc.Contains("StartMotion.ToJson(_startMotion)") && startSrc.Contains("StartMotion.WithEffect(") && !startSrc.Contains("HttpClient"), "motion glue: the setting is loaded through Normalize, saved canonically, changed only through the checked buttons, no network");
+        Check(czSrc.Contains("ThemeLibrary.FromPackage(") && czSrc.Contains("ReadPackageTheme(root") && czSrc.Contains("ReadPackageTheme(f") && czSrc.Contains("ApplyPackMotion(p)") && !czSrc.Contains("ThemePacks.FromChromeTheme("), "motion glue: both theme package imports read recognition.theme.json through ThemeLibrary.FromPackage, and applying a theme sets its motion");
+    }
+}
+
+Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }
 Console.WriteLine("SELFTEST_RECOGNITION_BROWSER_GOVERNED_ACTIONS_V1_OK");

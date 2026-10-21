@@ -7,6 +7,7 @@
 - **Downloads:** save folder and ask-each-time in Settings or the Downloads page; progress, pause, resume, cancel.
 - **Overview:** blocked trackers, cookies by site, library counts, most visited, and Clear browsing data by range.
 - **Customize:** looks, your own colours, backgrounds, home page.
+- **Start page:** new tabs show it when your home page is the start page. Pick a background (22 built in, a colour, or your own picture) and, under **Animation**, a gentle movement: Slow zoom, Pan, Drift, Breathe and Parallax move your picture (choose a picture first); Particles, Aurora, Rain, Snow, Shimmer and Fireflies draw over any background. Speed (slow, normal, fast) and strength (low, medium, high) are next to it; Still turns it off. The animation runs only on the start page, stays still when Windows is set to reduce animations, and loads nothing from the internet. A theme can bring its own animation (ThemeForge themes do); choosing a theme without one turns off only an animation that came from a theme.
 - **Extensions:** paste a Chrome Web Store or Edge Add-ons link or an id on the Extensions page; manage there. Themes apply as looks.
 - **Workspace:** tab groups, split view, session restore, start tiles, reader mode, picture-in-picture, translate link, folder sync.
 - **Privacy:** no telemetry; form autofill of personal data is not built. Address completion uses only local data.

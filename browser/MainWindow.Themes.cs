@@ -24,9 +24,10 @@ namespace Recognition.Browser
         private void LoadThemeExtraSettings(JsonElement r)
         {
             _topStyle = TopBarStyles.Normalize(r.TryGetProperty("top_style", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : "");
+            LoadMotionSettings(r);
         }
 
-        private string ThemeExtraSettingsJson() => J("top_style") + ":" + J(_topStyle) + ",";
+        private string ThemeExtraSettingsJson() => J("top_style") + ":" + J(_topStyle) + "," + MotionSettingsJson();
 
         private string ThemesDir => Path.Combine(_repoRoot, "runtime", "themes");
 

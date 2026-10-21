@@ -252,4 +252,10 @@ $out = & dotnet run --project $proj -c Release 2>&1 | Out-String
 Write-Host $out
 if($LASTEXITCODE -ne 0){ Write-Host "BROWSER_TESTS_FAIL: dotnet run exited with code $LASTEXITCODE" -ForegroundColor Red; exit 1 }
 if($out -notmatch "SELFTEST_RECOGNITION_BROWSER_GOVERNED_ACTIONS_V1_OK"){ Write-Host "BROWSER_TESTS_FAIL: success token not emitted" -ForegroundColor Red; exit 1 }
+# Start page animation: the pages written by the C# tests run in a simulated browser under node (ThemeForge runtime + boot script).
+if($node){
+  $mtOut = & node (Join-Path $RepoRoot "browser.tests\shield\motion.test.js") 2>&1 | Out-String
+  Write-Host $mtOut
+  if($LASTEXITCODE -ne 0){ Write-Host "BROWSER_TESTS_FAIL: start page animation tests failed" -ForegroundColor Red; exit 1 }
+}
 Write-Host "SELFTEST_RECOGNITION_BROWSER_GOVERNED_ACTIONS_V1_OK" -ForegroundColor Green

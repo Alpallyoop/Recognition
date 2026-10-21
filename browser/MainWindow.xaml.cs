@@ -1619,7 +1619,7 @@ else if(v.indexOf('.')>-1&&v.indexOf(' ')===-1){location.href='https://'+v;}
 else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
 </script></body></html>";
             html = html.Replace("RECOGNITION_LOGO", StartLogo.DataUri).Replace("https://duckduckgo.com/?q=", SearchEngines.Prefix(_searchEngine)).Replace("<div class='facts'>", StartExtraHtml() + "<div class='facts'>");
-            return html.Replace("</style></head>", "</style><style>" + StartExtraCss + StartBackgroundCss() + "</style></head>");
+            return StartMotionHtml(html.Replace("</style></head>", "</style><style>" + StartExtraCss + StartBackgroundCss() + "</style></head>"));
         }
 
         private string PrivateStartPageHtml()

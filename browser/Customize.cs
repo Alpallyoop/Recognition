@@ -13,7 +13,7 @@ namespace Recognition.Browser
     //  * ExtSources: turning a Chrome Web Store or Edge Add-ons link (or a bare extension id) into the official download address.
     // Every colour that leaves this file is a validated #rrggbb value, so nothing a theme file says can reach the window as anything else.
 
-    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null, string Top = "");
+    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null, string Top = "", MotionRecipe? Motion = null);
 
     internal static class Rgb
     {

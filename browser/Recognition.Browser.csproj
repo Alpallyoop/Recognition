@@ -38,6 +38,8 @@
     <EmbeddedResource Include="shield\passkey_test.js" LogicalName="passkey_test.js" />
     <EmbeddedResource Include="shield\reader.js" LogicalName="reader.js" />
     <EmbeddedResource Include="shield\pip.js" LogicalName="pip.js" />
+    <!-- ThemeForge motion runtime 2.0.0, vendored byte-for-byte (SHA-256 checked in StartMotion.cs and browser.tests; docs\proposals\0002) -->
+    <EmbeddedResource Include="shield\motion.js" LogicalName="motion.js" />
   </ItemGroup>
 
 </Project>

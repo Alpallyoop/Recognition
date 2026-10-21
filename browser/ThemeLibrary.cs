@@ -10,8 +10,9 @@ namespace Recognition.Browser
     // Pure rules (no WPF, files or network; executed by browser.tests) for:
     //  * TopBarStyles: finishes for the top area (toolbar, address field, tabs, bookmarks bar) that sit on top of any theme.
     //  * ThemeLibrary: reading theme packs (one theme as a small JSON file) and the downloadable library of them.
-    // A pack can only carry three colours, a start page background NAME (or a #rrggbb colour) and a top bar style NAME. Everything is
-    // validated here, so a pack can never bring script, CSS, pictures or addresses into the window.
+    // A pack can only carry three colours, a start page background NAME (or a #rrggbb colour), a top bar style NAME and (v2 files and library
+    // entries) an animation recipe checked by StartMotion. Everything is validated here, so a pack can never bring script, CSS, pictures or
+    // addresses into the window.
 
     internal sealed record TopBarStyle(string Id, string Name, string? Tint, double Amount, string? Accent, string Field);
 
@@ -71,6 +72,8 @@ namespace Recognition.Browser
     internal static class ThemeLibrary
     {
         public const string PackSchema = "recognition.theme.v1";
+        public const string PackSchemaV2 = "recognition.theme.v2";   // v1 plus an optional "motion" object (docs\proposals\0002)
+        public const string PackageThemeFile = "recognition.theme.json";   // optional, at the root of a Chrome theme package
         public const string LibrarySchema = "recognition.theme.library.v1";
         public const string RemoteUrl = "https://raw.githubusercontent.com/Alpallyoop/Recognition/main/themes/library.v1.json";
         public const int MaxPackBytes = 20_000, MaxLibraryBytes = 400_000, MaxPacks = 60;
@@ -87,11 +90,19 @@ namespace Recognition.Browser
 
         public static bool ValidId(string? id) => id != null && IdRx.IsMatch(id) && ThemePacks.Find(id) == null;   // a pack cannot take a built-in look's id
 
-        public static ThemePack? ParsePack(JsonElement e)
+        // allowMotion: v2 files and library entries may carry "motion" (a bad one refuses the theme); v1 files ignore it, as before.
+        public static ThemePack? ParsePack(JsonElement e, bool allowMotion = true)
         {
             try
             {
                 if (e.ValueKind != JsonValueKind.Object) return null;
+                MotionRecipe? motion = null;
+                if (allowMotion && e.TryGetProperty("motion", out var mo))
+                {
+                    var m = StartMotion.Parse(mo);
+                    if (m == null) return null;
+                    motion = m.IsOn ? m : null;   // "none" is the same as no motion
+                }
                 string? S(string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
                 var id = (S("id") ?? "").Trim().ToLowerInvariant();
                 var name = CleanName(S("name"));
@@ -101,7 +112,7 @@ namespace Recognition.Browser
                 if (Math.Abs(Rgb.Luminance(t) - Rgb.Luminance(b)) < 0.3) return null;   // text that cannot be read on the bar
                 var start = StartBackground.Normalize(S("start_bg") ?? "default");
                 if (start == "image") start = "default";
-                return new ThemePack(id, name, b, t, Rgb.Norm(accent), start, Rgb.Luminance(b) < 0.5, null, TopBarStyles.Normalize(S("top")));
+                return new ThemePack(id, name, b, t, Rgb.Norm(accent), start, Rgb.Luminance(b) < 0.5, null, TopBarStyles.Normalize(S("top")), motion);
             }
             catch { return null; }
         }
@@ -113,8 +124,11 @@ namespace Recognition.Browser
                 if (string.IsNullOrWhiteSpace(json) || json.Length > MaxPackBytes) return null;
                 using var doc = JsonDocument.Parse(json);
                 var r = doc.RootElement;
-                if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("schema", out var sc) || sc.GetString() != PackSchema) return null;
-                return ParsePack(r);
+                if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("schema", out var sc) || sc.ValueKind != JsonValueKind.String) return null;
+                var schema = sc.GetString();
+                if (schema == PackSchema) return ParsePack(r, allowMotion: false);
+                if (schema == PackSchemaV2) return ParsePack(r, allowMotion: true);
+                return null;
             }
             catch { return null; }
         }
@@ -141,12 +155,31 @@ namespace Recognition.Browser
             return list;
         }
 
-        // The file kept for an added theme (UTF-8, LF, fixed key order).
+        // The file kept for an added theme (UTF-8, LF, fixed key order). v1 exactly as before when there is no animation, v2 with "motion" last.
         public static string ToJson(ThemePack p)
         {
             string J(string s) => JsonSerializer.Serialize(s);
-            return "{\"schema\":" + J(PackSchema) + ",\"id\":" + J(p.Id) + ",\"name\":" + J(p.Name) + ",\"bar\":" + J(p.Bar) + ",\"text\":" + J(p.Text) + ",\"accent\":" + J(p.Accent) +
-                   ",\"start_bg\":" + J(p.StartBg) + ",\"top\":" + J(p.Top) + "}\n";
+            bool motion = p.Motion != null && StartMotion.Normalize(p.Motion).IsOn;
+            return "{\"schema\":" + J(motion ? PackSchemaV2 : PackSchema) + ",\"id\":" + J(p.Id) + ",\"name\":" + J(p.Name) + ",\"bar\":" + J(p.Bar) + ",\"text\":" + J(p.Text) + ",\"accent\":" + J(p.Accent) +
+                   ",\"start_bg\":" + J(p.StartBg) + ",\"top\":" + J(p.Top) + (motion ? ",\"motion\":" + StartMotion.ToJson(p.Motion) : "") + "}\n";
+        }
+
+        // A Chrome theme package (.crx/.zip/folder) that may also carry recognition.theme.json at its root (ThemeForge ships one).
+        // rthemeJson is null when that file is absent. When it is present it must be a valid recognition.theme.v1 or v2 theme, or the import
+        // is refused (no silent fall back to the Chrome colours); its colours, names and motion are used, and the Chrome manifest still
+        // supplies the start page picture (theme_ntp_background). error is null on success.
+        public static ThemePack? FromPackage(string? manifestJson, string? rthemeJson, out string? error)
+        {
+            error = null;
+            var chrome = ThemePacks.FromChromeTheme(manifestJson);
+            if (rthemeJson == null)
+            {
+                if (chrome == null) error = "that is not a theme (it has no colours or picture to use). Extensions are added on the Extensions page.";
+                return chrome;
+            }
+            var rt = rthemeJson.Length <= MaxPackBytes ? ParsePack(rthemeJson.TrimStart('\uFEFF')) : null;
+            if (rt == null) { error = "that theme's " + PackageThemeFile + " is not a valid Recognition theme, so the theme was not applied"; return null; }
+            return rt with { NtpImage = chrome?.NtpImage };
         }
     }
 }

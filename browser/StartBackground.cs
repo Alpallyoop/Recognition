@@ -62,6 +62,15 @@ namespace Recognition.Browser
             return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0 > 0.6;
         }
 
+        // true when the start page background is light (the page then uses dark text)
+        public static bool IsLight(string? key)
+        {
+            var k = Normalize(key);
+            if (k == "light") return true;
+            if (Built.TryGetValue(k, out var b)) return b.Light;
+            return k.StartsWith("#", StringComparison.Ordinal) && HexIsLight(k);
+        }
+
         private const string LightVars = ":root{--panel:#ffffff;--line:#d5dae2;--txt:#1b2230;--mut:#586172}.tile:hover{background:#f1f3f7!important;border-color:#b9c0cc!important}.facts{color:#6b7385!important}input::placeholder{color:#8a93a3!important}.si{filter:invert(.6)}";
 
         // CSS added after the page's own style. Empty for "default". An image is used only when it is a data: URL made of base64 characters.
