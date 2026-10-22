@@ -46,6 +46,7 @@ namespace Recognition.Browser
                 TopBarStyles.Apply(colors, _topStyle);   // the chosen top bar finish, if any
                 var res = Application.Current.Resources;
                 foreach (var k in ChromeColors.Keys) if (colors.TryGetValue(k, out var hex) && Rgb.Valid(hex)) res["Chrome" + k] = FrozenBrush(hex);
+                ApplyHeaderBrushes(colors);
                 ApplyCaptionColors(colors["Bar"], colors["Text"], colors["Line"], Rgb.Luminance(colors["Bar"]) < 0.5);
             }
             catch { }
@@ -69,7 +70,8 @@ namespace Recognition.Browser
 
         // Applies a look: window colours, light or dark pages, and the start page background. ntpImagePath is a picture already
         // checked to be inside the theme folder.
-        private void ApplyPack(ThemePack p, string? ntpImagePath = null)
+        // themeRoot: the unpacked theme, for a Firefox theme's header pictures. Any other look (except your own colours) removes a header.
+        private void ApplyPack(ThemePack p, string? ntpImagePath = null, string? themeRoot = null)
         {
             if (p.Id == ThemePacks.DefaultId) { _chromeBar = _chromeText = _chromeAccent = ""; _themeName = "Recognition"; _appearance.Set("theme", "system"); }
             else
@@ -82,6 +84,8 @@ namespace Recognition.Browser
             if (ntpImagePath != null && File.Exists(ntpImagePath) && ImportStartPicture(ntpImagePath) == null) { _startImageUrl = null; _startBg = "image"; }
             else _startBg = bg;
             SaveSettings(); ApplyChromeTheme(); ApplyAppearanceAll(); ReloadStartTabs();
+            if (p.Header != null && themeRoot != null) SetThemeHeader(p.Header, themeRoot);
+            else if (p.Id != "custom" && _header != null) SetThemeHeader(null, null);
             _actions?.Append("theme.apply", p.Id);   // the look's name is not recorded for imported themes
             Status("theme: " + _themeName);
         }
@@ -104,8 +108,9 @@ namespace Recognition.Browser
                     var full = Path.GetFullPath(Path.Combine(root, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar)));
                     if (full.StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full;
                 }
-                ApplyPack(pack, img);   // ImportStartPicture copies the picture, so the staging folder can go
-                return "applied the theme \"" + pack.Name + "\"" + (pack.NtpImage != null && img == null ? " (its picture could not be used)" : "");
+                ApplyPack(pack, img, root);   // ImportStartPicture and SetThemeHeader copy the pictures, so the staging folder can go
+                return "applied the theme \"" + pack.Name + "\"" + (pack.NtpImage != null && img == null ? " (its picture could not be used)" : "") +
+                       (pack.Header != null ? (_header == null ? " (its header picture could not be used)" : " with its header picture" + (_headerNote.Length > 0 ? " (" + _headerNote + ")" : "")) : "");
             }
             catch (Exception ex) { return "could not use that theme: " + ex.Message; }
             finally { try { Directory.Delete(staging, true); } catch { } }
@@ -148,9 +153,10 @@ namespace Recognition.Browser
             sb.Append("<div class='sec'>Layout</div>");
             sb.Append(FeelSettingsHtml());
             sb.Append(ThemeLibrarySectionHtml());
-            sb.Append("<div class='sec'>Get a theme</div><div class='row'><div><div class='t'>Chrome themes</div><div class='u'>Paste a Chrome Web Store or Edge Add-ons theme link, or choose a theme file you have. Recognition uses the theme's colours and start page picture for its own look; it does not run the theme as an extension.</div>" +
-                      "<div style='margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center'><input id='sl' class='in' placeholder='https://chromewebstore.google.com/detail/...' style='flex:1;min-width:260px'><a class='btn' onclick=\"var v=document.getElementById('sl').value.trim();if(v)send('cz-store:'+encodeURIComponent(v))\">Get theme</a></div>" +
-                      "<div style='margin-top:8px'><a class='btn ghost' onclick=\"send('cz-import')\">Choose a .crx or .zip...</a> <a class='btn ghost' onclick=\"send('cz-import-folder')\">Choose a folder...</a> <a class='btn ghost t' href='https://chromewebstore.google.com/category/themes'>Browse Chrome themes</a> <a class='btn ghost' href='recognition:extensions'>Extensions</a></div>" +
+            sb.Append(ThemeHeaderSectionHtml());
+            sb.Append("<div class='sec'>Get a theme</div><div class='row'><div><div class='t'>Chrome and Firefox themes</div><div class='u'>Paste a Chrome Web Store, Edge Add-ons or Firefox Add-ons theme link, or choose a theme file you have. Recognition uses the theme's colours, start page picture and, for Firefox themes, the header picture across the top of the window (animated ones play); it does not run the theme as an extension.</div>" +
+                      "<div style='margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center'><input id='sl' class='in' placeholder='https://addons.mozilla.org/firefox/addon/... or https://chromewebstore.google.com/detail/...' style='flex:1;min-width:260px'><a class='btn' onclick=\"var v=document.getElementById('sl').value.trim();if(v)send('cz-store:'+encodeURIComponent(v))\">Get theme</a></div>" +
+                      "<div style='margin-top:8px'><a class='btn ghost' onclick=\"send('cz-import')\">Choose a .crx, .zip or .xpi...</a> <a class='btn ghost' onclick=\"send('cz-import-folder')\">Choose a folder...</a> <a class='btn ghost t' href='https://addons.mozilla.org/firefox/themes/'>Browse Firefox themes</a> <a class='btn ghost t' href='https://chromewebstore.google.com/category/themes'>Browse Chrome themes</a> <a class='btn ghost' href='recognition:extensions'>Extensions</a></div>" +
                       "<div id='msg' class='u' style='min-height:18px;margin-top:8px'></div></div></div>");
             sb.Append("<script>window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(m&&m.type==='note')document.getElementById('msg').textContent=m.text;});</script>");
             sb.Append(SendScript()).Append(PageFoot);
@@ -175,6 +181,8 @@ namespace Recognition.Browser
                     if (tab.Internal == "settings" && _tabs.Contains(tab)) LoadInternal(tab, "settings");
                     return;
                 }
+                if (msg == "cz-header-anim:on" || msg == "cz-header-anim:off") { SetHeaderAnimate(msg.EndsWith(":on")); RefreshCustomize(tab); return; }
+                if (msg == "cz-header-remove") { SetThemeHeader(null, null); Note("header picture removed; the theme's colours stay"); RefreshCustomize(tab); return; }
                 if (msg.StartsWith("cz-apply:", StringComparison.Ordinal))
                 {
                     var p = ThemePacks.Find(msg.Substring("cz-apply:".Length)); if (p == null) return;
@@ -193,7 +201,7 @@ namespace Recognition.Browser
                     byte[]? data = null;
                     if (msg == "cz-import")
                     {
-                        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Choose a Chrome theme (.crx or .zip)", Filter = "Chrome theme (*.crx;*.zip)|*.crx;*.zip" };
+                        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Choose a Chrome or Firefox theme (.crx, .zip or .xpi)", Filter = "Browser theme (*.crx;*.zip;*.xpi)|*.crx;*.zip;*.xpi" };
                         if (dlg.ShowDialog(this) != true) return;
                         var fi = new FileInfo(dlg.FileName);
                         if (!fi.Exists || fi.Length > MaxExtDownloadBytes) { Note("that file is missing or too large"); return; }
@@ -201,7 +209,7 @@ namespace Recognition.Browser
                     }
                     else
                     {
-                        var f = PickFolder("Choose an unpacked Chrome theme folder (it contains manifest.json)"); if (f == null) return;
+                        var f = PickFolder("Choose an unpacked Chrome or Firefox theme folder (it contains manifest.json)"); if (f == null) return;
                         var mp = Path.Combine(f, "manifest.json");
                         if (!File.Exists(mp)) { Note("that folder has no manifest.json"); return; }
                         var pack = ThemeLibrary.FromPackage(File.ReadAllText(mp, Encoding.UTF8).TrimStart('﻿'), ReadPackageTheme(f, out var tooBig), out var perr);
@@ -209,14 +217,25 @@ namespace Recognition.Browser
                         if (pack == null) { Note(perr ?? "that is not a theme"); return; }
                         string? img = null;
                         if (pack.NtpImage != null) { var full = Path.GetFullPath(Path.Combine(f, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar))); if (full.StartsWith(Path.GetFullPath(f).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full; }
-                        ApplyPack(pack, img); Note("applied the theme \"" + pack.Name + "\""); RefreshCustomize(tab); return;
+                        ApplyPack(pack, img, f); Note("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "")); RefreshCustomize(tab); return;
                     }
                     Note(await ApplyThemeFromPackageAsync(data));
                 }
                 else if (msg.StartsWith("cz-store:", StringComparison.Ordinal))
                 {
-                    var src = ExtSources.Parse(Dec(msg.Substring("cz-store:".Length)));
-                    if (src == null) { Note("paste a Chrome Web Store or Edge Add-ons link (or an extension id)"); return; }
+                    var link = Dec(msg.Substring("cz-store:".Length));
+                    var ffSlug = ExtSources.ParseFirefox(link);
+                    if (ffSlug != null)
+                    {
+                        Note("looking up \"" + ffSlug + "\" on Firefox Add-ons...");
+                        var file = ExtSources.FirefoxFileUrl(Encoding.UTF8.GetString(await DownloadExtensionAsync(ExtSources.FirefoxApiUrl(ffSlug))));
+                        if (file == null) { Note("Mozilla did not return a download for \"" + ffSlug + "\" (it may not exist, or is not public)"); return; }
+                        Note("downloading the Firefox theme...");
+                        Note(await ApplyThemeFromPackageAsync(await DownloadExtensionAsync(file)));
+                        RefreshCustomize(tab); return;
+                    }
+                    var src = ExtSources.Parse(link);
+                    if (src == null) { Note("paste a Chrome Web Store, Edge Add-ons or Firefox Add-ons theme link (or an extension id)"); return; }
                     Note("downloading the theme from the " + (src.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store") + "...");
                     var bytes = await DownloadExtensionAsync(ExtSources.Url(src, EngineMajor()));
                     Note(await ApplyThemeFromPackageAsync(bytes));

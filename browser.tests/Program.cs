@@ -1792,6 +1792,22 @@ Console.WriteLine("== extension developer area ==");
     }
     finally { try { Directory.Delete(dvTmp, true); } catch { } }
 
+    // regression (stress test, 2026-10-21): a ZIP whose deflate data is damaged was a raw IOException, not a governed refusal
+    {
+        var dvZ = Path.Combine(Path.GetTempPath(), "rb-dvz-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // a valid three-file package (manifest.json, a.js, sub/b.css) with ONE byte changed in the central directory (offset 309, found by
+            // the stress fuzzer, seed 20261021): .NET then reports "Zip file corrupt: unexpected end of stream reached" while reading an entry
+            var zb = Convert.FromBase64String("UEsDBBQAAAAIAAO5VV2tF2HpLAAAADEAAAANAAAAbWFuaWZlc3QuanNvbqtWyk3My0xLLS6JL0stKs7Mz1OyMtZRykvMTVWyUgpW0lGCCysZ6hko1QIAUEsDBBQAAAAIAAO5VV1ssfnkBQAAAAMAAAAEAAAAYS5qc9PXTwQAUEsDBBQAAAAIAAO5VV3+HM9JBQAAAAMAAAAJAAAAc3ViL2IuY3NzK6iuBQBQSwECFAMUAAAACAADuVVdrRdh6SwAAAAxAAAADQAAAAAAAAAAAAAApIEAAAAAbWFuaWZlc3QuanNvblBLAQIUAxQAAAAIAAO5VV1ssfnkBQAAAAMAAAAEAAAAAAAAAAAAAACkgVcAAABhLmpzUEsBAhQDFAAAAAgAA7lVXf4cz0kFAAAAAwAAAAkAAAAAAAAAAAAAAKSBfgAAAHN1Yi9iLmNzc1BLBQYAAAAAAwADAKQAAACqAAAAAAA=");
+            Check(zb.Length == 356 && zb[309] == 0, "packages: regression vector intact");
+            zb[309] = 248;
+            string kind; try { ExtPackage.Unpack(zb, dvZ); kind = "accepted"; } catch (ExtGovException) { kind = "refused"; } catch (Exception ex) { kind = ex.GetType().Name; }
+            Check(kind == "refused", "packages: a ZIP with a damaged file list is a governed refusal (ExtGovException), not a raw I/O error (got " + kind + ")");
+        }
+        finally { try { Directory.Delete(dvZ, true); } catch { } }
+    }
+
     // ---- static checks on the developer glue: what it must never do ----
     if (dvRoot != null)
     {
@@ -1874,6 +1890,261 @@ Console.WriteLine("== integration receipts ==");
             var order = new[] { "schema", "consumer", "provider", "emitted_by", "contract", "request_sha256", "response_sha256", "carried", "outcome", "error_token", "prev_sha256" };
             Check(sch.Contains("\"required\": [\"" + string.Join("\", \"", order) + "\"]") || sch.Contains("\"required\":[\"" + string.Join("\",\"", order) + "\"]"), "receipt: the key order matches the published schema copy");
         }
+    }
+}
+
+// ==== Firefox themes and animated header pictures (FirefoxThemes.cs, AnimatedImage.cs) ====
+Console.WriteLine();
+Console.WriteLine("== Firefox themes ==");
+{
+    // colours as Firefox writes them
+    string? C(string css) => CssColor.Parse(css) is { } c ? c.Hex + "/" + Math.Round(c.Alpha, 2).ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+    Check(C("#0b1a2c") == "#0b1a2c/1" && C("#FFF") == "#ffffff/1" && C("#fff8") == "#ffffff/0.53" && C("#11223380") == "#112233/0.5" && C("  #ABCDEF ") == "#abcdef/1", "css colour: #rgb, #rgba, #rrggbb, #rrggbbaa, case and spaces");
+    Check(C("rgb(1, 2, 3)") == "#010203/1" && C("rgba(0,0,0,0.4)") == "#000000/0.4" && C("rgb(255 0 0 / 50%)") == "#ff0000/0.5" && C("rgb(100%,0%,50%)") == "#ff0080/1" && C("rgba(300,-5,10,2)") == "#ff000a/1", "css colour: rgb()/rgba(), comma and space syntax, percentages, clamping");
+    Check(C("hsl(0, 100%, 50%)") == "#ff0000/1" && C("hsl(120deg 100% 25%)") == "#008000/1" && C("hsla(240,100%,50%,0.3)") == "#0000ff/0.3", "css colour: hsl()/hsla()");
+    Check(C("white") == "#ffffff/1" && C("Black") == "#000000/1" && C("transparent") == "#000000/0" && C("rebeccapurple") == "#663399/1", "css colour: named colours and transparent");
+    Check(new[] { "", "#12", "#12345", "#ggg", "rgb(1,2)", "rgb(a,b,c)", "url(x)", "expression(alert(1))", "notacolour", "rgb(1,2,3", "hsl(10,20,30)", new string('#', 80), "rgb(NaN,1,1)" }.All(x => CssColor.Parse(x) == null), "css colour: anything else is refused, never guessed");
+    using (var jd = JsonDocument.Parse("[[10,20,30],[10,20,30,0.5],[1,2],[256,0,0],[1,2,3,4],\"#010203\"]"))
+    {
+        var a = jd.RootElement.EnumerateArray().Select(e => CssColor.Parse(e)).ToList();
+        Check(a[0] == ("#0a141e", 1.0) && a[1] == ("#0a141e", 0.5) && a[2] == null && a[3] == null && a[4] == null && a[5] == ("#010203", 1.0), "css colour: [r,g,b(,a)] arrays as well as strings");
+    }
+
+    // a typical animated theme from addons.mozilla.org
+    var ffManifest = "{\"manifest_version\":2,\"name\":\"Nyan Cat (Animated)\",\"version\":\"1.0\",\"browser_specific_settings\":{\"gecko\":{\"id\":\"nyan@x\"}}," +
+        "\"theme\":{\"images\":{\"theme_frame\":\"images/nyan.png\",\"additional_backgrounds\":[\"img/a.png\",\"img/b.gif\"]}," +
+        "\"properties\":{\"additional_backgrounds_alignment\":[\"left top\",\"center bottom\"],\"additional_backgrounds_tiling\":[\"repeat-x\",\"no-repeat\"]}," +
+        "\"colors\":{\"frame\":\"#00336a\",\"tab_background_text\":\"#fff\",\"toolbar\":\"rgba(0,0,0,0.4)\",\"toolbar_text\":\"white\",\"tab_line\":\"#ff00ff\",\"ntp_background\":\"#101820\"}}}";
+    var ff = ThemePacks.FromChromeTheme(ffManifest);
+    Check(ff != null && ff.Name == "Nyan Cat (Animated)" && ff.Header != null, "firefox theme: recognised through the same reader as Chrome themes, with a header");
+    if (ff?.Header != null)
+    {
+        Check(ff.Bar == Rgb.Mix("#00336a", "#000000", 0.4) && ff.Text == "#ffffff" && ff.Accent == "#ff00ff" && ff.StartBg == "#101820" && ff.Dark, "firefox theme: bar = toolbar over frame by its alpha; text, accent (tab_line) and start colour mapped");
+        Check(ff.Header.FrameColor == "#00336a" && ff.Header.ToolbarOpacity == 40, "firefox theme: frame colour under the picture; toolbar drawn at the theme's own 40 % over it");
+        var L = ff.Header.Layers;
+        Check(L.Count == 3 && L[0] == new HeaderLayer("images/nyan.png", "right", "top", "no-repeat") && L[1] == new HeaderLayer("img/b.gif", "center", "bottom", "no-repeat") && L[2] == new HeaderLayer("img/a.png", "left", "top", "repeat-x"),
+              "firefox theme: theme_frame at the bottom (right top), additional backgrounds in front, the first listed on top, with their alignment and tiling");
+    }
+    var legacy = ThemePacks.FromChromeTheme("{\"theme\":{\"images\":{\"headerURL\":\"h.jpg\"},\"colors\":{\"accentcolor\":\"#ffffff\",\"textcolor\":\"#000\"}}}");
+    Check(legacy != null && !legacy.Dark && legacy.Text == "#000000" && legacy.Header?.Layers.Single().Path == "h.jpg" && legacy.Header.ToolbarOpacity == 60, "firefox theme: the old headerURL / accentcolor / textcolor names work (no toolbar colour: drawn at 60 %)");
+    var chromeOnly = ThemePacks.FromChromeTheme("{\"name\":\"C\",\"theme\":{\"colors\":{\"frame\":[10,20,30],\"toolbar\":[40,50,60]},\"images\":{\"theme_ntp_background\":\"images/ntp.png\"}}}");
+    Check(chromeOnly != null && chromeOnly.Header == null && chromeOnly.Bar == "#28323c" && chromeOnly.NtpImage == "images/ntp.png", "chrome theme: still read the Chrome way, no header");
+    var evil = ThemePacks.FromChromeTheme("{\"theme\":{\"images\":{\"theme_frame\":\"../../secret.png\",\"additional_backgrounds\":[\"C:/x.png\",\"https://evil.example/a.png\",\"../p.svg\",\"/abs.png\",\"x.webp\",\"ok.png\",\"images/bg-005.svg\"]},\"colors\":{\"frame\":\"#000\"}}}");
+    Check(evil?.Header?.Layers.Select(l => l.Path).SequenceEqual(new[] { "images/bg-005.svg", "ok.png" }) == true, "firefox theme: pictures outside the package, absolute, remote or in other formats are dropped; SVG patterns inside it are kept");
+    var many = ThemePacks.FromChromeTheme("{\"theme\":{\"images\":{\"theme_frame\":\"f.png\",\"additional_backgrounds\":[" + string.Join(",", Enumerable.Range(0, 15).Select(i => "\"b" + i + ".png\"")) + "]},\"colors\":{\"frame\":\"#000\"}}}");
+    Check(many?.Header?.Layers.Count == FirefoxThemes.MaxLayers && many.Header.Layers[0].Path == "f.png" && many.Header.Layers[^1].Path == "b0.png", "firefox theme: at most " + FirefoxThemes.MaxLayers + " layers, keeping the frame picture and the top-most ones");
+    Check(ThemePacks.FromChromeTheme("{\"name\":\"__MSG_extName__\",\"theme\":{\"colors\":{\"frame\":\"red\"}}}")?.Name == "Firefox theme" && ThemePacks.FromChromeTheme("{\"theme\":{\"colors\":{\"frame\":\"bogus\"}}}") == null && ThemePacks.FromChromeTheme("{\"theme\":{}}") == null, "firefox theme: a localised name falls back; no usable colour or picture is not a theme");
+    var low = ThemePacks.FromChromeTheme("{\"theme\":{\"colors\":{\"frame\":\"#202020\",\"toolbar_text\":\"#222222\",\"tab_line\":\"#212121\"}}}");
+    Check(low != null && low.Text == "#e6e8ee" && low.Accent == "#5b8def", "firefox theme: unreadable text and an invisible accent are replaced");
+    Check(ThemeLibrary.FromPackage(ffManifest, null, out var fpe)?.Header?.Layers.Count == 3 && fpe == null, "firefox theme: theme packages (Customize, Extensions) carry the header through");
+    Check(FirefoxThemes.Alignment("left top") == ("left", "top") && FirefoxThemes.Alignment("center bottom") == ("center", "bottom") && FirefoxThemes.Alignment("right") == ("right", "center") &&
+          FirefoxThemes.Alignment("top") == ("center", "top") && FirefoxThemes.Alignment("center") == ("center", "center") && FirefoxThemes.Alignment("10px 20px") == ("right", "top") && FirefoxThemes.Alignment(null) == ("right", "top"),
+          "firefox theme: background-position keywords (anything else falls back to right top)");
+    Check(FirefoxThemes.Tiling("repeat-x") == "repeat-x" && FirefoxThemes.Tiling("REPEAT") == "repeat" && FirefoxThemes.Tiling("space") == "no-repeat", "firefox theme: tiling values");
+
+    // SVG patterns from Firefox's theme maker (this one is in "Terminal Deluxe" and "orange and black" on addons.mozilla.org)
+    var amoSvg = "<svg width=\"16\" height=\"16\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0h1v16H0zm1 15h15v1H1z\" fill=\"#FFF\" fill-rule=\"evenodd\" fill-opacity=\".15\"/></svg>";
+    var sv = SvgLite.Parse(amoSvg);
+    Check(sv != null && sv.Width == 16 && sv.Height == 16 && sv.Paths.Count == 1 && sv.Paths[0] == new SvgPath("M0 0h1v16H0zm1 15h15v1H1z", "#ffffff", 15, true), "svg pattern: the theme maker's tile is read (size, path, fill, opacity, even-odd)");
+    var svr = SvgLite.Parse("<svg viewBox=\"0 0 8 4\" xmlns=\"http://www.w3.org/2000/svg\"><g><rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"rgba(255,0,0,0.5)\" opacity=\"0.5\"/><path d=\"M0 0h1\" fill=\"none\"/></g></svg>");
+    Check(svr != null && svr.Width == 8 && svr.Height == 4 && svr.Paths.Single() == new SvgPath("M1 1h2v2h-2z", "#ff0000", 25, false), "svg pattern: viewBox size, <rect> as a path, opacities multiplied, fill none skipped, plain <g> allowed");
+    var hostileSvg = new[]
+    {
+        "<svg width=\"16\" height=\"16\"><script>alert(1)</script><path d=\"M0 0h1\"/></svg>",
+        "<?xml version=\"1.0\"?><!DOCTYPE svg [<!ENTITY x SYSTEM \"file:///c:/windows/win.ini\">]><svg width=\"16\" height=\"16\"><path d=\"M0 0h1\" fill=\"&x;\"/></svg>",
+        "<svg width=\"16\" height=\"16\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><path d=\"M0 0h1\" xlink:href=\"http://evil.example/\"/></svg>",
+        "<svg width=\"16\" height=\"16\"><image href=\"http://evil.example/x.png\" width=\"1\" height=\"1\"/></svg>",
+        "<svg width=\"16\" height=\"16\"><style>path{fill:url(http://evil.example)}</style><path d=\"M0 0h1\"/></svg>",
+        "<svg width=\"16\" height=\"16\"><foreignObject><div/></foreignObject></svg>",
+        "<svg width=\"16\" height=\"16\"><g transform=\"scale(1000)\"><path d=\"M0 0h1\"/></g></svg>",
+        "<svg width=\"16\" height=\"16\"><path d=\"M0 0h1\" onclick=\"x()\"/></svg>",
+        "<svg width=\"16\" height=\"16\"><path d=\"M0 0 url(x)\"/></svg>",
+        "<svg width=\"16\" height=\"16\"><path d=\"M0 0h1\" fill=\"url(#g)\"/></svg>",
+        "<svg width=\"5000\" height=\"16\"><path d=\"M0 0h1\"/></svg>",
+        "<svg width=\"16\"><path d=\"M0 0h1\"/></svg>",
+        "<html><path d=\"M0 0h1\"/></html>",
+        "<svg width=\"16\" height=\"16\"><path d=\"M0 0h1\"/>text</svg>",
+        "<svg width=\"16\" height=\"16\"/>",
+        "not xml at all <",
+    };
+    Check(hostileSvg.All(x => SvgLite.Parse(x) == null), "svg pattern: scripts, DTDs/entities, links, images, styles, foreign objects, transforms, events, url() fills, oversized, sizeless, other roots, text and empty files are all refused");
+    Check(SvgLite.Parse("<svg width=\"16\" height=\"16\">" + string.Concat(Enumerable.Repeat("<path d=\"M0 0h1\"/>", 65)) + "</svg>") == null && SvgLite.Parse("<svg width=\"16\" height=\"16\"><path d=\"" + new string('1', 9000) + "\"/></svg>") == null, "svg pattern: too many paths or too much path data is refused");
+    var amoTheme = ThemePacks.FromChromeTheme("{\"name\":\"Terminal Deluxe\",\"theme\":{\"images\":{\"additional_backgrounds\":[\"images/bg-005-f5f3cf677b1f132c75ddc7bd319dd1fc.svg\"]},\"properties\":{\"additional_backgrounds_alignment\":[\"top\"],\"additional_backgrounds_tiling\":[\"repeat\"]},\"colors\":{\"toolbar\":\"rgb(74, 40, 120)\",\"toolbar_field\":\"rgb(0, 0, 0)\",\"toolbar_field_text\":\"rgb(0, 255, 0)\",\"tab_line\":\"rgb(0, 255, 0)\",\"bookmark_text\":\"rgb(0, 255, 0)\",\"frame\":\"rgb(74, 40, 120)\",\"tab_background_text\":\"rgb(0, 255, 0)\"}}}");
+    Check(amoTheme != null && amoTheme.Bar == "#4a2878" && amoTheme.Text == "#00ff00" && amoTheme.Accent == "#00ff00" && amoTheme.Header?.Layers.Single() == new HeaderLayer("images/bg-005-f5f3cf677b1f132c75ddc7bd319dd1fc.svg", "center", "top", "repeat") && amoTheme.Header.ToolbarOpacity == 75,
+          "firefox theme: Terminal Deluxe (real manifest) - purple bar, green text and accent, the grid pattern tiled; an opaque toolbar is still drawn at 75 % over it");
+    var laser = ThemePacks.FromChromeTheme("{\"name\":\"Laser\",\"theme\":{\"images\":{\"theme_frame\":\"Laser Chamber Black-Green.jpg\"},\"colors\":{\"frame\":\"rgb(0,0,0,1)\",\"tab_background_text\":\"#CDFFF4\",\"toolbar\":\"rgb(0, 25, 36, 0)\",\"tab_selected\":\"#111111\",\"bookmark_text\":\"#7E7E7E\"}}}");
+    Check(laser != null && laser.Bar == "#000000" && laser.Header?.ToolbarOpacity == 0 && laser.Header.Layers.Single().Path == "Laser Chamber Black-Green.jpg", "firefox theme: Laser Chamber (real manifest) - rgb() with four values, a fully see-through toolbar, a file name with spaces");
+
+    // the saved header state
+    var hs = new ThemeHeader("#00336a", 40, new[] { new HeaderLayer(new string('a', 64) + ".png", "right", "top", "no-repeat"), new HeaderLayer(new string('b', 64) + ".gif", "left", "bottom", "repeat-x") });
+    var hj = FirefoxThemes.StateToJson(hs, false);
+    Check(FirefoxThemes.StateFromJson(hj, out var anim) == hs && !anim && FirefoxThemes.StateToJson(FirefoxThemes.StateFromJson(hj)!, false) == hj && hj.EndsWith("]}\n") && !hj.Contains('.' + "5"), "header state: round-trips byte for byte, integers only");
+    Check(FirefoxThemes.StateFromJson(hj.Replace(new string('a', 64) + ".png", "../x.png")) == null && FirefoxThemes.StateFromJson(hj.Replace("\"toolbar_opacity\":40", "\"toolbar_opacity\":40.5")) == null &&
+          FirefoxThemes.StateFromJson(hj.Replace("\"right\"", "\"middle\"")) == null && FirefoxThemes.StateFromJson(hj.Replace("\"animate\":false,", "")) == null && FirefoxThemes.StateFromJson(hj.Replace("#00336a", "red")) == null &&
+          FirefoxThemes.StateFromJson(hj.Replace(".gif", ".webp")) == null && FirefoxThemes.StateFromJson(hj.Replace(".gif", ".svg")) != null && FirefoxThemes.StateFromJson("{nope") == null && FirefoxThemes.StateFromJson(hj.Replace("theme_header.v1", "theme_header.v2")) == null,
+          "header state: a path, a float, an unknown alignment, a missing field, a colour name, an unknown picture type, garbage or another schema are refused (SVG patterns are allowed)");
+}
+
+Console.WriteLine();
+Console.WriteLine("== animated header pictures ==");
+{
+    string? fxDir = null;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser.tests", "fixtures", "header_anim.apng"))) { fxDir = Path.Combine(d.FullName, "browser.tests", "fixtures"); break; }
+    Check(fxDir != null, "animation fixtures found (made with Pillow; reference frames in header_anim.expected.json)");
+    if (fxDir != null)
+    {
+        // test-only decoders, so the composed frames can be compared with Pillow's
+        static byte[] PngRgba(byte[] png, out int w, out int h)
+        {
+            int p = 8; w = h = 0; var idat = new MemoryStream();
+            while (p < png.Length)
+            {
+                int len = (png[p] << 24) | (png[p + 1] << 16) | (png[p + 2] << 8) | png[p + 3]; var t = Encoding.ASCII.GetString(png, p + 4, 4);
+                if (t == "IHDR") { w = (png[p + 8] << 24) | (png[p + 9] << 16) | (png[p + 10] << 8) | png[p + 11]; h = (png[p + 12] << 24) | (png[p + 13] << 16) | (png[p + 14] << 8) | png[p + 15]; if (png[p + 16] != 8 || png[p + 17] != 6) throw new Exception("test decoder: RGBA8 only"); }
+                if (t == "IDAT") idat.Write(png, p + 8, len);
+                p += 12 + len;
+            }
+            idat.Position = 0; var raw = new MemoryStream(); using (var z = new System.IO.Compression.ZLibStream(idat, System.IO.Compression.CompressionMode.Decompress)) z.CopyTo(raw);
+            var r = raw.ToArray(); int stride = w * 4; var o = new byte[h * stride];
+            for (int y = 0; y < h; y++)
+            {
+                int ft = r[y * (stride + 1)];
+                for (int x = 0; x < stride; x++)
+                {
+                    int a = x >= 4 ? o[y * stride + x - 4] : 0, b = y > 0 ? o[(y - 1) * stride + x] : 0, c = x >= 4 && y > 0 ? o[(y - 1) * stride + x - 4] : 0;
+                    int v = r[y * (stride + 1) + 1 + x];
+                    int pr = ft switch { 0 => 0, 1 => a, 2 => b, 3 => (a + b) / 2, _ => Paeth(a, b, c) };
+                    o[y * stride + x] = (byte)(v + pr);
+                }
+            }
+            return o;
+            static int Paeth(int a, int b, int c) { int p = a + b - c, pa = Math.Abs(p - a), pb = Math.Abs(p - b), pc = Math.Abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+        }
+        static List<byte[]> GifFramesRgba(byte[] g)
+        {
+            var frames = new List<byte[]>(); int pos = 13; byte[]? gct = null;
+            if ((g[10] & 0x80) != 0) { int n = 3 * (1 << ((g[10] & 7) + 1)); gct = g.Skip(13).Take(n).ToArray(); pos += n; }
+            int trans = -1;
+            while (pos < g.Length)
+            {
+                var tag = g[pos++];
+                if (tag == 0x3B) break;
+                if (tag == 0x21) { var label = g[pos++]; if (label == 0xF9) trans = (g[pos + 1] & 1) != 0 ? g[pos + 4] : -1; while (g[pos] != 0) pos += g[pos] + 1; pos++; continue; }
+                int w = g[pos + 4] | g[pos + 5] << 8, h = g[pos + 6] | g[pos + 7] << 8, pk = g[pos + 8]; pos += 9;
+                var pal = gct; if ((pk & 0x80) != 0) { int n = 3 * (1 << ((pk & 7) + 1)); pal = g.Skip(pos).Take(n).ToArray(); pos += n; }
+                int minCode = g[pos++]; var data = new List<byte>(); while (g[pos] != 0) { data.AddRange(g.Skip(pos + 1).Take(g[pos])); pos += g[pos] + 1; } pos++;
+                // LZW
+                var idx = new List<int>(); int clear = 1 << minCode, eoi = clear + 1, size = minCode + 1, next = eoi + 1; var dict = new List<int[]>();
+                void Reset() { dict.Clear(); for (int i = 0; i < clear; i++) dict.Add(new[] { i }); dict.Add(Array.Empty<int>()); dict.Add(Array.Empty<int>()); size = minCode + 1; next = eoi + 1; }
+                Reset(); int bitPos = 0; int[]? prev = null;
+                while (bitPos + size <= data.Count * 8)
+                {
+                    int code = 0; for (int i = 0; i < size; i++, bitPos++) if ((data[bitPos >> 3] >> (bitPos & 7) & 1) != 0) code |= 1 << i;
+                    if (code == clear) { Reset(); prev = null; continue; }
+                    if (code == eoi) break;
+                    int[] entry = code < dict.Count ? dict[code] : prev!.Concat(new[] { prev![0] }).ToArray();
+                    idx.AddRange(entry);
+                    if (prev != null && dict.Count < 4096) { dict.Add(prev.Concat(new[] { entry[0] }).ToArray()); if (dict.Count == (1 << size) && size < 12) size++; }
+                    prev = entry;
+                }
+                var o = new byte[w * h * 4];
+                for (int i = 0; i < w * h && i < idx.Count; i++) { int k = idx[i]; if (k == trans) continue; o[i * 4] = pal![k * 3]; o[i * 4 + 1] = pal[k * 3 + 1]; o[i * 4 + 2] = pal[k * 3 + 2]; o[i * 4 + 3] = 255; }
+                frames.Add(o); trans = -1;
+            }
+            return frames;
+        }
+        static byte[] Swap(byte[] x) { var y = (byte[])x.Clone(); for (int i = 0; i < y.Length; i += 4) (y[i], y[i + 2]) = (y[i + 2], y[i]); return y; }   // RGBA <-> BGRA
+        static int MaxDiff(byte[] mineBgra, byte[] refRgba)
+        {
+            var m = Swap(mineBgra); int worst = 0;
+            for (int i = 0; i < m.Length; i += 4)
+            {
+                if (m[i + 3] == 0 && refRgba[i + 3] == 0) continue;   // fully transparent: colour does not matter
+                for (int c = 0; c < 4; c++) worst = Math.Max(worst, Math.Abs(m[i + c] - refRgba[i + c]));
+            }
+            return worst;
+        }
+        using var expDoc = JsonDocument.Parse(File.ReadAllText(Path.Combine(fxDir, "header_anim.expected.json")));
+        var refA = expDoc.RootElement.GetProperty("apng_frames_rgba").EnumerateArray().Select(e => Convert.FromBase64String(e.GetString()!)).ToList();
+        var refG = expDoc.RootElement.GetProperty("gif_frames_rgba").EnumerateArray().Select(e => Convert.FromBase64String(e.GetString()!)).ToList();
+
+        var apng = File.ReadAllBytes(Path.Combine(fxDir, "header_anim.apng"));
+        var ai = AnimatedImage.Probe(apng);
+        Check(ai != null && ai.Kind == "apng" && ai.Width == 24 && ai.Height == 10 && ai.Loops == 0 && ai.Frames.Count == 3, "apng: 3 frames, 24x10, loops forever");
+        if (ai != null)
+        {
+            Check(ai.Frames.Select(f => f.DelayMs).SequenceEqual(new[] { 100, 50, 100 }) && ai.Frames[1].BlendOver && ai.Frames[1].Dispose == AnimDispose.Background && ai.Frames[2].Dispose == AnimDispose.Previous, "apng: delays (a 0 ms frame shown as 100 ms like browsers), blend and dispose read");
+            Check(ai.Frames[2].X == 15 && ai.Frames[2].Y == 1 && ai.Frames[2].W == 6 && ai.Frames[2].H == 8, "apng: a sub-rectangle frame keeps its place and size");
+            var px = ai.Frames.Select(f => { var rgba = PngRgba(f.Png!, out var w, out var h); return (w == f.W && h == f.H) ? Swap(rgba) : null; }).ToList();
+            Check(px.All(p => p != null), "apng: every rebuilt frame is a standalone PNG of the frame's own size (decoded by an independent decoder)");
+            if (px.All(p => p != null))
+            {
+                var comp = AnimatedImage.Compose(24, 10, ai.Frames, i => px[i]!, 10);
+                var diffs = comp.Select((c, i) => MaxDiff(c, refA[i])).ToList();
+                Check(diffs.All(d => d <= 1), "apng: composed frames match Pillow's rendering (largest channel difference " + diffs.Max() + ", rounding only)");
+                var top4 = AnimatedImage.Compose(24, 10, ai.Frames, i => px[i]!, 4);
+                Check(top4.All(f => f.Length == 24 * 4 * 4) && top4[2].SequenceEqual(comp[2].Take(24 * 4 * 4)), "apng: keeping only the top rows gives exactly those rows");
+            }
+            // damage
+            bool Bad(byte[] x) { try { AnimatedImage.Probe(x); return false; } catch (AnimException) { return true; } }
+            var flip = (byte[])apng.Clone(); flip[60] ^= 0x01;
+            Check(Bad(flip), "apng: one changed byte fails the chunk CRC");
+            Check(Bad(apng.Take(apng.Length - 20).ToArray()) && Bad(apng.Take(40).ToArray()), "apng: a truncated file is refused");
+            int fc = -1; for (int i = 8, n = 0; i + 8 < apng.Length; i += 12 + ((apng[i] << 24) | (apng[i + 1] << 16) | (apng[i + 2] << 8) | apng[i + 3])) if (Encoding.ASCII.GetString(apng, i + 4, 4) == "fcTL" && ++n == 3) { fc = i; break; }
+            var outside = (byte[])apng.Clone(); outside[fc + 8 + 15] = 30;   // x_offset of the third frame -> 30 (canvas is 24 wide)
+            var crc = Apng.Crc(outside, fc + 4, 30); outside[fc + 34] = (byte)(crc >> 24); outside[fc + 35] = (byte)(crc >> 16); outside[fc + 36] = (byte)(crc >> 8); outside[fc + 37] = (byte)crc;
+            Check(Bad(outside), "apng: a frame placed outside the picture is refused (even with a correct CRC)");
+            using (var still = new MemoryStream())
+            {
+                still.Write(apng, 0, 8);
+                var ihdr = apng.Skip(16).Take(13).ToArray(); Apng.WriteChunk(still, "IHDR", ihdr, 0, 13);
+                Apng.WriteChunk(still, "IDAT", new byte[] { 0x78, 0x9c, 3, 0, 0, 0, 0, 1 }, 0, 8); Apng.WriteChunk(still, "IEND", Array.Empty<byte>(), 0, 0);
+                Check(AnimatedImage.Probe(still.ToArray()) == null && AnimatedImage.Probe(new byte[] { 0xFF, 0xD8, 0xFF }) == null, "apng: a plain PNG (or a JPEG) is a still picture, not an animation");
+            }
+        }
+
+        var gif = File.ReadAllBytes(Path.Combine(fxDir, "header_anim.gif"));
+        var gi = AnimatedImage.Probe(gif);
+        Check(gi != null && gi.Kind == "gif" && gi.Frames.Count == 3 && gi.Loops == 0 && gi.Frames.Select(f => f.DelayMs).SequenceEqual(new[] { 120, 70, 100 }) && gi.Frames[1].Dispose == AnimDispose.Background,
+              "gif: 3 frames, loops forever, delays in 1/100 s (0 shown as 100 ms), disposal read");
+        if (gi != null)
+        {
+            var gpx = GifFramesRgba(gif);
+            Check(gpx.Count == 3 && gpx.Select((p, i) => p.Length == gi.Frames[i].W * gi.Frames[i].H * 4).All(x => x), "gif: frame places and sizes match the image data");
+            if (gpx.Count == 3)
+            {
+                var gc = AnimatedImage.Compose(gi.Width, gi.Height, gi.Frames, i => Swap(gpx[i]), gi.Height);
+                var gd = gc.Select((c, i) => MaxDiff(c, refG[i])).ToList();
+                Check(gd.All(d => d == 0), "gif: composed frames match Pillow's rendering exactly (largest difference " + gd.Max() + ")");
+            }
+            bool GBad(byte[] x) { try { AnimatedImage.Probe(x); return false; } catch (AnimException) { return true; } }
+            Check(GBad(gif.Take(30).ToArray()) && GBad(Encoding.ASCII.GetBytes("GIF89a").Concat(new byte[] { 0, 0, 0, 0, 0, 0, 0 }).ToArray()), "gif: truncated or zero-size files are refused");
+        }
+
+        // disposal "previous" restores what was there; budget
+        var fr = new List<AnimFrame> { new(0, 0, 2, 1, 100, AnimDispose.None, false, null, 0), new(1, 0, 1, 1, 100, AnimDispose.Previous, false, null, 1), new(0, 0, 1, 1, 100, AnimDispose.None, true, null, 2) };
+        var pix = new[] { new byte[] { 1, 1, 1, 255, 2, 2, 2, 255 }, new byte[] { 9, 9, 9, 255 }, new byte[] { 0, 0, 0, 0 } };
+        var cm = AnimatedImage.Compose(2, 1, fr, i => pix[i], 1);
+        Check(cm[1].SequenceEqual(new byte[] { 1, 1, 1, 255, 9, 9, 9, 255 }) && cm[2].SequenceEqual(new byte[] { 1, 1, 1, 255, 2, 2, 2, 255 }), "compose: dispose 'previous' puts back what was under the frame; a transparent 'over' frame changes nothing");
+        bool CBad(Func<object> f) { try { f(); return false; } catch (AnimException) { return true; } }
+        Check(CBad(() => AnimatedImage.Compose(2, 1, new[] { new AnimFrame(1, 0, 2, 1, 100, AnimDispose.None, false, null, 0) }, _ => new byte[8], 1)) && CBad(() => AnimatedImage.Compose(2, 1, fr, _ => new byte[3], 1)), "compose: a frame outside the canvas or with the wrong pixel count is refused");
+        Check(AnimatedImage.Budget(3000, 200, 60) == (200, false) && AnimatedImage.Budget(1000, 600, 30) == (AnimatedImage.MaxRows, true) && AnimatedImage.Budget(500, 100, 1) == (100, false), "budget: at most " + AnimatedImage.MaxRows + " rows kept; too many frames for the memory budget (or a single frame) means still");
+        Check(AnimatedImage.NormalizeDelay(0) == 100 && AnimatedImage.NormalizeDelay(10) == 100 && AnimatedImage.NormalizeDelay(20) == 20 && AnimatedImage.NormalizeDelay(int.MaxValue) == 60_000, "delays: 10 ms or less shown as 100 ms, at most a minute");
+    }
+
+    // static checks on the window glue
+    string? thRoot = null;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser", "MainWindow.ThemeHeader.cs"))) { thRoot = d.FullName; break; }
+    if (thRoot != null)
+    {
+        var th = File.ReadAllText(Path.Combine(thRoot, "browser", "MainWindow.ThemeHeader.cs"));
+        var cz = File.ReadAllText(Path.Combine(thRoot, "browser", "MainWindow.Customize.cs"));
+        var xaml = File.ReadAllText(Path.Combine(thRoot, "browser", "MainWindow.xaml"));
+        Check(!th.Contains("HttpClient") && !th.Contains("WebClient") && th.Contains("SystemParameters.ClientAreaAnimation") && th.Contains("WindowState.Minimized"), "header glue: no network; still when Windows reduces animations and while minimised");
+        Check(th.Contains("AnimatedImage.Budget(") && th.Contains("AnimatedImage.Compose(") && th.Contains("Task.Run(() => DecodeHeaderLayer(") && th.Contains("Frozen(BitmapSource.Create("), "header glue: frames composed off the UI thread within the memory budget, frozen");
+        Check(th.Contains("FirefoxThemes.SafeHeaderPath(l.Path)") && th.Contains("!full.StartsWith(rootFull") && th.Contains("MaxHeaderFileBytes") && th.Contains("FirefoxThemes.IsStoredFileName(name)"), "header glue: only pictures inside the theme, size-capped, stored content-addressed");
+        Check(xaml.Contains("x:Name=\"HeaderArt\"") && xaml.Contains("IsHitTestVisible=\"False\"") && xaml.Contains("{DynamicResource ChromeTopBg}") && xaml.Contains("{DynamicResource ChromeTabStrip}"), "header glue: the picture layer sits behind the toolbar and tabs and never takes clicks");
+        Check(cz.Contains("if (p.Header != null && themeRoot != null) SetThemeHeader(p.Header, themeRoot);") && cz.Contains("else if (p.Id != \"custom\" && _header != null) SetThemeHeader(null, null);") && cz.Contains("ExtSources.ParseFirefox(link)"), "header glue: a Firefox theme sets the header, any other look clears it, Firefox Add-ons links work on Customize");
     }
 }
 

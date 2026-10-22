@@ -263,7 +263,9 @@ document.addEventListener('keydown',function(e){
                 LoadBookmarks();
                 LoadDownloads();
                 LoadSettings();
+                LoadThemeHeader();
                 ApplyChromeTheme();
+                ShowThemeHeader();
                 ApplyLayout(); RebuildBookmarksBar();
                 await Loading(3, "Loading the ad and tracker filter lists…");
                 LoadBlocklist();

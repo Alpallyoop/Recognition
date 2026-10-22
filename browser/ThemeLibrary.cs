@@ -179,7 +179,7 @@ namespace Recognition.Browser
             }
             var rt = rthemeJson.Length <= MaxPackBytes ? ParsePack(rthemeJson.TrimStart('\uFEFF')) : null;
             if (rt == null) { error = "that theme's " + PackageThemeFile + " is not a valid Recognition theme, so the theme was not applied"; return null; }
-            return rt with { NtpImage = chrome?.NtpImage };
+            return rt with { NtpImage = chrome?.NtpImage, Header = chrome?.Header };
         }
     }
 }

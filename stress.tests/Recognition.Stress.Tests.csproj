@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Stress tests: the browser's REAL pure code (same source files the browser compiles), pushed with volume, random and
+       hostile input, repetition and concurrency. Separate from browser.tests so the release gate stays fast.
+       Run: dotnet run (project stress.tests, configuration Release), arguments: rounds=N seed=S quick
+       Or double-click buttons\tests\STRESS_TESTS.cmd.   Token on success: RECOGNITION_STRESS_TESTS_V1_OK -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Recognition.Browser.Stress</RootNamespace>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\browser\GovernedActions.cs" Link="GovernedActions.cs" />
+    <Compile Include="..\browser\ExtensionGovernance.cs" Link="ExtensionGovernance.cs" />
+    <Compile Include="..\browser\ExtensionDev.cs" Link="ExtensionDev.cs" />
+    <Compile Include="..\browser\IntegrationReceipts.cs" Link="IntegrationReceipts.cs" />
+    <Compile Include="..\browser\FirefoxThemes.cs" Link="FirefoxThemes.cs" />
+    <Compile Include="..\browser\AnimatedImage.cs" Link="AnimatedImage.cs" />
+    <Compile Include="..\browser\SoteriaBridge.cs" Link="SoteriaBridge.cs" />
+    <Compile Include="..\browser\FilterEngine.cs" Link="FilterEngine.cs" />
+    <Compile Include="..\browser\SetupSnapshot.cs" Link="SetupSnapshot.cs" />
+    <Compile Include="..\browser\Appearance.cs" Link="Appearance.cs" />
+    <Compile Include="..\browser\Customize.cs" Link="Customize.cs" />
+    <Compile Include="..\browser\StartMotion.cs" Link="StartMotion.cs" />
+    <Compile Include="..\browser\StartBackground.cs" Link="StartBackground.cs" />
+    <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />
+    <Compile Include="..\browser\CodeHighlighter.cs" Link="CodeHighlighter.cs" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

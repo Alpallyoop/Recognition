@@ -384,30 +384,46 @@ namespace Recognition.Browser
         }
 
         // Extracts a ZIP with limits: entry count, total uncompressed size, name safety, and a compression-ratio guard.
+        // A damaged archive (unreadable file list, an entry whose data does not decode) is a governed refusal (ExtGovException), never a raw
+        // I/O error. Only errors while READING the archive are relabelled; an error writing to disk (full disk, no permission) surfaces as itself.
         public static void ExtractZip(byte[] zip, string destDir)
         {
             if (zip.Length > MaxPackageBytes) throw new ExtGovException("package is larger than " + MaxPackageBytes / 1024 / 1024 + " MB");
             Directory.CreateDirectory(destDir);
             var destFull = Path.GetFullPath(destDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             using var ms = new MemoryStream(zip);
-            ZipArchive za;
+            ZipArchive za; System.Collections.ObjectModel.ReadOnlyCollection<ZipArchiveEntry> entries;
             try { za = new ZipArchive(ms, ZipArchiveMode.Read, false); } catch (InvalidDataException) { throw new ExtGovException("not a valid ZIP file"); }
             using (za)
             {
-                if (za.Entries.Count > ExtGovernance.MaxFiles) throw new ExtGovException("too many files in package");
+                // the central directory is read lazily, on first use of Entries; the archive is in memory, so an I/O error here is damage
+                try { entries = za.Entries; }
+                catch (Exception ex) when (ex is InvalidDataException or IOException) { throw new ExtGovException("damaged ZIP file (its file list cannot be read)"); }
+                if (entries.Count > ExtGovernance.MaxFiles) throw new ExtGovException("too many files in package");
                 long total = 0;
-                foreach (var e in za.Entries) { total += e.Length; if (total > ExtGovernance.MaxTotalBytes) throw new ExtGovException("package expands to more than " + ExtGovernance.MaxTotalBytes / 1024 / 1024 + " MB"); }
+                foreach (var e in entries) { total += e.Length; if (total > ExtGovernance.MaxTotalBytes) throw new ExtGovException("package expands to more than " + ExtGovernance.MaxTotalBytes / 1024 / 1024 + " MB"); }
                 if (total > 50L * 1024 * 1024 && total > (long)zip.Length * 200) throw new ExtGovException("suspicious compression ratio");
-                foreach (var e in za.Entries)
+                foreach (var e in entries)
                 {
                     if (!IsSafeEntryName(e.FullName)) throw new ExtGovException("unsafe path in package: " + e.FullName);
                     var target = Path.GetFullPath(Path.Combine(destFull, e.FullName));
                     if (!target.StartsWith(destFull, StringComparison.OrdinalIgnoreCase)) throw new ExtGovException("unsafe path in package: " + e.FullName);
                     if (e.FullName.EndsWith("/", StringComparison.Ordinal)) { Directory.CreateDirectory(target); continue; }
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    using var src = e.Open(); using var dst = File.Create(target);
-                    var buf = new byte[81920]; long written = 0; int n;
-                    while ((n = src.Read(buf, 0, buf.Length)) > 0) { written += n; if (written > e.Length + 1024) throw new ExtGovException("entry larger than declared"); dst.Write(buf, 0, n); }
+                    Stream src;
+                    try { src = e.Open(); } catch (Exception ex) when (ex is InvalidDataException or IOException) { throw new ExtGovException("damaged ZIP entry: " + e.FullName); }
+                    using (src)
+                    using (var dst = File.Create(target))
+                    {
+                        var buf = new byte[81920]; long written = 0; int n;
+                        while (true)
+                        {
+                            try { n = src.Read(buf, 0, buf.Length); }
+                            catch (Exception ex) when (ex is InvalidDataException or IOException) { throw new ExtGovException("damaged ZIP entry (its data does not decode): " + e.FullName); }
+                            if (n <= 0) break;
+                            written += n; if (written > e.Length + 1024) throw new ExtGovException("entry larger than declared"); dst.Write(buf, 0, n);
+                        }
+                    }
                 }
             }
         }

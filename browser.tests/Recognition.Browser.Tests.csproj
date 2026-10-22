@@ -34,6 +34,8 @@
     <Compile Include="..\browser\ExtensionGovernance.cs" Link="ExtensionGovernance.cs" />
     <Compile Include="..\browser\ExtensionDev.cs" Link="ExtensionDev.cs" />
     <Compile Include="..\browser\IntegrationReceipts.cs" Link="IntegrationReceipts.cs" />
+    <Compile Include="..\browser\FirefoxThemes.cs" Link="FirefoxThemes.cs" />
+    <Compile Include="..\browser\AnimatedImage.cs" Link="AnimatedImage.cs" />
     <Compile Include="..\browser\RuntimeCheck.cs" Link="RuntimeCheck.cs" />
     <Compile Include="..\browser\SoteriaBridge.cs" Link="SoteriaBridge.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />

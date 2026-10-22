@@ -8,6 +8,8 @@
     <SolidColorBrush x:Key="ChromeWin" Color="#111318"/>
     <SolidColorBrush x:Key="ChromeBar" Color="#1B1E24"/>
     <SolidColorBrush x:Key="ChromeSide" Color="#15181D"/>
+    <SolidColorBrush x:Key="ChromeTopBg" Color="#1B1E24"/>
+    <SolidColorBrush x:Key="ChromeTabStrip" Color="#15181D"/>
     <SolidColorBrush x:Key="ChromeField" Color="#0E1015"/>
     <SolidColorBrush x:Key="ChromeLine" Color="#2A2E36"/>
     <SolidColorBrush x:Key="ChromeLine2" Color="#2E333C"/>

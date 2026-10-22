@@ -18,8 +18,11 @@
       <RowDefinition Height="Auto"/>   <!-- status -->
     </Grid.RowDefinitions>
 
+    <!-- Header picture of a Firefox theme (MainWindow.ThemeHeader.cs): behind the toolbar and the tab strip, never hit-tested -->
+    <Grid x:Name="HeaderArt" Grid.Row="0" Grid.RowSpan="2" VerticalAlignment="Top" IsHitTestVisible="False" ClipToBounds="True" Visibility="Collapsed"/>
+
     <!-- Chrome: nav + address + actions -->
-    <Border Grid.Row="0" Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,0,1">
+    <Border x:Name="TopChrome" Grid.Row="0" Background="{DynamicResource ChromeTopBg}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,0,1">
       <Grid Margin="12,9">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>  <!-- back -->
@@ -175,13 +178,13 @@
         </DockPanel>
       </Border>
 
-      <TabControl x:Name="Tabs" DockPanel.Dock="Top" Background="{DynamicResource ChromeSide}" BorderThickness="0"
+      <TabControl x:Name="Tabs" DockPanel.Dock="Top" Background="{DynamicResource ChromeTabStrip}" BorderThickness="0"
                   SelectionChanged="Tabs_SelectionChanged">
         <TabControl.Template>
           <ControlTemplate TargetType="TabControl">
             <ControlTemplate.Resources><local:MinusConverter x:Key="Minus"/></ControlTemplate.Resources>
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                          Background="{DynamicResource ChromeSide}">
+                          Background="{DynamicResource ChromeTabStrip}">
               <!-- tabs, then a "+" right after the last tab (like every mainstream browser) -->
               <StackPanel Orientation="Horizontal" Margin="8,8,8,0">
                 <local:TabShrinkPanel IsItemsHost="True" HorizontalAlignment="Left"

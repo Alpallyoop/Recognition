@@ -36,3 +36,14 @@
 7. Send to review on a good build: the normal review card appears at the top; installing it works as before and adds a ledger record. Remove the project: your folder is untouched; an uploaded build's copy under `runtime\extensions_dev` is deleted.
 8. Close Recognition: `runtime\tmp\extdev-run` and the `rb-extdev-*` profile are gone.
 9. SoteriaVault page: choose a folder and press Check. The status bar says "SoteriaVault link checked: <outcome> (integration receipt ...)" and `proofs\integration_receipts\recognition__soteriavault\constellation.integration.receipt.v1.ndjson` gains one line per check (outcome `deferred` while SoteriaVault says the link is not on, `unavailable` for a folder without it).
+
+## Y. Firefox themes and animated header pictures (proposal 0004)
+
+1. Customize, Get a theme: paste `https://addons.mozilla.org/en-US/firefox/addon/nyan-cat-animated/` and press Get theme. The note says it applied "Nyan Cat (Animated)" with its header picture. The top of the window (toolbar and tab strip) shows the dark blue frame, the stars and rainbow, and the cat at the right; the stars and cat move. Buttons, tabs and the address field still work by click (the picture never takes clicks).
+2. Repeat with `purple-starfield-animated` (stars move across the whole top), `praisethesun` (three pictures, one on the left), `saturn-plus` (still picture at the right), `laser-chamber-black-green` (a .jpg with spaces in its name), `terminal-deluxe` and `citroen-ds3-racing` ("orange and black": a faint grid pattern over the colour), `neapolitan-scoop` (colours only, no picture). Text in the toolbar stays readable on each.
+3. Customize, Header picture: Keep still stops the animation (one frame stays), Animate starts it again; restart Recognition: the header and the still/animate choice are kept. Windows Settings, Accessibility, Visual effects, Animation effects off: the header stays still.
+4. Minimise for a minute and restore: the animation continues; Task Manager shows no CPU use while minimised.
+5. Pick any built-in look (for example Midnight): the header picture goes. Pick your own colours after a Firefox theme: the picture stays under them. Remove the picture: colours stay, picture goes; `runtime\theme_header` has no picture files left.
+6. Extensions, Add by link: paste a Firefox theme link: the review card says it is a theme and offers Use this theme (never Install).
+7. A large animated theme (if one is over the 96 MB frame budget) shows still, and Customize says so.
+

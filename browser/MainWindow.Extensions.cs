@@ -348,7 +348,7 @@ namespace Recognition.Browser
                 {
                     var tp = _extPending;
                     if (tp == null || !tp.IsTheme) { ExtReport("nothing to apply", false); return; }
-                    var pack = ThemePacks.FromChromeTheme(File.ReadAllText(Path.Combine(tp.Root, "manifest.json"), Encoding.UTF8).TrimStart('\uFEFF'));
+                    var pack = ThemePacks.FromChromeTheme(File.ReadAllText(Path.Combine(tp.Root, "manifest.json"), Encoding.UTF8).TrimStart('\uFEFF'));   // Chrome or Firefox
                     if (pack == null) { ExtReport("that theme could not be read", false); return; }
                     string? img = null;
                     if (pack.NtpImage != null)
@@ -356,8 +356,8 @@ namespace Recognition.Browser
                         var full = Path.GetFullPath(Path.Combine(tp.Root, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar)));
                         if (full.StartsWith(Path.GetFullPath(tp.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full;
                     }
-                    ApplyPack(pack, img); DiscardPending();
-                    ExtReport("applied the theme \"" + pack.Name + "\". Change it any time on the Customize page.");
+                    ApplyPack(pack, img, tp.Root); DiscardPending();   // pictures are copied before the staging folder goes
+                    ExtReport("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "") + ". Change it any time on the Customize page.");
                     SendExtSnapshot(); return;
                 }
                 if (msg.StartsWith("ext-install:")) { ExtInstall(msg.EndsWith(":approve")); return; }
@@ -552,8 +552,8 @@ namespace Recognition.Browser
  <div class='acts'><a class='btn' data-c='ext-open:https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons'>Browse add-ons</a></div></div>
 <div class='card'><div class='info'><h3>Firefox Add-ons <span class='tag warn'>may not run</span></h3><p>Paste a Firefox add-on page address and Recognition will look it up and download it. Firefox add-ons are built for Firefox, so many will not work in this engine. You get a review and a Test button before anything is installed.</p></div>
  <div class='acts'><a class='btn ghost' data-c='ext-open:https%3A%2F%2Faddons.mozilla.org%2Fen-US%2Ffirefox%2Fextensions%2F'>Browse add-ons</a></div></div>
-<div class='card'><div class='info'><h3>Themes</h3><p>A Chrome theme is not run as an extension. Recognition reads its colours and picture and applies them as its own look (see Customize).</p></div>
- <div class='acts'><a class='btn ghost' data-c='ext-open:https%3A%2F%2Fchromewebstore.google.com%2Fcategory%2Fthemes'>Browse themes</a></div></div>
+<div class='card'><div class='info'><h3>Themes</h3><p>A theme is not run as an extension. Recognition reads its colours and pictures and applies them as its own look (see Customize). Firefox themes bring their header picture across the top of the window, and animated ones play. Paste a theme's page address in Add by link.</p></div>
+ <div class='acts'><a class='btn ghost' data-c='ext-open:https%3A%2F%2Faddons.mozilla.org%2Ffirefox%2Fthemes%2F'>Firefox themes</a><a class='btn ghost' data-c='ext-open:https%3A%2F%2Fchromewebstore.google.com%2Fcategory%2Fthemes'>Chrome themes</a></div></div>
 <div class='steps'>How it works: 1. Open a store above. 2. Copy the address of the extension's page. 3. Open the Add by link tab and paste it. 4. Review what it asks for, then install.</div>
 
 <h1 style='font-size:16px'>Add by link or file</h1>

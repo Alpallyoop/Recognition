@@ -8,12 +8,14 @@ using System.Text.RegularExpressions;
 namespace Recognition.Browser
 {
     // Pure rules for themes and for finding extensions (compiled into browser.tests too; no WPF, files or network).
-    //  * ThemePacks: the built-in looks, and reading the colours (and start-page picture name) out of a Chrome theme.
+    //  * ThemePacks: the built-in looks, and reading the colours (and start-page picture name) out of a Chrome theme; a Firefox theme
+    //    (string colours, header picture) is handed to FirefoxThemes.cs.
     //  * ChromeColors: from three colours (bar, text, accent) to every colour the window uses, for dark and light bars alike.
     //  * ExtSources: turning a Chrome Web Store or Edge Add-ons link (or a bare extension id) into the official download address.
     // Every colour that leaves this file is a validated #rrggbb value, so nothing a theme file says can reach the window as anything else.
 
-    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null, string Top = "", MotionRecipe? Motion = null);
+    // Header: a Firefox theme's header picture(s) across the top of the window (FirefoxThemes.cs); null for every other look.
+    internal sealed record ThemePack(string Id, string Name, string Bar, string Text, string Accent, string StartBg, bool Dark, string? NtpImage = null, string Top = "", MotionRecipe? Motion = null, ThemeHeader? Header = null);
 
     internal static class Rgb
     {
@@ -110,6 +112,7 @@ namespace Recognition.Browser
                 using var doc = JsonDocument.Parse(manifestJson, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
                 var r = doc.RootElement;
                 if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("theme", out var th) || th.ValueKind != JsonValueKind.Object) return null;
+                if (FirefoxThemes.LooksLikeFirefox(th)) return FirefoxThemes.FromManifest(r, fallbackName == "Imported theme" ? "Firefox theme" : fallbackName);
                 th.TryGetProperty("colors", out var colors);
                 var bar = Color(colors, "toolbar") ?? Color(colors, "frame") ?? Color(colors, "ntp_background");
                 string? ntpImage = null;

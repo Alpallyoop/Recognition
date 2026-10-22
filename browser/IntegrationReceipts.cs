@@ -118,6 +118,15 @@ namespace Recognition.Browser
         public static string Append(string path, string consumer, string provider, string emittedBy, string? contract, string? requestSha256, string? responseSha256,
                                     IReadOnlyList<IntegrationCarried> carried, string outcome, string? errorToken)
         {
+            lock (AppendGate) return AppendLocked(path, consumer, provider, emittedBy, contract, requestSha256, responseSha256, carried, outcome, errorToken);
+        }
+
+        // One writer at a time inside this process: two appends must never both link to the same head (that would fork the chain).
+        private static readonly object AppendGate = new();
+
+        private static string AppendLocked(string path, string consumer, string provider, string emittedBy, string? contract, string? requestSha256, string? responseSha256,
+                                           IReadOnlyList<IntegrationCarried> carried, string outcome, string? errorToken)
+        {
             var (_, head) = Verify(path);
             var line = Line(consumer, provider, emittedBy, contract, requestSha256, responseSha256, carried, outcome, errorToken, head);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
