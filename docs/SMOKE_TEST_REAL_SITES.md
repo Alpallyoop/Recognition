@@ -35,7 +35,7 @@
 6. Upload `ext-bad` (zipped) or any build asking for `<all_urls>`: it shows "the governance policy will refuse this build" and does not run.
 7. Send to review on a good build: the normal review card appears at the top; installing it works as before and adds a ledger record. Remove the project: your folder is untouched; an uploaded build's copy under `runtime\extensions_dev` is deleted.
 8. Close Recognition: `runtime\tmp\extdev-run` and the `rb-extdev-*` profile are gone.
-9. SoteriaVault page: choose a folder and press Check. The status bar says "SoteriaVault link checked: <outcome> (integration receipt ...)" and `proofs\integration_receipts\recognition__soteriavault\constellation.integration.receipt.v1.ndjson` gains one line per check (outcome `deferred` while SoteriaVault says the link is not on, `unavailable` for a folder without it).
+9. SoteriaVault page: choose a folder and press Check. The status bar says "SoteriaVault link checked: <outcome> (integration receipt ..., witnessed)" and `proofs\integration_receipts\recognition__soteriavault\receipts.ndjson` gains one line per check (outcome `deferred` while SoteriaVault says the link is not on, `unavailable` for a folder without it). An older `constellation.integration.receipt.v1.ndjson` there is renamed to `receipts.ndjson` and anchored once (the status bar says so). Then close Recognition, open `receipts.ndjson` in Notepad, change the LAST line's outcome (for example `"deferred"` to `"unavailable"`), save, reopen and press Check: the status bar says the receipt was NOT written (RECEIPT_WITNESS_MISMATCH) and the file is unchanged. Put the file back as it was: Check works again.
 
 ## Y. Firefox themes and animated header pictures (proposal 0004)
 
@@ -46,4 +46,5 @@
 5. Pick any built-in look (for example Midnight): the header picture goes. Pick your own colours after a Firefox theme: the picture stays under them. Remove the picture: colours stay, picture goes; `runtime\theme_header` has no picture files left.
 6. Extensions, Add by link: paste a Firefox theme link: the review card says it is a theme and offers Use this theme (never Install).
 7. A large animated theme (if one is over the 96 MB frame budget) shows still, and Customize says so.
-
+10. NFL (proposal 0005): with NFL in its usual place (`_Covenant-systems\nfl`), press Check on the SoteriaVault page: the status bar ends "..., witnessed by the browser, witnessed by NFL)". In NFL's folder, `pwsh -File scripts\nfl_cli_v1.ps1 receipt-head -Integration recognition>soteriavault` shows the same receipt prefix as HEAD. Rename NFL's folder for a moment: Check still writes the receipt and says "NFL not found on this computer"; rename it back. Then close Recognition, change the last receipt line in Notepad, reopen and press Check: it is refused and the status bar names RECEIPT_WITNESS_MISMATCH (or RECEIPT_NFL_MISMATCH). Put the file back.
+11. Constellation: "1 - SYNC EVERYTHING", then "9 - Witness Receipts": the plan lists `recognition>soteriavault  emitting  N receipt line(s)`, NFL verifies N/N, and it is marked `witnessed`.

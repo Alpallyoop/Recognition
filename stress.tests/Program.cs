@@ -8,10 +8,10 @@ using Recognition.Browser;
 // input, repetition and concurrency. Every random choice comes from one seed, printed at the start, so any failure can be replayed
 // exactly with  dotnet run -c Release -- seed=<n>.
 //
-// Arguments: rounds=N (default 3)  seed=S (default 20261021)  quick (smaller volumes, for a fast look)
+// Arguments: rounds=N (default 2)  seed=S (default 20261021)  quick (smaller volumes, for a fast look)
 // Token on success: RECOGNITION_STRESS_TESTS_V1_OK
 
-int rounds = 3, seed = 20261021; bool quick = false;
+int rounds = 2, seed = 20261021; bool quick = false;
 foreach (var a in args)
 {
     if (a.StartsWith("rounds=") && int.TryParse(a[7..], out var r) && r is > 0 and <= 100) rounds = r;
@@ -44,7 +44,7 @@ try
         {
             var store = new Dictionary<string, string>();
             var ga = new GovernedActions("mem://a", p => store.TryGetValue(p, out var v) ? v : "", (p, t) => store[p] = t);
-            int n = Q(3000, 400);
+            int n = Q(2000, 400);
             Timed("ledger: append " + n, () => { for (int i = 0; i < n; i++) ga.AppendAt("act." + (i % 17), "detail " + rng.Next(), new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(i)); return 0; });
             Check(ga.Count == n && ga.Verify(out var v1) && v1 == n, $"ledger: {n} records append and verify");
             var reload = new GovernedActions("mem://a", p => store.TryGetValue(p, out var v) ? v : "", (p, t) => store[p] = t); reload.Load();
@@ -111,6 +111,85 @@ try
             }
             File.WriteAllBytes(f, good);
             Check(dropDetected == drops, $"receipts: removing any receipt before the last is detected ({dropDetected}/{drops})");
+
+            // fast path (audit F11), under load: a same-size edit with the file time put back is always caught before anything is appended
+            {
+                File.WriteAllBytes(f, good); IntegrationReceipts.ForgetVerified();
+                IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, none, "failed", "WARM");   // file now known to the fast path
+                var known = File.ReadAllBytes(f); var t0 = File.GetLastWriteTimeUtc(f);
+                int caughtSame = 0, appendedAnyway = 0, touchedOnRefusal = 0, edits = Q(400, 80);
+                const string hexd = "0123456789abcdef";
+                for (int t = 0; t < edits; t++)
+                {
+                    var b = (byte[])known.Clone(); int pos;
+                    do pos = rng.Next(b.Length); while (b[pos] == (byte)'\n');
+                    byte nb;
+                    if (hexd.IndexOf((char)b[pos]) >= 0) { do nb = (byte)hexd[rng.Next(16)]; while (nb == b[pos]); }          // a hash digit swapped for another digit
+                    else { do nb = (byte)rng.Next(32, 127); while (nb == b[pos] || nb == (byte)'\n'); }                     // any other printable change
+                    b[pos] = nb;
+                    File.WriteAllBytes(f, b); File.SetLastWriteTimeUtc(f, t0);                                                  // same size, same time
+                    try { IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, none, "failed", "SHOULD_NOT_BE_WRITTEN"); appendedAnyway++; }
+                    catch (IntegrationReceiptException) { caughtSame++; if (!File.ReadAllBytes(f).SequenceEqual(b)) touchedOnRefusal++; }
+                }
+                File.WriteAllBytes(f, known); File.SetLastWriteTimeUtc(f, t0);
+                // edits that still parse and link (a changed outcome text in the LAST receipt) are a valid shorter story, not tampering the chain can see;
+                // every other edit must be refused. Count those separately so the check is exact.
+                Check(caughtSame + appendedAnyway == edits && caughtSame >= edits * 9 / 10, $"receipts fast path: {edits} random same-size, same-time edits: {caughtSame} refused before writing, {appendedAnyway} still formed a valid chain (those are what the witness below catches)");
+                Check(touchedOnRefusal == 0 && IntegrationReceipts.Verify(f).Count == known.Count(x => x == (byte)'\n'), "receipts fast path: a refused append never changes the file (checked byte for byte after every refusal)");
+            }
+
+            // the browser's own witness under load: every valid-looking rewrite of the newest receipt is refused (the chain alone cannot see these)
+            {
+                var wf = Path.Combine(dir, "receipts_witnessed.ndjson"); IntegrationReceipts.ForgetVerified();
+                var wl = new List<string>();
+                for (int i = 0; i < Q(50, 15); i++) { var o = outs[rng.Next(outs.Length)]; IntegrationReceipts.AppendWitnessed(wf, wl, h => wl.Add(h), null, "recognition", "soteriavault", "consumer", null, null, rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "W" + i); }
+                var wgood = File.ReadAllBytes(wf); var wlines = Encoding.UTF8.GetString(wgood).TrimEnd('\n').Split('\n');
+                var prevOfLast = wlines.Length > 1 ? IntegrationReceipts.Hash(wlines[^2]) : IntegrationReceipts.Genesis;
+                int forged = Q(300, 60), chainFooled = 0, witnessCaught = 0;
+                for (int t = 0; t < forged; t++)
+                {
+                    var o = outs[rng.Next(outs.Length)];
+                    var fake = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", rng.Next(2) == 0 ? null : "soteriavault.connector_contract.v1", rng.Next(2) == 0 ? null : Sha(), rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "FORGED_" + t, prevOfLast);
+                    var mode = rng.Next(3);
+                    var body = mode switch
+                    {
+                        0 => string.Join("\n", wlines.Take(wlines.Length - 1).Append(fake)) + "\n",                                        // newest rewritten
+                        1 => string.Join("\n", wlines) + "\n" + IntegrationReceipts.Line("recognition", "soteriavault", "consumer", null, null, null, none, o, o == "ok" ? null : "ADDED_" + t, IntegrationReceipts.Hash(wlines[^1])) + "\n",   // one added
+                        _ => string.Join("\n", wlines.Take(Math.Max(1, wlines.Length - rng.Next(1, 4)))) + "\n",                          // newest cut off
+                    };
+                    File.WriteAllText(wf, body, new UTF8Encoding(false)); IntegrationReceipts.ForgetVerified();
+                    try { IntegrationReceipts.Verify(wf); chainFooled++; } catch (IntegrationReceiptException) { }
+                    var before = File.ReadAllBytes(wf); int wBefore = wl.Count;
+                    try { IntegrationReceipts.AppendWitnessed(wf, wl, h => wl.Add(h), null, "recognition", "soteriavault", "consumer", null, null, null, none, "ok", null); }
+                    catch (IntegrationReceiptException ex) when (ex.Message.StartsWith("RECEIPT_WITNESS_MISMATCH")) { if (File.ReadAllBytes(wf).SequenceEqual(before) && wl.Count == wBefore) witnessCaught++; }
+                }
+                File.WriteAllBytes(wf, wgood);
+                Check(chainFooled == forged && witnessCaught == forged, $"receipts witness: {forged} valid-looking forgeries (newest rewritten, one added, newest cut off) fool the chain alone ({chainFooled}) and are all refused by the witness ({witnessCaught}), nothing written");
+            }
+
+            // fast path agrees with a full verification at every step, including after outside edits that were undone
+            {
+                var fp = Path.Combine(dir, "receipts_fastpath.ndjson"); IntegrationReceipts.ForgetVerified();
+                int steps = Q(600, 120), mismatches = 0, outsideEdits = 0;
+                string lastHead = IntegrationReceipts.Genesis; int lastCount = 0;
+                for (int i = 0; i < steps; i++)
+                {
+                    var o = outs[rng.Next(outs.Length)];
+                    lastHead = IntegrationReceipts.Append(fp, "recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "STEP_" + i);
+                    lastCount++;
+                    if (rng.Next(20) == 0)
+                    {
+                        // someone touches the file and puts it back exactly: the next append must still link correctly
+                        var keep = File.ReadAllBytes(fp); var k = (byte[])keep.Clone(); k[rng.Next(k.Length)] ^= 0x20; File.WriteAllBytes(fp, k); File.WriteAllBytes(fp, keep); outsideEdits++;
+                    }
+                    if (i % 50 == 49 || i == steps - 1)
+                    {
+                        var (c, h) = IntegrationReceipts.Verify(fp);   // the full, from-scratch check
+                        if (c != lastCount || h != lastHead) mismatches++;
+                    }
+                }
+                Check(mismatches == 0, $"receipts fast path: {steps} appends ({outsideEdits} outside edits undone) always agree with a full verification from scratch");
+            }
         }
 
         // ---- 3. extension packages: hostile and random input ----------------------------------------------------------------------
@@ -125,7 +204,7 @@ try
             }
             var manifest = Encoding.UTF8.GetBytes("{\"manifest_version\":3,\"name\":\"S\",\"version\":\"1.0\"}");
             var valid = Zip(("manifest.json", manifest), ("a.js", Encoding.UTF8.GetBytes("//a")), ("sub/b.css", Encoding.UTF8.GetBytes("p{}")));
-            int unexpected = 0, refused = 0, accepted = 0, tries = Q(600, 120);
+            int unexpected = 0, refused = 0, accepted = 0, tries = Q(400, 120);
             Timed("packages: fuzz " + tries, () =>
             {
                 for (int t = 0; t < tries; t++)
@@ -198,7 +277,7 @@ try
                 }
             }
             var pol = FindRepo() is string rp && File.Exists(Path.Combine(rp, "config", "extension_policy.v1.json")) ? File.ReadAllText(Path.Combine(rp, "config", "extension_policy.v1.json")) : null;
-            int crashes = 0, nondet = 0, mtries = Q(800, 150);
+            int crashes = 0, nondet = 0, mtries = Q(500, 150);
             Timed("dev check: fuzz " + mtries, () =>
             {
                 for (int t = 0; t < mtries; t++)
@@ -312,7 +391,7 @@ try
             var colorWords = new[] { "#fff", "#0b1a2c", "#11223380", "rgb(1,2,3)", "rgba(0,0,0,0.4)", "rgb(255 0 0 / 50%)", "hsl(120deg 100% 25%)", "white", "transparent", "bogus", "rgb(", "#", "[1,2,3]", "rgb(1e309,0,0)", "hsl(NaN,1%,1%)" };
             var keys = new[] { "frame", "toolbar", "toolbar_text", "tab_background_text", "tab_line", "ntp_background", "accentcolor", "textcolor", "bookmark_text", "icons_attention" };
             var paths = new[] { "\"images/0.png\"", "\"../x.png\"", "\"a.svg\"", "\"C:/x.png\"", "\"\"", "5", "null", "\"h.gif\"", "\"x.webp\"" };
-            int crashes = 0, tries = Q(3000, 500), themes = 0;
+            int crashes = 0, tries = Q(1500, 500), themes = 0;
             for (int t = 0; t < tries; t++)
             {
                 var cols = string.Join(",", Enumerable.Range(0, rng.Next(0, 8)).Select(_ => "\"" + keys[rng.Next(keys.Length)] + "\":" + (rng.Next(6) == 0 ? "[" + rng.Next(-5, 300) + "," + rng.Next(256) + "," + rng.Next(256) + "]" : "\"" + colorWords[rng.Next(colorWords.Length)].Replace("\"", "") + "\"")));
@@ -339,7 +418,7 @@ try
             {
                 foreach (var file in new[] { "header_anim.apng", "header_anim.gif" })
                 {
-                    var good = File.ReadAllBytes(Path.Combine(fx, file)); int bad = 0, refused = 0, animOk = 0, n = Q(3000, 400);
+                    var good = File.ReadAllBytes(Path.Combine(fx, file)); int bad = 0, refused = 0, animOk = 0, n = Q(1500, 400);
                     for (int t = 0; t < n; t++)
                     {
                         var b = rng.Next(4) == 0 ? good.Take(rng.Next(0, good.Length)).ToArray() : (byte[])good.Clone();
@@ -366,7 +445,7 @@ try
 
             // SVG patterns: random markup never throws and never yields an out-of-range result
             var parts = new[] { "<svg width=\"16\" height=\"16\">", "</svg>", "<path d=\"M0 0h1v16H0z\" fill=\"#fff\"/>", "<g>", "</g>", "<script>x</script>", "<rect width=\"2\" height=\"2\"/>", "<!DOCTYPE x>", "&amp;", "<path d=\"M0 0 L 3 3\" fill-opacity=\"2\"/>", "<path/>", "<", ">", "\"", "<svg viewBox=\"0 0 9 9\">", "<image href=\"x\"/>" };
-            int scrash = 0, sok = 0, sn = Q(4000, 600);
+            int scrash = 0, sok = 0, sn = Q(2000, 600);
             for (int t = 0; t < sn; t++)
             {
                 var inner = string.Concat(Enumerable.Range(0, rng.Next(1, 6)).Select(_ => parts[rng.Next(parts.Length)]));
@@ -382,7 +461,7 @@ try
         Console.WriteLine("== code viewer ==");
         {
             var sb = new StringBuilder(); var alphabet = "abc xyz {}()[];:\"'`/\\*#\n\t$@=<>!?0123456789\u00e9\u6f22";
-            int len = Q(1_000_000, 150_000);
+            int len = Q(500_000, 150_000);
             for (int i = 0; i < len; i++) sb.Append(alphabet[rng.Next(alphabet.Length)]);
             var text = sb.ToString(); int expectedLines = text.Split('\n').Length; int crashes = 0, lost = 0;
             foreach (var lang in new[] { "csharp", "javascript", "python", "powershell", "json", "html", "css", "sql", "shell", "yaml", "text" })

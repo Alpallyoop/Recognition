@@ -50,7 +50,7 @@ pwsh -File scripts\RUN_PACKAGE_DIST_V1.ps1 -RepoRoot .        # build the downlo
 
 Every push is also verified automatically by CI (`.github/workflows/release-gate.yml`).
 
-**Stress tests:** double-click `buttons\tests\STRESS_TESTS.cmd` (or `pwsh -File scripts\RUN_STRESS_TESTS_V1.ps1 [-Rounds 5] [-Seed n] [-Quick]`). It builds the browser, runs the browser tests several times (they must agree), then `stress.tests` (ledger, receipts, extension packages, identity and packaging, developer checks, filter engine, setup snapshots and code viewer under volume, random and hostile input and concurrency; seeded, so a failure can be replayed) and the page-script tests. Takes a few minutes; installs nothing; log in `runtime\stress_logs`.
+**Stress tests:** double-click `buttons\tests\STRESS_TESTS.cmd` (or `pwsh -File scripts\RUN_STRESS_TESTS_V1.ps1 [-Rounds 3] [-Seed n] [-Quick]`). It builds the browser, runs the browser tests twice (they must agree), then `stress.tests` (ledger, receipts, extension packages, identity and packaging, developer checks, filter engine, setup snapshots and code viewer under volume, random and hostile input and concurrency; seeded, so a failure can be replayed) and the page-script tests. Takes a minute or two (`-Quick` less, `-Rounds 3` more); installs nothing; log in `runtime\stress_logs`.
 
 ---
 

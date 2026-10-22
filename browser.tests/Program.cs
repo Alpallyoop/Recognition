@@ -1874,16 +1874,152 @@ Console.WriteLine("== integration receipts ==");
         Check(Broken(b => b.Take(b.Length - 1).ToArray()), "receipt chain: a partial (unterminated) last receipt is detected");
         Check(Broken(b => Encoding.UTF8.GetBytes(irTxt.Replace("\n", "\r\n"))) && Broken(b => Encoding.UTF8.GetBytes(irTxt.Replace("{\"schema\":", "{ \"schema\":"))) && Broken(b => new byte[] { 0xEF, 0xBB, 0xBF }.Concat(b).ToArray()), "receipt chain: CRLF, extra whitespace and a byte-order mark are not canonical");
         Check(IntegrationReceipts.Verify(f) == (3, a3), "receipt chain: the original file still verifies after the negative cases");
+        // the fast path (audit F11): an unchanged file is not re-parsed, but ANY changed byte forces the full check, even with the same size and time
+        var irT = File.GetLastWriteTimeUtc(f);
+        var same = Encoding.UTF8.GetString(irGood).Replace("\"SOTERIA_NOT_FOUND\"", "\"SOTERIA_NOT_FOUNE\"");
+        File.WriteAllText(f, same, new UTF8Encoding(false)); File.SetLastWriteTimeUtc(f, irT);
+        bool sameSizeCaught = false; try { IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, irNone, "failed", "X"); } catch (IntegrationReceiptException) { sameSizeCaught = true; }
+        Check(sameSizeCaught && File.ReadAllBytes(f).Length == irGood.Length, "receipt chain: an edit that keeps the file size and time is still caught; nothing is appended");
+        File.WriteAllBytes(f, irGood);
+        var a4 = IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, irNone, "failed", "X");
+        var a5 = IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, irNone, "failed", "Y");
+        IntegrationReceipts.ForgetVerified();
+        Check(IntegrationReceipts.Verify(f) == (5, a5) && File.ReadAllText(f).Split('\n')[4].EndsWith("\"prev_sha256\":\"" + a4 + "\"}"), "receipt chain: appends on the fast path link exactly as a full verification says");
     }
     finally { try { Directory.Delete(irDir, true); } catch { } }
+
+    // ---- the browser's own witness: closes the newest-receipt gap a chain cannot see ----
+    {
+        var wDir = Path.Combine(Path.GetTempPath(), "rb-irw-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var wf = Path.Combine(wDir, "receipts.ndjson"); var wNone = Array.Empty<IntegrationCarried>();
+            // the witness lives in a REAL GovernedActions ledger (in memory here), exactly as in the browser
+            var wStore = new Dictionary<string, string>();
+            var wLedger = new GovernedActions("mem://w", p => wStore.TryGetValue(p, out var v) ? v : "", (p, t) => wStore[p] = t);
+            List<string> W() => IntegrationReceipts.Witnessed(wLedger.Items.Select(i => i.Action), "recognition", "soteriavault");
+            void Rec(string h) => wLedger.Append(IntegrationReceipts.WitnessEntry("recognition", "soteriavault", h));
+            (string, string?) Add(string outcome, string? tok) => IntegrationReceipts.AppendWitnessed(wf, W(), Rec, null, "recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, null, wNone, outcome, tok);
+            Check(IntegrationReceipts.CheckWitness(wf, W()) == IntegrationReceipts.WitnessState.Empty, "witness: no file and no witness is an empty start");
+            var w1 = Add("deferred", "SOTERIA_LINK_NOT_ENABLED"); var w2 = Add("unavailable", "SOTERIA_NOT_FOUND"); var w3 = Add("ok", null);
+            var wl = new GovernedActions("mem://w", p => wStore[p], (p, t) => wStore[p] = t); wl.Load();
+            Check(W().SequenceEqual(new[] { w1.Item1, w2.Item1, w3.Item1 }) && wl.Verify(out _) && IntegrationReceipts.Witnessed(wl.Items.Select(i => i.Action), "recognition", "soteriavault").Last() == w3.Item1 && w1.Item2 == null,
+                  "witness: each receipt's hash is recorded in the hash-chained action ledger and reads back after a reload");
+            Check(IntegrationReceipts.CheckWitness(wf, W()) == IntegrationReceipts.WitnessState.Matches, "witness: the file matches what the browser witnessed");
+            var wGood = File.ReadAllBytes(wf); var wLines = Encoding.UTF8.GetString(wGood).TrimEnd('\n').Split('\n');
+            bool WRefused(string label, string content)
+            {
+                File.WriteAllText(wf, content, new UTF8Encoding(false)); IntegrationReceipts.ForgetVerified();
+                bool chainOk; try { IntegrationReceipts.Verify(wf); chainOk = true; } catch (IntegrationReceiptException) { chainOk = false; }
+                bool caught = false; var before = File.ReadAllBytes(wf); int wBefore = W().Count;
+                try { Add("ok", null); } catch (IntegrationReceiptException ex) { caught = ex.Message.StartsWith("RECEIPT_WITNESS_MISMATCH"); }
+                bool untouched = File.ReadAllBytes(wf).SequenceEqual(before) && W().Count == wBefore;
+                File.WriteAllBytes(wf, wGood); IntegrationReceipts.ForgetVerified();
+                Check(chainOk && caught && untouched, "witness: " + label + " - the chain alone still verifies, the witness refuses it, nothing is appended or witnessed");
+                return caught;
+            }
+            // the newest receipt rewritten to say something else, still canonical and still linking to the one before
+            var lastForged = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", "soteriavault.connector_contract.v1", null, null, wNone, "failed", "FORGED", IntegrationReceipts.Hash(wLines[1]));
+            WRefused("the newest receipt rewritten", wLines[0] + "\n" + wLines[1] + "\n" + lastForged + "\n");
+            WRefused("the newest receipt removed", wLines[0] + "\n" + wLines[1] + "\n");
+            WRefused("a forged receipt added at the end", string.Join("\n", wLines) + "\n" + IntegrationReceipts.Line("recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null, w3.Item1) + "\n");
+            var wr1 = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null, IntegrationReceipts.Genesis);
+            WRefused("the whole chain rebuilt from scratch", wr1 + "\n" + IntegrationReceipts.Line("recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null, IntegrationReceipts.Hash(wr1)) + "\n");
+            WRefused("everything deleted", "");
+            bool missingCaught = false;
+            try { IntegrationReceipts.CheckWitness(wf, new[] { w1.Item1, new string('d', 64), w3.Item1 }); } catch (IntegrationReceiptException ex) { missingCaught = ex.Message.Contains("missing"); }
+            Check(missingCaught, "witness: a witnessed receipt that is not in the file is reported");
+            Check(IntegrationReceipts.CheckWitness(wf, W()) == IntegrationReceipts.WitnessState.Matches && Add("ok", null).Item2 == null, "witness: after the attacks the real file still matches and appends normally");
+
+            // ---- NFL, the outside witness ----
+            IntegrationReceipts.NflView Nfl(int c, string h) => new(true, c, h, "");
+            var nfZ = Path.Combine(wDir, "nfl", "receipts.ndjson"); var nfW = new List<string>();
+            (string, string?) NAdd(IntegrationReceipts.NflView? v, string tok = "X") => IntegrationReceipts.AppendWitnessed(nfZ, nfW, h => nfW.Add(h), v, "recognition", "soteriavault", "consumer", null, null, null, wNone, "failed", tok);
+            var n1 = NAdd(Nfl(0, IntegrationReceipts.Genesis)); var n2 = NAdd(Nfl(1, n1.Item1)); var n3 = NAdd(Nfl(1, n1.Item1));
+            Check(IntegrationReceipts.Verify(nfZ).Count == 3, "nfl: NFL's last witnessed receipt still in the file (even an older one, with newer receipts after it) - appends go ahead");
+            var nfGood = File.ReadAllBytes(nfZ);
+            // the attack the browser's own witness cannot stop: a program running as you rewrites the newest receipt AND the browser's record
+            var nLines = Encoding.UTF8.GetString(nfGood).TrimEnd('\n').Split('\n');
+            var forgedLast = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null, IntegrationReceipts.Hash(nLines[1]));
+            File.WriteAllText(nfZ, nLines[0] + "\n" + nLines[1] + "\n" + forgedLast + "\n", new UTF8Encoding(false));
+            var forgedW = new List<string> { n1.Item1, n2.Item1, IntegrationReceipts.Hash(forgedLast) };   // the local record rewritten to match
+            Check(IntegrationReceipts.CheckWitness(nfZ, forgedW) == IntegrationReceipts.WitnessState.Matches, "nfl: (setup) the forgery fools both the chain and the rewritten local record");
+            bool nflCaught = false; int fwBefore = forgedW.Count; var fBytes = File.ReadAllBytes(nfZ);
+            try { IntegrationReceipts.AppendWitnessed(nfZ, forgedW, h => forgedW.Add(h), Nfl(3, n3.Item1), "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null); }
+            catch (IntegrationReceiptException ex) { nflCaught = ex.Message.StartsWith("RECEIPT_NFL_MISMATCH"); }
+            Check(nflCaught && File.ReadAllBytes(nfZ).SequenceEqual(fBytes) && forgedW.Count == fwBefore, "nfl: the same forgery is refused because NFL's last witnessed receipt is gone from the file; nothing written");
+            bool unreachableOk = true; try { IntegrationReceipts.AppendWitnessed(nfZ, forgedW, h => forgedW.Add(h), new IntegrationReceipts.NflView(false, 0, IntegrationReceipts.Genesis, "down"), "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null); } catch { unreachableOk = false; }
+            Check(unreachableOk, "nfl: NFL unreachable never blocks: the local witness alone decides (documented limit)");
+            File.WriteAllBytes(nfZ, nfGood); IntegrationReceipts.ForgetVerified();
+
+            // a receipt file the browser has no record of: never trusted blindly
+            IntegrationReceipts.ForgetVerified();
+            string UFresh(string name) { var f = Path.Combine(wDir, name, "receipts.ndjson"); IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null); IntegrationReceipts.Append(f, "recognition", "soteriavault", "consumer", null, null, null, wNone, "failed", "T"); return f; }
+            var u1 = UFresh("u1"); var u1All = IntegrationReceipts.VerifyAll(u1); var u1w = new List<string>();
+            Check(IntegrationReceipts.CheckWitness(u1, u1w) == IntegrationReceipts.WitnessState.Unanchored, "unrecorded: a file with receipts and no record is 'unanchored'");
+            var ua1 = IntegrationReceipts.AppendWitnessed(u1, u1w, h => u1w.Add(h), Nfl(2, u1All[^1]), "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null);
+            Check(ua1.Item2 != null && ua1.Item2.Contains("on NFL's witness") && u1w.SequenceEqual(new[] { u1All[^1], ua1.Item1 }) && IntegrationReceipts.VerifyAll(u1).Count == 3, "unrecorded: NFL witnessed every receipt in it -> anchored on NFL's word (reported) and continued");
+            foreach (var (label, view) in new (string, IntegrationReceipts.NflView?)[] { ("NFL not set up", null), ("NFL witnessed nothing of this integration", Nfl(0, IntegrationReceipts.Genesis)) })
+            {
+                var uf = UFresh("u-" + label.Length); var ub = File.ReadAllBytes(uf); var uw = new List<string>();
+                var ra = IntegrationReceipts.AppendWitnessed(uf, uw, h => uw.Add(h), view, "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null);
+                var aside = Directory.GetFiles(Path.GetDirectoryName(uf)!, "receipts.unwitnessed-*.ndjson");
+                Check(ra.Item2 != null && ra.Item2.Contains("set aside 2") && aside.Length == 1 && File.ReadAllBytes(aside[0]).SequenceEqual(ub) && IntegrationReceipts.Verify(uf).Count == 1 && uw.SequenceEqual(new[] { ra.Item1 }),
+                      "unrecorded, " + label + ": the old file is set aside unchanged (never trusted, never deleted) and a new chain starts");
+            }
+            foreach (var (label, view) in new (string, IntegrationReceipts.NflView)[] { ("NFL could not be asked", new(false, 0, IntegrationReceipts.Genesis, "down")), ("receipts after NFL's last one", Nfl(1, "")) })
+            {
+                var uf = UFresh("v-" + label.Length); var ub = File.ReadAllBytes(uf); var uw = new List<string>();
+                var v = view.Head == "" ? Nfl(1, IntegrationReceipts.VerifyAll(uf)[0]) : view;
+                bool refusedU = false; try { IntegrationReceipts.AppendWitnessed(uf, uw, h => uw.Add(h), v, "recognition", "soteriavault", "consumer", null, null, null, wNone, "ok", null); } catch (IntegrationReceiptException ex) { refusedU = ex.Message.StartsWith("RECEIPT_WITNESS_UNANCHORED"); }
+                Check(refusedU && File.ReadAllBytes(uf).SequenceEqual(ub) && uw.Count == 0 && Directory.GetFiles(Path.GetDirectoryName(uf)!).Length == 1, "unrecorded, " + label + ": refused, nothing written, nothing moved");
+            }
+
+            // NFL's answers, exactly as nfl_cli_v1.ps1 prints them
+            var hh = new string('a', 64);
+            var headOut = "INTEGRATION=recognition>soteriavault\r\nWITNESSED_COUNT=3\r\nHEAD=" + hh + "\r\nLAST_SEQ=41\r\nNFL_RECEIPT_HEAD_OK\r\n";
+            Check(IntegrationReceipts.ParseNflHead(headOut, "recognition>soteriavault") == new IntegrationReceipts.NflView(true, 3, hh, ""), "nfl answer: receipt-head is read (CRLF or LF)");
+            Check(IntegrationReceipts.ParseNflHead(headOut.Replace("NFL_RECEIPT_HEAD_OK", ""), "recognition>soteriavault") == null && IntegrationReceipts.ParseNflHead(headOut, "other>x") == null &&
+                  IntegrationReceipts.ParseNflHead(headOut.Replace("COUNT=3", "COUNT=0"), "recognition>soteriavault") == null && IntegrationReceipts.ParseNflHead(headOut.Replace(hh, "zz"), "recognition>soteriavault") == null &&
+                  IntegrationReceipts.ParseNflHead(headOut.Replace("COUNT=3", "COUNT=-3"), "recognition>soteriavault") == null && IntegrationReceipts.ParseNflHead(null, "recognition>soteriavault") == null,
+                  "nfl answer: incomplete, another integration's, inconsistent (count vs zero head), bad hash, negative count or no answer -> not trusted");
+            var wOut = "WITNESSED\nRECEIPT_SHA256=" + hh + "\nINTEGRATION=recognition>soteriavault\nSEQ=7\nTIMESTAMP=x\nWITNESSED_COUNT=1\nREFUSED_COUNT=0\nNFL_RECEIPT_WITNESS_OK\n";
+            Check(IntegrationReceipts.ParseNflWitness(wOut, hh) == "WITNESSED" && IntegrationReceipts.ParseNflWitness(wOut.Replace("WITNESSED\n", "ALREADY_WITNESSED\n"), hh) == "ALREADY_WITNESSED" &&
+                  IntegrationReceipts.ParseNflWitness("REFUSED\nRECEIPT_ERROR=RECEIPT_UNATTRIBUTED\nRECEIPT_SHA256=" + hh + "\nNFL_CLI_FAIL:RECEIPT_REFUSED:1\n", hh) == "REFUSED:RECEIPT_UNATTRIBUTED" &&
+                  IntegrationReceipts.ParseNflWitness(wOut, new string('b', 64)) == null && IntegrationReceipts.ParseNflWitness(wOut.Replace("NFL_RECEIPT_WITNESS_OK", ""), hh) == null,
+                  "nfl answer: witness-receipt WITNESSED / ALREADY_WITNESSED / REFUSED:<token>; another receipt's answer or no OK line -> not confirmed");
+
+            // finding NFL: an explicit folder, else the dev-root layout above Recognition; never a fixed drive path
+            var lay = Path.Combine(wDir, "Constellation"); var recDir = Path.Combine(lay, "_Venture-Systems", "recognition"); var nflDir = Path.Combine(lay, "_Covenant-systems", "nfl");
+            Directory.CreateDirectory(recDir); Directory.CreateDirectory(Path.Combine(nflDir, "scripts")); File.WriteAllText(Path.Combine(nflDir, "scripts", "nfl_cli_v1.ps1"), "#");
+            // only NFL folders inside this test's sandbox count: the sandbox may itself sit inside a real dev root (UPDATE_ALL keeps temp
+            // files in the repository), and the real NFL found above it must not decide this test (seen on Windows, 2026-10-22)
+            var sandbox = Path.GetFullPath(wDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            bool IsNfl(string d) => Path.GetFullPath(d).StartsWith(sandbox, StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(d, "scripts", "nfl_cli_v1.ps1"));
+            Check(IntegrationReceipts.FindNfl(null, recDir, IsNfl) == nflDir && IntegrationReceipts.FindNfl(nflDir, "/", IsNfl) == nflDir && IntegrationReceipts.FindNfl(Path.Combine(wDir, "nope"), recDir, IsNfl) == null && IntegrationReceipts.FindNfl(null, Path.Combine(wDir, "nfl"), IsNfl) == null,
+                  "nfl location: the dev-root layout is found by walking up; an explicit folder wins (and a wrong one is not silently replaced); nothing found -> not set up");
+
+            // the witness entries themselves
+            Check(IntegrationReceipts.Witnessed(new[] { "integration.receipt|recognition>soteriavault|" + new string('a', 64), "integration.receipt|recognition>other|" + new string('b', 64), "integration.receipt|recognition>soteriavault|nothex", "soteria.check", "integration.receipt|recognition>soteriavault|" + new string('c', 64) }, "recognition", "soteriavault")
+                  .SequenceEqual(new[] { new string('a', 64), new string('c', 64) }), "witness: entries of other integrations, malformed hashes and other actions are ignored");
+            bool badEntry = false; try { IntegrationReceipts.WitnessEntry("recognition", "soteriavault", "xyz"); } catch (IntegrationReceiptException) { badEntry = true; }
+            Check(badEntry, "witness: only a real SHA-256 can be witnessed");
+        }
+        finally { try { Directory.Delete(wDir, true); } catch { } IntegrationReceipts.ForgetVerified(); }
+    }
 
     string? irRoot = null;
     for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser", "MainWindow.Soteria.cs"))) { irRoot = d.FullName; break; }
     if (irRoot != null)
     {
-        var sv = File.ReadAllText(Path.Combine(irRoot, "browser", "MainWindow.Soteria.cs"));
+        var sv = File.ReadAllText(Path.Combine(irRoot, "browser", "MainWindow.Soteria.cs")) + File.ReadAllText(Path.Combine(irRoot, "browser", "MainWindow.IntegrationReceipts.cs"));
+        var svOnly = File.ReadAllText(Path.Combine(irRoot, "browser", "MainWindow.Soteria.cs"));
+        Check(!svOnly.Contains("File.Move") && !svOnly.Contains("File.Write") && !svOnly.Contains("IntegrationReceipts.Append") && svOnly.Contains("if (record) WriteSoteriaReceipt(st);"), "receipt glue: the SoteriaVault link file stays read-only; receipts are written by MainWindow.IntegrationReceipts.cs");
         var schemaPath = Path.Combine(irRoot, ".constellation", "constellation.integration.receipt.v1.json");
-        Check(sv.Contains("if (record) WriteSoteriaReceipt(st);") && sv.Contains("IntegrationReceipts.Append(SoteriaReceiptPath, \"recognition\", \"soteriavault\", \"consumer\", SoteriaBridge.ContractSchema"), "receipt glue: every SoteriaVault link check writes a recognition > soteriavault receipt");
+        Check(sv.Contains("if (record) WriteSoteriaReceipt(st);") && sv.Contains("IntegrationReceipts.AppendWitnessed(SoteriaReceiptPath, witnessed,") && sv.Contains("_actions.Append(IntegrationReceipts.WitnessEntry(\"recognition\", \"soteriavault\", hash)), nfl,") &&
+              sv.Contains("RunNflAsync(nflRoot, \"receipt-head\", \"-Integration\", integration)") && sv.Contains("RunNflAsync(nflRoot, \"witness-receipt\", \"-ReceiptLine\", line)") && sv.Contains("psi.ArgumentList.Add(a)") && !sv.Contains("UseShellExecute = true"),
+              "receipt glue: every SoteriaVault link check writes a recognition > soteriavault receipt, witnessed in the encrypted action ledger");
+        Check(sv.Contains("Path.Combine(SoteriaReceiptDir, \"receipts.ndjson\")") && sv.Contains("\"recognition__soteriavault\""), "receipt glue: the file is where Constellation's Witness Receipts button (NFL) looks: proofs/integration_receipts/recognition__soteriavault/receipts.ndjson");
         if (File.Exists(schemaPath))
         {
             var sch = File.ReadAllText(schemaPath);

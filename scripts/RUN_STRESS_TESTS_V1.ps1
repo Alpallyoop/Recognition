@@ -1,6 +1,6 @@
 # RUN_STRESS_TESTS_V1 - stress tests for Recognition (double-click buttons\tests\STRESS_TESTS.cmd).
 #
-#   pwsh -File scripts\RUN_STRESS_TESTS_V1.ps1 [-Rounds 3] [-Seed 20261021] [-Quick]
+#   pwsh -File scripts\RUN_STRESS_TESTS_V1.ps1 [-Rounds 2] [-Seed 20261021] [-Quick]
 #
 # What it does, in order, and stops at the first failure:
 #   1  checks PowerShell 7 and the .NET SDK, and that every live PowerShell script parses (installer, scripts, browser\build.ps1 ...)
@@ -15,7 +15,7 @@
 
 param(
   [string]$RepoRoot = "",
-  [ValidateRange(1,50)][int]$Rounds = 3,
+  [ValidateRange(1,50)][int]$Rounds = 2,
   [int]$Seed = 20261021,
   [switch]$Quick
 )

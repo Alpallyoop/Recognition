@@ -42,22 +42,6 @@ namespace Recognition.Browser
             PostToSoteriaPage(new { type = "snapshot", root = _soteriaRoot, state = st.State.ToString(), reason = st.Reason, sha = st.ContractSha256, caps = st.Capabilities });
         }
 
-        // recognition > soteriavault is a registered integration (.constellation\integrations.json): every check of the link is an exchange
-        // and writes a constellation.integration.receipt.v1, including refused and unavailable ones. A receipt problem never blocks the page.
-        private string SoteriaReceiptPath => Path.Combine(_repoRoot, "proofs", "integration_receipts", "recognition__soteriavault", "constellation.integration.receipt.v1.ndjson");
-
-        private void WriteSoteriaReceipt(SoteriaStatus st)
-        {
-            var o = IntegrationReceipts.SoteriaOutcome(st.State); if (o == null) return;
-            try
-            {
-                var h = IntegrationReceipts.Append(SoteriaReceiptPath, "recognition", "soteriavault", "consumer", SoteriaBridge.ContractSchema, null,
-                                                   IntegrationReceipts.Sha(st.ContractSha256) ? st.ContractSha256 : null, Array.Empty<IntegrationCarried>(), o.Value.Outcome, o.Value.Error);
-                Status("SoteriaVault link checked: " + o.Value.Outcome + " (integration receipt " + h.Substring(0, 12) + ")");
-            }
-            catch (Exception ex) { Status("SoteriaVault link checked, but the integration receipt was NOT written: " + ex.Message); }
-        }
-
         private void HandleSoteriaMessage(string msg)
         {
             try
