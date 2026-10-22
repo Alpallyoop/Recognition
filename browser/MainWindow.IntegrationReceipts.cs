@@ -55,6 +55,14 @@ namespace Recognition.Browser
         private async Task WriteSoteriaReceiptAsync(SoteriaStatus st)
         {
             var o = IntegrationReceipts.SoteriaOutcome(st.State); if (o == null) return;
+            await WriteSoteriaExchangeReceiptAsync(SoteriaBridge.ContractSchema, null, IntegrationReceipts.Sha(st.ContractSha256) ? st.ContractSha256 : null,
+                o.Value.Outcome, o.Value.Error, "SoteriaVault link checked");
+        }
+
+        // One receipt per exchange with SoteriaVault (link check, password list / fill / save / import over the bridge).
+        // The caller passes hashes taken with every password blanked (SoteriaPasswords.RedactedSha).
+        private async Task WriteSoteriaExchangeReceiptAsync(string? contract, string? requestSha256, string? responseSha256, string outcome, string? error, string what)
+        {
             const string integration = "recognition>soteriavault";
             await _receiptGate.WaitAsync();
             try
@@ -76,8 +84,8 @@ namespace Recognition.Browser
                 var witnessed = IntegrationReceipts.Witnessed(_actions.Items.Select(i => i.Action), "recognition", "soteriavault");
                 var (h, note) = IntegrationReceipts.AppendWitnessed(SoteriaReceiptPath, witnessed,
                     hash => _actions.Append(IntegrationReceipts.WitnessEntry("recognition", "soteriavault", hash)), nfl,
-                    "recognition", "soteriavault", "consumer", SoteriaBridge.ContractSchema, null,
-                    IntegrationReceipts.Sha(st.ContractSha256) ? st.ContractSha256 : null, Array.Empty<IntegrationCarried>(), o.Value.Outcome, o.Value.Error);
+                    "recognition", "soteriavault", "consumer", contract, requestSha256,
+                    responseSha256, Array.Empty<IntegrationCarried>(), outcome, error);
 
                 // 3. hand the new receipt to NFL at once (best effort: witnessing never blocks the integration)
                 string nflNote;
@@ -89,9 +97,9 @@ namespace Recognition.Browser
                     var w = IntegrationReceipts.ParseNflWitness(await RunNflAsync(nflRoot, "witness-receipt", "-ReceiptLine", line), h);
                     nflNote = w switch { "WITNESSED" or "ALREADY_WITNESSED" => "witnessed by NFL", null => "NFL did not confirm", _ => "NFL " + w };
                 }
-                Status("SoteriaVault link checked: " + o.Value.Outcome + " (integration receipt " + h.Substring(0, 12) + ", witnessed by the browser, " + nflNote + ")" + (note != null ? "; " + note : ""));
+                if (what.Length > 0) Status(what + ": " + outcome + " (integration receipt " + h.Substring(0, 12) + ", witnessed by the browser, " + nflNote + ")" + (note != null ? "; " + note : ""));
             }
-            catch (Exception ex) { Status("SoteriaVault link checked, but the integration receipt was NOT written: " + ex.Message); }
+            catch (Exception ex) { Status(what + ", but the integration receipt was NOT written: " + ex.Message); }
             finally { _receiptGate.Release(); }
         }
     }

@@ -15,7 +15,9 @@ namespace Recognition.Browser
     //  * The link is explicit: you choose the SoteriaVault folder; nothing is searched for or assumed.
     //  * SoteriaVault's own contract decides when the bridge is live. While it says "contract_only" or "enabled: false", Recognition
     //    reports that and exchanges nothing.
-    //  * This version never receives secrets from SoteriaVault, whatever its state. Passwords, photos and keys stay in SoteriaVault.
+    //  * Secrets never come through these files. When SoteriaVault's contract allows per_fill_release_to_paired_client, Recognition may ask
+    //    the running SoteriaVault app for ONE password at a time over the local bridge (MainWindow.SoteriaPasswords.cs); you allow
+    //    each one in SoteriaVault. Everything else (photos, keys, bulk release) stays in SoteriaVault.
     //  * A contract that breaks SoteriaVault's own rules (required for standalone, hard dependency, secret release allowed) is rejected.
     internal enum SoteriaState { NotConfigured, Unavailable, Invalid, ContractOnly, Ready }
 
@@ -28,6 +30,12 @@ namespace Recognition.Browser
         public const string ContractRel = "connectors\\contracts\\recognition.contract.v1.json";
         public const string RegistryRel = "connectors\\connector_registry.json";
         public const int MaxFileBytes = 64 * 1024;
+        // The one capability that lets SoteriaVault act as the password manager (proposal docs\proposals\0006): a single password,
+        // for the exact origin of the page, released over the local bridge to the Recognition program you paired, after you allow it
+        // in SoteriaVault. Bulk or unscoped secret release stays forbidden by the same contract (secret_release_to_external_runtime).
+        public const string PasswordManagerCapability = "per_fill_release_to_paired_client";
+
+        public static bool IsPasswordManager(SoteriaStatus st) => st.State == SoteriaState.Ready && st.Capabilities.Contains(PasswordManagerCapability);
 
         // An absolute local drive path only: no UNC or device paths, no relative parts, no control characters.
         public static bool IsSafeRoot(string? root)
@@ -83,6 +91,8 @@ namespace Recognition.Browser
                 var phase = Str(c, "phase");
                 if (!enabled || phase == "contract_only")
                     return new SoteriaStatus(SoteriaState.ContractOnly, "SoteriaVault declares the Recognition link but has not turned it on. Nothing is exchanged.", sha, caps);
+                if (caps.Contains(PasswordManagerCapability))
+                    return new SoteriaStatus(SoteriaState.Ready, "SoteriaVault is ready to be Recognition's password manager: one password at a time, for the exact site, after you allow it in SoteriaVault.", sha, caps);
                 return new SoteriaStatus(SoteriaState.Ready, "SoteriaVault has turned the link on. This version of Recognition still receives no secrets from it.", sha, caps);
             }
             catch (JsonException) { return Bad("A SoteriaVault contract file is not valid JSON.", sha); }

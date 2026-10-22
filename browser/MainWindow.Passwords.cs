@@ -39,7 +39,10 @@ namespace Recognition.Browser
                 {
                     EnsureVault();
                     EnsureCards();
-                    show = _vault.ForPage(PageAddressOf(tab)).Count > 0 || (_cards.Entries.Count > 0 && Uri.TryCreate(PageAddressOf(tab), UriKind.Absolute, out var cu) && cu.Scheme == Uri.UriSchemeHttps);
+                    // with SoteriaVault as the password manager, Recognition's own vault is deferred: SoteriaVault's logins show the key
+                    bool sv = SoteriaPmActive;
+                    show = (!sv && _vault.ForPage(PageAddressOf(tab)).Count > 0) || (_cards.Entries.Count > 0 && Uri.TryCreate(PageAddressOf(tab), UriKind.Absolute, out var cu) && cu.Scheme == Uri.UriSchemeHttps);
+                    if (sv && !show) _ = UpdateKeyBtnSoteriaAsync(tab);
                 }
                 KeyBtn.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             }
@@ -49,6 +52,7 @@ namespace Recognition.Browser
         private void Key_Click(object sender, RoutedEventArgs e)
         {
             var a = Active; if (a == null) return;
+            if (SoteriaPmActive) { SoteriaKeyMenu(a); return; }   // SoteriaVault asks you itself; no Recognition PIN in between
             EnsureVault(); EnsurePin();
             if (_pin.IsSet && !EnsureUnlocked("Show the saved logins and cards for this page.")) return;
             var list = _vault.ForPage(PageAddressOf(a));
@@ -103,7 +107,7 @@ namespace Recognition.Browser
             var audit = _vault.Audit();
             PostToPwPage(new
             {
-                type = "snapshot", current = vis ? CurrentSiteSuggestion() : null,
+                type = "snapshot", current = vis ? CurrentSiteSuggestion() : null, sv = SoteriaPmActive,
                 entries = (vis ? _vault.Entries : new System.Collections.Generic.List<VaultEntry>()).OrderBy(e => e.Origin).ThenBy(e => e.Username).Select(e => new
                 {
                     id = e.Id, origin = e.Origin, username = e.Username, strength = PasswordRules.Strength(e.Password), updated = e.UpdatedUtc,
@@ -161,6 +165,8 @@ namespace Recognition.Browser
             EnsureVault();
             string Dec(string s) { try { return Uri.UnescapeDataString(s); } catch { return ""; } }
             if (msg == "pw-list") { SendPwSnapshot(); return; }
+            if (msg == "pw-sv-open") { OpenSoteriaApp(); return; }
+            if (msg == "pw-sv-move") { SoteriaMoveVault(t => PostToPwPage(new { type = "action", ok = true, text = t })); return; }
             if (msg.StartsWith("pw-gen:"))
             {
                 try
@@ -179,6 +185,7 @@ namespace Recognition.Browser
                 {
                     using var d = JsonDocument.Parse(Dec(msg.Substring("pw-add:".Length))); var r = d.RootElement;
                     string S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+                    if (SoteriaPmActive) { SoteriaSaveFromPage(S("origin"), S("username"), S("password"), S("note")); return; }
                     var err = _vault.Add(S("origin"), S("username"), S("password"), S("note"), DateTime.UtcNow, out var added);
                     if (err != null) { PostToPwPage(new { type = "action", ok = false, text = err }); return; }
                     _actions?.Append("vault.add", added!.Origin + ":" + added.Id);
@@ -222,6 +229,7 @@ namespace Recognition.Browser
             var sb = new StringBuilder(PageHead);
             sb.Append(@"<title>Passwords</title><style>body.locked .tabs a:not(:first-child){display:none}body.locked section.sect:not(:first-child){display:none!important}</style><h1>Passwords</h1>
 <div class='muted'>Logins are stored encrypted for your Windows account (DPAPI). <b>Nothing is filled or saved automatically</b>: you click Fill, Copy or Reveal. Fill only works on a tab that is on <b>exactly</b> the saved site over https (no subdomains, no look-alikes) and never submits the form. Copied passwords are cleared from the clipboard after 30 seconds. Passwords are never included in setup snapshots or receipts. Limit: any program running as you could still ask Windows to decrypt this file.</div>
+<div id='svb' class='row' style='display:none;border:1px solid #3a5bd0;background:#151b2e'><div><div class='t'>Your passwords are kept in SoteriaVault</div><div class='u'>New logins you save here go to SoteriaVault, which tells you at once if one is already saved. The key button in the address bar fills from SoteriaVault after you allow it there. The logins listed below are the ones still stored in Recognition itself.</div></div><div class='ts'><a class='btn' onclick=""send('pw-sv-move')"">Move these to SoteriaVault</a><a class='btn ghost' onclick=""send('pw-sv-open')"">Open SoteriaVault</a></div></div>
 <div id='msg' class='u' style='min-height:18px;margin:8px 0'></div>
 
 <h1 style='font-size:16px'>Security</h1>
@@ -277,6 +285,7 @@ function renderCards(m){var l=$('clist');l.textContent='';
     d.appendChild(el('div',c.holder+'  ·  expires '+c.exp+(c.expired?'  ·  EXPIRED':''),'u'));r.appendChild(d);
     var b=el('div',null,'ts');b.appendChild(btn('Fill','card-fill:'+c.id));b.appendChild(btn('Copy number','card-copy:'+c.id,true));b.appendChild(btn('Delete','card-del:'+c.id,true));r.appendChild(b);l.appendChild(r)})}
 function render(m){
+  $('svb').style.display=m.sv?'flex':'none';
   if(m.current&&!$('o').value)$('o').value=m.current;
   var l=$('list');l.textContent='';
   if(!m.entries.length){l.appendChild(el('div','No saved logins yet.','empty'));return}

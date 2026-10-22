@@ -38,6 +38,8 @@
     <Compile Include="..\browser\AnimatedImage.cs" Link="AnimatedImage.cs" />
     <Compile Include="..\browser\RuntimeCheck.cs" Link="RuntimeCheck.cs" />
     <Compile Include="..\browser\SoteriaBridge.cs" Link="SoteriaBridge.cs" />
+    <Compile Include="..\browser\SoteriaPasswords.cs" Link="SoteriaPasswords.cs" />
+    <Compile Include="..\browser\SoteriaBridgeProtocol.cs" Link="SoteriaBridgeProtocol.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />
     <Compile Include="..\browser\QrCode.cs" Link="QrCode.cs" />
     <Compile Include="..\browser\ProxyRules.cs" Link="ProxyRules.cs" />

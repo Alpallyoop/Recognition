@@ -1067,6 +1067,28 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     var svBadList = new[] { "", "   ", "privacy-sector", "..\\x", "\\\\server\\share\\sv", "\\\\?\\C:\\sv", "C:\\a\\..\\b", "C:\\a\\.\\b", "C:sv", "C:\\a:stream", "C:\\a|b", "C:\\a\"b", "C:\\a\u0000b", "C:\\" + new string('a', 300) };
     foreach (var svBad2 in svBadList)
         Check(!SoteriaBridge.IsSafeRoot(svBad2), "soteria: refused folder #" + Array.IndexOf(svBadList, svBad2));
+
+    // SoteriaVault as the password manager (docs\proposals\0006): only with the explicit capability, and bulk release stays forbidden
+    var svPmContract = svContract.Replace("\"phase\":\"contract_only\"", "\"phase\":\"bridge_enabled\"").Replace("\"enabled\":false", "\"enabled\":true")
+        .Replace("\"allowed_now\":[", "\"allowed_now\":[\"per_fill_release_to_paired_client\",");
+    var svPm = SoteriaBridge.Evaluate(svRoot, svFiles(svPmContract, svRegistry));
+    Check(svPm.State == SoteriaState.Ready && SoteriaBridge.IsPasswordManager(svPm), "soteria pm: the per-fill capability makes SoteriaVault the password manager");
+    Check(!SoteriaBridge.IsPasswordManager(svLive) && !SoteriaBridge.IsPasswordManager(svOk), "soteria pm: without the capability (or switched off) Recognition keeps its own vault");
+    Check(SoteriaBridge.Evaluate(svRoot, svFiles(svPmContract.Replace("\"secret_release_to_external_runtime\",", ""), svRegistry)).State == SoteriaState.Invalid, "soteria pm: a contract that stops forbidding bulk secret release is still refused");
+    Check(SoteriaBridge.Evaluate(svRoot, svFiles(svPmContract.Replace("\"enabled\":true", "\"enabled\":false"), svRegistry)).State == SoteriaState.ContractOnly, "soteria pm: disabled again -> nothing is exchanged");
+    var pmReq = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = "secret-1" };
+    var pmReq2 = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = "secret-2" };
+    Check(SoteriaPasswords.RedactedSha(pmReq) == SoteriaPasswords.RedactedSha(pmReq2) && (string?)pmReq["password"] == "secret-1", "soteria pm: receipt hashes never depend on (or confirm) a password, and the caller's request is untouched");
+    Check(SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = true }) == ("ok", null) &&
+          SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "DENIED" }) == ("refused", "SOTERIA_DENIED") &&
+          SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "NOT_RUNNING" }) == ("unavailable", "SOTERIA_APP_NOT_RUNNING") &&
+          SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "LOCKED" }) == ("deferred", "SOTERIA_LOCKED") &&
+          SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "weird token; rm" }).Error == "SOTERIA_WEIRDTOKENRM", "soteria pm: bridge answers map to explicit receipt outcomes with safe tokens");
+    var pmImp = SoteriaPasswords.ImportRequest(new[] { new VaultEntry { Id = "abcdefgh", Origin = "example.com", Username = "u", Password = "p1", CreatedUtc = "c", UpdatedUtc = "u" } });
+    Check((string?)pmImp["op"] == "import" && pmImp["entries"]!.AsArray().Count == 1 && !SoteriaPasswords.RedactedSha(pmImp).Contains("p1"), "soteria pm: moving the vault sends every login once");
+    var pmApp = SoteriaPasswords.AppPath("C:\\sv", pth => pth.StartsWith("C:\\sv") && pth.EndsWith("SoteriaVault.exe"));
+    Check(pmApp != null && pmApp.Replace('/', '\\') == "C:\\sv\\app\\SoteriaVault.exe" && SoteriaPasswords.AppPath("relative", _ => true) == null && SoteriaPasswords.AppPath("C:\\sv", _ => false) == null, "soteria pm: the app is started only from the linked folder, and only when it is built");
+    Check(SoteriaPasswords.MenuLabel(new System.Text.Json.Nodes.JsonObject { ["username"] = "a\u0007b", ["title"] = "T" }) == "ab  -  T", "soteria pm: menu labels drop control characters");
 }
 
 // ---- addresses that arrive from other programs (default browser, second launch) -----------------------------------------------------
