@@ -48,6 +48,11 @@ namespace Recognition.Browser
             }
             catch { /* no mutex: run anyway, never block the browser from starting */ }
 
+            // audit F14: an error that escapes a click or an async step is logged and reported, not a silent close of every tab
+            DispatcherUnhandledException += OnUnhandledUiError;
+            TaskScheduler.UnobservedTaskException += (_, ev) => { WriteCrashLog(ev.Exception, "background task"); ev.SetObserved(); };
+            AppDomain.CurrentDomain.UnhandledException += (_, ev) => { if (ev.ExceptionObject is Exception ex) WriteCrashLog(ex, "fatal"); };
+
             if (url != null) PendingUrls.Enqueue(url);
             if (special != null) PendingSpecial = special;
             ShowSplash();
@@ -61,6 +66,27 @@ namespace Recognition.Browser
             try { _cts?.Cancel(); } catch { }
             try { _mutex?.ReleaseMutex(); } catch { }
             base.OnExit(e);
+        }
+
+        private void OnUnhandledUiError(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            WriteCrashLog(e.Exception, "window");
+            if (CrashLog.IsFatal(e.Exception)) return;   // the process cannot be trusted after these: let it end
+            e.Handled = true;
+            try { if (MainWindow is MainWindow w) w.ReportRecoveredError(e.Exception); } catch { }
+        }
+
+        private static readonly object CrashLock = new();
+        internal static void WriteCrashLog(Exception ex, string where)
+        {
+            try
+            {
+                var dir = Path.Combine(Recognition.Browser.MainWindow.FindRepoRoot(AppContext.BaseDirectory), "runtime", "crash_logs");
+                Directory.CreateDirectory(dir);
+                var now = DateTime.UtcNow;
+                lock (CrashLock) File.AppendAllText(Path.Combine(dir, CrashLog.FileName(now)), CrashLog.Entry(ex, where, now), new UTF8Encoding(false));
+            }
+            catch { /* logging must never cause a second failure */ }
         }
 
         // one id per install location, so a development build and the installed one do not hand addresses to each other

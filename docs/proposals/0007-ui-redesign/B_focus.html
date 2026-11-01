@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recognition Focus</title>
+<style>
+/* Direction B, "Focus": tabs and the address live in one left sidebar (like Edge vertical tabs or Arc); the page sits in an inset card
+   and gets the full height. One command bar (Ctrl+K) replaces the long menu. Layout: sidebar / slim page bar / page card. */
+:root{
+  --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif; --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --h1:30px;--h1w:700;--h1ls:-.02em;--r-btn:9px;--r-card:14px;
+  --desk:#e4e3f1; --side:#e9e8f6; --side-hover:rgba(48,40,140,.07); --side-on:#ffffff; --page:#fbfbfe; --surface:#ffffff; --surface2:#f0eff8; --hover:rgba(48,40,140,.06);
+  --line:#e4e2f0; --line-strong:#cfcce3; --text:#1b1a2e; --muted:#62607a;
+  --accent:#5546d9; --accent2:#c04fd0; --accent-ink:#fff; --accent-text:#4434c4;
+  --ok:#137a49; --ok-bg:#e1f4ea; --ok-line:#bde5cf; --warn:#9a5a00; --warn-bg:#fff0d9; --bad:#b4233a; --bad-bg:#fde6ea;
+  --toast:#1b1a2e; --toast-ink:#fff; --shadow:0 18px 40px rgba(27,26,46,.2),0 2px 8px rgba(27,26,46,.08); --shadow-sm:0 1px 3px rgba(27,26,46,.08);
+  --card-shadow:0 0 0 1px rgba(27,26,46,.06),0 4px 18px rgba(27,26,46,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --desk:#0f0e16; --side:#14131c; --side-hover:rgba(255,255,255,.06); --side-on:#262435; --page:#1c1b26; --surface:#232130; --surface2:#1a1924; --hover:rgba(255,255,255,.06);
+  --line:#2e2c3d; --line-strong:#3d3a50; --text:#ebeaf5; --muted:#a19eb8;
+  --accent:#8b7dff; --accent2:#e07ff0; --accent-ink:#14121f; --accent-text:#ab9fff;
+  --ok:#62d69c; --ok-bg:rgba(98,214,156,.12); --ok-line:rgba(98,214,156,.3); --warn:#f3b552; --warn-bg:rgba(243,181,82,.13); --bad:#ff8a9a; --bad-bg:rgba(255,138,154,.12);
+  --toast:#ebeaf5; --toast-ink:#14121f; --shadow:0 18px 44px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3); --shadow-sm:0 1px 3px rgba(0,0,0,.4);
+  --card-shadow:0 0 0 1px rgba(255,255,255,.05),0 6px 22px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --desk:#0f0e16; --side:#14131c; --side-hover:rgba(255,255,255,.06); --side-on:#262435; --page:#1c1b26; --surface:#232130; --surface2:#1a1924; --hover:rgba(255,255,255,.06);
+  --line:#2e2c3d; --line-strong:#3d3a50; --text:#ebeaf5; --muted:#a19eb8;
+  --accent:#8b7dff; --accent2:#e07ff0; --accent-ink:#14121f; --accent-text:#ab9fff;
+  --ok:#62d69c; --ok-bg:rgba(98,214,156,.12); --ok-line:rgba(98,214,156,.3); --warn:#f3b552; --warn-bg:rgba(243,181,82,.13); --bad:#ff8a9a; --bad-bg:rgba(255,138,154,.12);
+  --toast:#ebeaf5; --toast-ink:#14121f; --shadow:0 18px 44px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3); --shadow-sm:0 1px 3px rgba(0,0,0,.4);
+  --card-shadow:0 0 0 1px rgba(255,255,255,.05),0 6px 22px rgba(0,0,0,.35);
+}
+/* shared by the three prototypes: pages, controls, fake sites. Colour comes only from the variant's tokens. */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--desk);color:var(--text);font-family:var(--font);font-size:13.5px;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.ic{width:18px;height:18px;flex:none;display:block}
+.num{font-variant-numeric:tabular-nums}
+.fav{width:18px;height:18px;border-radius:5px;display:inline-grid;place-items:center;color:#fff;font-size:10.5px;font-weight:700;flex:none;letter-spacing:0}
+.fav.sm{width:28px;height:28px;border-radius:8px;font-size:13px}
+
+/* buttons, chips, toggles, segmented */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-btn);border:1px solid var(--line-strong);background:var(--surface);font-weight:550;font-size:13px;white-space:nowrap;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--accent-text)}
+.btn.ghost:hover{background:var(--hover)}
+.btn.sm{height:28px;padding:0 10px;font-size:12.5px}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}.chip.warn{background:var(--warn-bg);color:var(--warn)}.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}.dot.ok{background:var(--ok);box-shadow:0 0 0 4px var(--ok-bg)}
+.tgl{width:38px;height:22px;border-radius:999px;background:var(--line-strong);position:relative;flex:none;transition:background .15s}
+.tgl i{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.tgl.on{background:var(--accent)}.tgl.on i{transform:translateX(16px)}
+.seg{display:inline-flex;padding:3px;border-radius:calc(var(--r-btn) + 2px);background:var(--surface2);border:1px solid var(--line);gap:2px;flex-wrap:wrap}
+.seg button{height:26px;padding:0 12px;border-radius:var(--r-btn);font-size:12.5px;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+/* internal pages */
+.ip{height:100%;overflow:auto;background:var(--page)}
+.ip-wrap{max-width:820px;margin:0 auto;padding:40px 32px 80px;display:flex;flex-direction:column;gap:14px}
+.ip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.ip-head h1{font-family:var(--display);font-size:var(--h1);font-weight:var(--h1w);letter-spacing:var(--h1ls);margin:0 0 4px;text-wrap:balance}
+.ip-lede{margin:0;color:var(--muted);max-width:60ch;line-height:1.5}
+.ip-h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:650;margin:18px 0 0}
+.ip-banner{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--r-card);background:var(--ok-bg);border:1px solid var(--ok-line);flex-wrap:wrap}
+.ip-banner>div{flex:1 1 220px;display:flex;flex-direction:column;gap:2px}.ip-banner span{color:var(--muted);font-size:12.5px}
+.ip-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{padding:14px 16px;border-radius:var(--r-card);background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.stat b{font-size:24px;font-weight:650;font-family:var(--display);letter-spacing:-.01em}.stat span{color:var(--muted);font-size:12.5px}
+.stat.warn b{color:var(--warn)}
+.ip-toolbar input{width:100%;height:36px;padding:0 12px;border-radius:var(--r-btn);border:1px solid var(--line-strong);background:var(--surface)}
+.ip-list{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);overflow:hidden}
+.ip-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap;min-height:56px}
+.ip-item:first-child{border-top:0}
+.ip-item-main{flex:1 1 200px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ip-item-main b{font-weight:600}.ip-item-main span{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.ip-where{font-size:12px;color:var(--muted);width:92px}
+.ip-actions{display:flex;gap:4px}
+.ip-val{color:var(--muted);font-size:13px}
+.ip-how{color:var(--muted);font-size:12.5px;line-height:1.55;margin-top:8px}
+.ip-how summary{cursor:pointer;color:var(--accent-text);font-weight:550;width:max-content}
+.ip-how p{max-width:68ch}
+
+/* start page */
+.ip-start{display:flex;flex-direction:column;align-items:center;gap:28px;padding-top:9vh}
+.ip-start-brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:22px;font-weight:650;letter-spacing:-.01em}
+.ip-mark{width:26px;height:26px;border-radius:8px;background:conic-gradient(from 210deg,var(--accent),var(--accent2),var(--accent));box-shadow:inset 0 0 0 5px var(--page)}
+.ip-search{display:flex;width:min(560px,100%);height:48px;border-radius:999px;background:var(--surface);border:1px solid var(--line-strong);box-shadow:var(--shadow-sm);overflow:hidden}
+.ip-search input{flex:1;border:0;background:transparent;padding:0 20px;font-size:15px;outline:none;min-width:0}
+.ip-search button{width:48px;font-size:18px;color:var(--accent-text)}
+.ip-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;width:min(660px,100%)}
+.ip-tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:var(--r-card);color:var(--text);text-decoration:none;font-size:12.5px;text-align:center;overflow-wrap:break-word;min-width:0}
+.ip-tile:hover{background:var(--hover)}.ip-tile .fav{width:36px;height:36px;border-radius:10px;font-size:15px}
+.ip-week{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;color:var(--muted);font-size:12.5px}
+.ip-week div{display:flex;align-items:baseline;gap:6px}.ip-week b{color:var(--text);font-size:15px}
+
+/* site panel */
+.sp{display:flex;flex-direction:column;min-width:0}
+.sp-head{padding:14px 16px;display:flex;flex-direction:column;gap:3px;border-bottom:1px solid var(--line)}
+.sp-head b{font-size:14px}.sp-head span{color:var(--muted);font-size:12.5px;line-height:1.4}
+.sp-head.sec-secure span{color:var(--ok)}.sp-head.sec-notsecure{background:var(--warn-bg)}.sp-head.sec-notsecure span{color:var(--warn)}
+.sp-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}
+.sp-row:first-of-type{border-top:0}
+.sp-row>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.sp-row span{color:var(--muted);font-size:12px}
+
+/* loading, toast */
+.loading{height:100%;display:grid;place-items:center;background:var(--page)}
+.loading i{width:28px;height:28px;border-radius:50%;border:3px solid var(--line-strong);border-top-color:var(--accent);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--toast);color:var(--toast-ink);padding:10px 16px;border-radius:10px;box-shadow:var(--shadow);font-size:13px;z-index:50}
+
+/* the fake web: websites keep their own light look in every theme, as real ones do */
+.web{height:100%;overflow:auto;background:#fff;color:#1f2328;font-family:Georgia,"Times New Roman",serif}
+.w-site{min-height:100%}
+.w-mast{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;padding:16px 28px;border-bottom:1px solid #e5e7eb;font-family:system-ui,"Segoe UI",sans-serif}
+.w-mast b{font-size:19px}.w-mast span{color:#6b7280;font-size:13px}
+.w-art{max-width:680px;margin:0 auto;padding:28px 24px 60px;font-size:17px;line-height:1.6}
+.w-art h2{font-size:30px;line-height:1.2;margin:4px 0 8px;text-wrap:balance}
+.w-kick{font:600 12px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.1em;color:#c2410c}
+.w-meta{font:13px system-ui,sans-serif;color:#6b7280}
+.w-img{height:220px;border-radius:6px;background:linear-gradient(160deg,#9cc3d5 0%,#cfe0d8 45%,#e8d9b5 46%,#c9b48a 100%)}
+.w-ad{font:12px system-ui,sans-serif;color:#9ca3af;border:1px dashed #d1d5db;border-radius:6px;padding:20px;text-align:center;margin:18px 0}
+.w-post{border-top:1px solid #e5e7eb;padding:12px 0}.w-post b{font:600 14px system-ui,sans-serif}.w-post p{margin:4px 0 0}
+.w-warnbox{font:13px system-ui,sans-serif;background:#fff7e6;color:#92400e;border:1px solid #f5d39b;border-radius:6px;padding:12px;margin-top:18px}
+.w-login{max-width:360px;margin:48px auto;padding:28px;border:1px solid #e5e7eb;border-radius:10px;font-family:system-ui,"Segoe UI",sans-serif;display:flex;flex-direction:column;gap:12px}
+.w-login h2{font-size:20px;margin:0 0 4px}.w-login label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#374151}
+.w-login input{height:38px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;color:#111;background:#fff}
+.w-btn{height:40px;border-radius:6px;background:#15803d;color:#fff;font-weight:600;margin-top:4px}
+.w-small{font-size:12px;color:#6b7280;margin:0}
+.w-res{padding:10px 0;border-bottom:1px solid #eee;display:flex;flex-direction:column;font-family:system-ui,sans-serif}.w-res a{color:#1d4ed8;font-size:17px}.w-res span{color:#15803d;font-size:12.5px}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:640px){.ip-wrap{padding:24px 16px 60px}.ip-where{display:none}}
+
+:root.m-light{color-scheme:light;
+  --desk:#e4e3f1; --side:#e9e8f6; --side-hover:rgba(48,40,140,.07); --side-on:#fff; --page:#fbfbfe; --surface:#fff; --surface2:#f0eff8; --hover:rgba(48,40,140,.06);
+  --line:#e4e2f0; --line-strong:#cfcce3; --text:#1b1a2e; --muted:#62607a; --accent:#5546d9; --accent2:#c04fd0; --accent-ink:#fff; --accent-text:#4434c4;
+  --ok:#137a49; --ok-bg:#e1f4ea; --ok-line:#bde5cf; --warn:#9a5a00; --warn-bg:#fff0d9; --bad:#b4233a; --bad-bg:#fde6ea;
+  --toast:#1b1a2e; --toast-ink:#fff; --shadow:0 18px 40px rgba(27,26,46,.2),0 2px 8px rgba(27,26,46,.08); --shadow-sm:0 1px 3px rgba(27,26,46,.08); --card-shadow:0 0 0 1px rgba(27,26,46,.06),0 4px 18px rgba(27,26,46,.08)}
+:root.m-dark{color-scheme:dark;
+  --desk:#0f0e16; --side:#14131c; --side-hover:rgba(255,255,255,.06); --side-on:#262435; --page:#1c1b26; --surface:#232130; --surface2:#1a1924; --hover:rgba(255,255,255,.06);
+  --line:#2e2c3d; --line-strong:#3d3a50; --text:#ebeaf5; --muted:#a19eb8; --accent:#8b7dff; --accent2:#e07ff0; --accent-ink:#14121f; --accent-text:#ab9fff;
+  --ok:#62d69c; --ok-bg:rgba(98,214,156,.12); --ok-line:rgba(98,214,156,.3); --warn:#f3b552; --warn-bg:rgba(243,181,82,.13); --bad:#ff8a9a; --bad-bg:rgba(255,138,154,.12);
+  --toast:#ebeaf5; --toast-ink:#14121f; --shadow:0 18px 44px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.3); --shadow-sm:0 1px 3px rgba(0,0,0,.4); --card-shadow:0 0 0 1px rgba(255,255,255,.05),0 6px 22px rgba(0,0,0,.35)}
+
+#app{height:100%;display:flex;background:var(--side)}
+/* sidebar */
+.side{width:268px;flex:none;display:flex;flex-direction:column;gap:10px;padding:10px 10px 10px 10px;min-height:0;transition:width .18s}
+.side.mini{width:64px}
+.srow{display:flex;align-items:center;gap:2px}
+.ib{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--muted);flex:none;position:relative}
+.ib:hover{background:var(--side-hover);color:var(--text)}.ib .ic{width:17px;height:17px}
+.grow{flex:1}
+.omni{display:flex;align-items:center;gap:4px;height:40px;padding:0 4px 0 2px;border-radius:12px;background:var(--side-on);box-shadow:var(--shadow-sm);min-width:0}
+.omni:focus-within{box-shadow:0 0 0 2px var(--accent)}
+.site{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none}
+.site:hover{background:var(--hover)}.site .ic{width:15px;height:15px}
+.site.secure{color:var(--muted)}.site.notsecure{color:var(--warn);background:var(--warn-bg)}.site.internal{color:var(--accent-text)}
+.omni form{flex:1;min-width:0;display:flex}
+.omni input{flex:1;min-width:0;border:0;background:transparent;outline:none;font-size:13px;padding:0 4px}
+.pins{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pin{height:44px;border-radius:11px;background:var(--side-hover);display:grid;place-items:center;color:var(--muted);position:relative}
+.pin:hover{color:var(--text);background:color-mix(in srgb,var(--accent) 12%,transparent)}.pin.on{background:var(--side-on);color:var(--accent-text);box-shadow:var(--shadow-sm)}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:650;padding:6px 8px 0;display:flex;align-items:center;justify-content:space-between}
+.tlist{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;margin:0 -2px;padding:0 2px}
+.vt{display:flex;align-items:center;gap:10px;height:36px;padding:0 4px 0 10px;border-radius:9px;color:var(--text);cursor:default;flex:none}
+.vt:hover{background:var(--side-hover)}.vt.on{background:var(--side-on);box-shadow:var(--shadow-sm);font-weight:550}
+.vt .t{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.vt .x{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;opacity:0;color:var(--muted)}
+.vt:hover .x,.vt.on .x{opacity:1}.vt .x:hover{background:var(--hover)}.vt .x .ic{width:13px;height:13px}
+.vt .spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--accent);animation:spin .7s linear infinite;flex:none}
+.vt.add{color:var(--muted)}.vt.add .ic{width:16px;height:16px;margin:0 1px}
+.kbar{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-radius:9px;color:var(--muted);border:1px dashed var(--line-strong)}
+.kbar:hover{color:var(--text);border-style:solid}.kbar kbd{margin-left:auto;font:11px var(--font);padding:2px 6px;border-radius:5px;background:var(--side-hover)}
+.side.mini .omni form,.side.mini .lbl,.side.mini .vt .t,.side.mini .vt .x,.side.mini .kbar span,.side.mini .kbar kbd,.side.mini .hide-mini{display:none}
+.side.mini .pins{grid-template-columns:1fr}.side.mini .vt{justify-content:center;padding:0}.side.mini .omni{justify-content:center}.side.mini .kbar{justify-content:center;padding:0}
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;padding:8px 8px 8px 0}
+.pbar{display:flex;align-items:center;gap:6px;height:34px;padding:0 0 4px 6px;min-width:0}
+.pbar .title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12.5px}
+.pbar .ib.on{color:var(--accent-text)}
+.shieldpill{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;background:var(--side-hover);color:var(--muted);font-size:12px;font-weight:600}
+.shieldpill:hover{color:var(--text)}.shieldpill .ic{width:15px;height:15px}.shieldpill.on{color:var(--ok)}.shieldpill.off{color:var(--warn)}
+.wc{display:flex;margin-left:6px}.wc span{width:40px;height:28px;display:grid;place-items:center;color:var(--muted);font-size:12px}
+.card{flex:1;min-height:0;border-radius:12px;overflow:hidden;box-shadow:var(--card-shadow);position:relative;background:var(--page)}
+/* overlays */
+.pop{position:absolute;z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.pop.site-pop{right:8px;top:8px;width:340px;max-width:calc(100% - 16px)}
+.scrim{position:fixed;inset:0;background:rgba(15,14,24,.28);z-index:40;display:flex;justify-content:center;align-items:flex-start;padding-top:12vh}
+.cmd{width:min(600px,calc(100% - 32px));background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.cmd-in{display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;border-bottom:1px solid var(--line)}
+.cmd-in .ic{color:var(--muted)}
+.cmd-in input{flex:1;border:0;outline:none;background:transparent;font-size:16px;min-width:0}
+.cmd-list{max-height:min(420px,60vh);overflow:auto;padding:6px}
+.cmd-g{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:650;padding:10px 10px 4px}
+.cmd-i{display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 10px;border-radius:9px;text-align:left}
+.cmd-i .ic{width:17px;height:17px;color:var(--muted)}.cmd-i small{margin-left:auto;color:var(--muted);font-size:12px}
+.cmd-i.sel{background:color-mix(in srgb,var(--accent) 14%,transparent)}.cmd-i.sel .ic{color:var(--accent-text)}
+.cmd-foot{display:flex;gap:14px;padding:8px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:11.5px}
+.compact .vt{height:30px}.compact .pin{height:36px}
+@media (max-width:700px){.side{width:64px}.side .omni form,.side .lbl,.side .vt .t,.side .vt .x,.side .kbar span,.side .kbar kbd,.side .hide-mini{display:none}.side .pins{grid-template-columns:1fr}.side .vt{justify-content:center;padding:0}.side .omni{justify-content:center}.side .kbar{justify-content:center;padding:0}.wc{display:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* Recognition UI prototype: shared model (tabs, addresses, fake sites, internal pages). Each variant supplies render(). */
+var R = (function(){
+  var esc = function(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); };
+
+  /* ---- fake web (only .example addresses: nothing here is a real site) ---- */
+  var SITES = {
+    "news.example": { title: "Harbor Daily: city council approves riverfront plan", color: "#c2410c", letter: "H", trackers: 23, cookies: 11, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Harbor Daily</b><span>Local · Business · Weather · Opinion</span></div>' +
+      '<div class="w-art"><div class="w-kick">City Hall</div><h2>Council approves the riverfront plan after a four-hour hearing</h2>' +
+      '<p class="w-meta">By the Harbor Daily newsroom · 6 min read</p><div class="w-img"></div>' +
+      '<p>The seven-member council voted 5 to 2 on Tuesday night to approve the first phase of the riverfront plan, which turns two disused rail yards into a park, a market hall and 340 homes.</p>' +
+      '<p>Residents queued for more than an hour to speak. Most supported the park; several asked for a firmer promise on the share of affordable homes, which the plan sets at 20 percent.</p>' +
+      '<div class="w-ad">Advertisement slot · blocked by Shield</div><p>Construction of the market hall could begin next spring if the state grant arrives on time.</p></div></div>'; } },
+    "shop.example": { title: "Trailhead Outfitters · Sign in", color: "#15803d", letter: "T", trackers: 9, cookies: 6, login: true, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Trailhead Outfitters</b><span>Tents · Packs · Footwear</span></div>' +
+      '<div class="w-login"><h2>Sign in to your account</h2><label>Email<input id="w-email" type="text" autocomplete="off" placeholder="you@example.com"></label>' +
+      '<label>Password<input id="w-pass" type="password" autocomplete="off"></label><button class="w-btn" type="button" data-act="site-signin">Sign in</button>' +
+      '<p class="w-small">Recognition fills a saved login only when you choose it from the key button. It never submits the form for you.</p></div></div>'; } },
+    "forum.example": { title: "Fieldnotes forum · Bread baking thread", color: "#7c3aed", letter: "F", trackers: 4, cookies: 3, http: true, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Fieldnotes forum</b><span>Kitchen · Garden · Workshop</span></div>' +
+      '<div class="w-art"><h2>Sourdough starter keeps collapsing after day five</h2>' +
+      '<div class="w-post"><b>marta_k</b><p>Feeding twice a day at 1:1:1, kitchen around 19 °C. It doubles by day four and then goes flat and smells of nail polish.</p></div>' +
+      '<div class="w-post"><b>oldmill</b><p>That smell is hunger. Try 1:2:2 and keep it somewhere warmer, 24 to 26 °C, for a week.</p></div>' +
+      '<div class="w-warnbox">This forum is served over plain http. Anyone on the network can read or change what you send it.</div></div></div>'; } }
+  };
+
+  /* ---- internal pages (the redesigned recognition: pages) ---- */
+  var LOGINS = [
+    { site: "shop.example", user: "alex.m@example.com", strength: "Strong", where: "SoteriaVault", used: "2 days ago" },
+    { site: "library.example", user: "alexm", strength: "Weak", where: "SoteriaVault", used: "3 weeks ago" },
+    { site: "bank.example", user: "a.morgan", strength: "Strong", where: "SoteriaVault", used: "yesterday" },
+    { site: "games.example", user: "alexm", strength: "Reused", where: "Recognition", used: "4 months ago" },
+    { site: "recipes.example", user: "alex.m@example.com", strength: "Reused", where: "Recognition", used: "1 year ago" }
+  ];
+  var LISTS = [
+    { id: "ads", name: "Ads", detail: "EasyList", rules: "71,412 rules", on: true },
+    { id: "trk", name: "Trackers", detail: "EasyPrivacy", rules: "52,066 rules", on: true },
+    { id: "fp", name: "Fingerprinting protection", detail: "Canvas, audio and font probes get noise", rules: "built in", on: true },
+    { id: "ann", name: "Cookie banners", detail: "Hide consent pop-ups, choosing “reject” where possible", rules: "1,980 rules", on: false }
+  ];
+  var SETTINGS = { httpsFirst: true, restore: true, search: "DuckDuckGo", downloads: "Ask every time", telemetry: false, theme: "system", density: "comfortable" };
+
+  function strengthChip(s){ var k = s === "Strong" ? "ok" : s === "Weak" ? "bad" : "warn"; return '<span class="chip ' + k + '">' + s + '</span>'; }
+  function toggle(id, on, label){ return '<button class="tgl' + (on ? ' on' : '') + '" role="switch" aria-checked="' + on + '" aria-label="' + esc(label) + '" data-act="toggle" data-id="' + id + '"><i></i></button>'; }
+
+  var PAGES = {
+    start: { title: "New tab", body: function(st){ return '' +
+      '<div class="ip-start"><div class="ip-start-brand"><span class="ip-mark"></span>Recognition</div>' +
+      '<form class="ip-search" data-act="start-search"><input id="start-q" type="text" placeholder="Search or type an address" autocomplete="off"><button type="submit" aria-label="Search">→</button></form>' +
+      '<div class="ip-tiles">' + ["news.example","shop.example","forum.example","recognition:passwords","recognition:shield","recognition:settings"].map(function(u){
+        var s = siteOf(parse(u)); return '<a class="ip-tile" href="#" data-act="go" data-url="' + u + '"><span class="fav" style="background:' + s.color + '">' + s.letter + '</span><span>' + esc(s.short) + '</span></a>'; }).join('') + '</div>' +
+      '<div class="ip-week"><div><b class="num">1,284</b><span>trackers blocked this week</span></div><div><b class="num">342</b><span>ads blocked</span></div><div><b class="num">57</b><span>fingerprinting attempts blurred</span></div></div></div>'; } },
+
+    passwords: { title: "Passwords", body: function(st){ var weak = LOGINS.filter(function(l){return l.strength!=="Strong";}).length; var local = LOGINS.filter(function(l){return l.where==="Recognition";}).length; return '' +
+      '<header class="ip-head"><div><h1>Passwords</h1><p class="ip-lede">' + LOGINS.length + ' saved logins. Nothing is filled or submitted until you choose a login.</p></div><button class="btn primary" data-act="toast" data-msg="In the real browser this opens the Add login form.">Add login</button></header>' +
+      '<section class="ip-banner"><span class="dot ok"></span><div><b>Kept in SoteriaVault</b><span>Connected and unlocked. Each fill asks you in SoteriaVault first.</span></div>' +
+        (local ? '<button class="btn" data-act="move">Move ' + local + ' logins from Recognition</button>' : '<span class="chip ok">All moved</span>') + '</section>' +
+      '<section class="ip-stats"><div class="stat"><b class="num">' + LOGINS.length + '</b><span>saved</span></div><div class="stat ' + (weak?'warn':'') + '"><b class="num">' + weak + '</b><span>weak or reused</span></div><div class="stat"><b class="num">0</b><span>found in known breaches</span></div></section>' +
+      '<div class="ip-toolbar"><input id="pw-filter" type="search" placeholder="Filter logins" aria-label="Filter logins" value="' + esc(st.pwFilter||"") + '"></div>' +
+      '<div class="ip-list" role="list">' + LOGINS.filter(function(l){ var f=(st.pwFilter||"").toLowerCase(); return !f || l.site.indexOf(f)>=0 || l.user.toLowerCase().indexOf(f)>=0; }).map(function(l){ return '' +
+        '<div class="ip-item" role="listitem"><span class="fav sm" style="background:' + colorFor(l.site) + '">' + l.site[0].toUpperCase() + '</span>' +
+        '<div class="ip-item-main"><b>' + esc(l.site) + '</b><span>' + esc(l.user) + ' · used ' + esc(l.used) + '</span></div>' +
+        strengthChip(l.strength) + '<span class="ip-where">' + l.where + '</span>' +
+        '<div class="ip-actions"><button class="btn ghost sm" data-act="toast" data-msg="Copied. The clipboard is cleared in 30 seconds.">Copy</button><button class="btn ghost sm" data-act="go" data-url="https://' + l.site + '">Open site</button></div></div>'; }).join('') + '</div>' +
+      '<details class="ip-how"><summary>How Recognition keeps passwords</summary><p>With SoteriaVault switched on, Recognition asks the running SoteriaVault app for one password at a time, for the exact site you are on, and you allow each one there. The password goes into that page and is dropped. Logins still stored in Recognition are encrypted for your Windows account; any program running as you could still ask Windows to decrypt them, which is why moving them to SoteriaVault is recommended.</p></details>'; } },
+
+    shield: { title: "Shield", body: function(st){ return '' +
+      '<header class="ip-head"><div><h1>Shield</h1><p class="ip-lede">Blocks ads, trackers and fingerprinting on every site unless you turn it off for one.</p></div>' + toggle("shield-all", st.shieldOn, "Shield on every site") + '</header>' +
+      '<section class="ip-stats"><div class="stat"><b class="num">1,284</b><span>trackers this week</span></div><div class="stat"><b class="num">342</b><span>ads</span></div><div class="stat"><b class="num">57</b><span>fingerprinting probes</span></div><div class="stat"><b class="num">~41 MB</b><span>data saved</span></div></section>' +
+      '<h2 class="ip-h2">Filter lists</h2><div class="ip-list">' + LISTS.map(function(l){ return '<div class="ip-item"><div class="ip-item-main"><b>' + l.name + '</b><span>' + l.detail + ' · ' + l.rules + '</span></div>' + toggle("list-" + l.id, l.on, l.name) + '</div>'; }).join('') + '</div>' +
+      '<h2 class="ip-h2">Turned off for</h2><div class="ip-list"><div class="ip-item"><span class="fav sm" style="background:#0e7490">W</span><div class="ip-item-main"><b>weather.example</b><span>radar map needs its tile server</span></div><button class="btn ghost sm" data-act="toast" data-msg="Shield is on again for weather.example.">Turn Shield back on</button></div></div>' +
+      '<details class="ip-how"><summary>Known limit</summary><p>A request address longer than 4,096 characters is not checked against the filter lists (audit F9). This is waiting for a decision.</p></details>'; } },
+
+    settings: { title: "Settings", body: function(st){ var s = SETTINGS; function row(label, hint, control){ return '<div class="ip-item"><div class="ip-item-main"><b>' + label + '</b>' + (hint ? '<span>' + hint + '</span>' : '') + '</div>' + control + '</div>'; }
+      function seg(id, opts, cur){ return '<div class="seg" role="radiogroup" aria-label="' + id + '">' + opts.map(function(o){ return '<button role="radio" aria-checked="' + (o.toLowerCase()===cur) + '" class="' + (o.toLowerCase()===cur?'on':'') + '" data-act="seg" data-id="' + id + '" data-val="' + o.toLowerCase() + '">' + o + '</button>'; }).join('') + '</div>'; }
+      return '<header class="ip-head"><div><h1>Settings</h1><p class="ip-lede">Changes apply at once.</p></div></header>' +
+      '<h2 class="ip-h2">Appearance</h2><div class="ip-list">' + row("Theme", "System follows Windows", seg("theme", ["System","Light","Dark"], st.theme)) + row("Density", "Compact fits more tabs", seg("density", ["Comfortable","Compact"], st.density)) + '</div>' +
+      '<h2 class="ip-h2">Browsing</h2><div class="ip-list">' + row("HTTPS first", "Try the secure address first; warn before a plain http page", toggle("https", s.httpsFirst, "HTTPS first")) + row("Reopen tabs from last time", "", toggle("restore", s.restore, "Reopen tabs")) + row("Search engine", "", '<span class="ip-val">' + s.search + ' ▾</span>') + row("Downloads", "", '<span class="ip-val">' + s.downloads + ' ▾</span>') + '</div>' +
+      '<h2 class="ip-h2">Evidence</h2><div class="ip-list">' + row("Export this session", "A governed packet with receipts for what this session did", '<button class="btn" data-act="toast" data-msg="Session packet written to packets\\outbox (prototype).">Export</button>') + row("Integration receipts", "Witnessed by the browser and by NFL", '<span class="chip ok">Witnessed</span>') + '</div>'; } }
+  };
+
+  function colorFor(site){ if (SITES[site]) return SITES[site].color; var c = ["#c2410c","#15803d","#7c3aed","#0e7490","#b91c1c","#a16207","#1d4ed8"]; var h = 0; for (var i=0;i<site.length;i++) h = (h*31 + site.charCodeAt(i)) >>> 0; return c[h % c.length]; }
+
+  function parse(input){
+    var t = String(input||"").trim(); if (!t) return null;
+    if (/^recognition:/i.test(t)) { var p = t.slice(12).toLowerCase(); return /^[a-z]{1,20}$/.test(p) ? "recognition:" + p : "recognition:start"; }
+    var m = t.match(/^(https?):\/\/([^\/\s]+)(\/.*)?$/i);
+    if (m) return m[1].toLowerCase() + "://" + m[2].toLowerCase() + (m[3]||"/");
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t)) { var host = t.split("/")[0].toLowerCase(); var site = SITES[host]; return (site && site.http ? "http://" : "https://") + t.toLowerCase() + (t.indexOf("/")<0 ? "/" : ""); }
+    return "https://search.example/?q=" + encodeURIComponent(t);
+  }
+  function hostOf(url){ var m = String(url).match(/^https?:\/\/([^\/]+)/); return m ? m[1] : ""; }
+  function security(url){ if (/^recognition:/.test(url)) return "internal"; if (/^https:/.test(url)) return "secure"; if (/^http:/.test(url)) return "notsecure"; return "other"; }
+  var SEC = { secure: { label: "Secure", words: "Connection is secure (https)", glyph: "lock" }, notsecure: { label: "Not secure", words: "This page is not encrypted (http). Do not type passwords or card numbers here.", glyph: "warn" }, internal: { label: "Recognition", words: "A Recognition page, it stays on this computer", glyph: "home" }, other: { label: "", words: "Page", glyph: "globe" } };
+
+  function siteOf(url){
+    if (/^recognition:/.test(url)) { var id = url.slice(12); var title = PAGES[id] ? PAGES[id].title : id.charAt(0).toUpperCase() + id.slice(1); return { title: title, short: title, color: "#3b5bdb", letter: "R", internal: id }; }
+    var host = hostOf(url);
+    if (host === "search.example") { var q = decodeURIComponent((url.split("q=")[1]||"")); return { title: q + " · Search", short: "Search", color: "#475569", letter: "S", trackers: 2, cookies: 1, body: function(){ return '<div class="w-site"><div class="w-mast"><b>search.example</b><span>Results for “' + esc(q) + '”</span></div><div class="w-art">' + ["news.example","forum.example","shop.example"].map(function(h){ return '<div class="w-res"><a href="#" data-act="go" data-url="' + h + '">' + esc(SITES[h].title) + '</a><span>' + (SITES[h].http?"http":"https") + '://' + h + '/</span></div>'; }).join('') + '</div></div>'; } }; }
+    var s = SITES[host];
+    if (s) return { title: s.title, short: host, color: s.color, letter: s.letter, trackers: s.trackers, cookies: s.cookies, login: s.login, body: s.body };
+    return { title: host || url, short: host || url, color: colorFor(host||url), letter: (host||"?")[0].toUpperCase(), trackers: 0, cookies: 0, body: function(){ return '<div class="w-site"><div class="w-art"><h2>' + esc(host) + '</h2><p>This prototype only knows news.example, shop.example and forum.example. Try one of those, or recognition:passwords.</p></div></div>'; } };
+  }
+
+  var st = { tabs: [], active: 0, nextId: 1, closed: [], shieldOn: true, siteShield: {}, pwFilter: "", theme: "system", density: "comfortable", pop: null, toast: "", toastT: 0, palette: "" };
+
+  function newTab(url, at){ var t = { id: st.nextId++, url: url || "recognition:start", loading: false }; if (at == null) st.tabs.push(t); else st.tabs.splice(at, 0, t); st.active = st.tabs.indexOf(t); st.pop = null; return t; }
+  function closeTab(id){ var i = st.tabs.findIndex(function(t){return t.id===id;}); if (i<0) return; st.closed.push(st.tabs[i].url); st.tabs.splice(i,1); if (!st.tabs.length) newTab(); if (st.active >= st.tabs.length) st.active = st.tabs.length-1; else if (i < st.active) st.active--; }
+  function go(input){ var u = parse(input); if (!u) return; var t = st.tabs[st.active]; t.url = u; t.loading = true; st.pop = null; setTimeout(function(){ t.loading = false; App.render(); }, 380); }
+  function cur(){ return st.tabs[st.active]; }
+
+  function toast(msg){ st.toast = msg; clearTimeout(st.toastT); st.toastT = setTimeout(function(){ st.toast = ""; App.render(); }, 2600); }
+
+  function isDark(){ var r = document.documentElement; if (r.classList.contains("m-dark")) return true; if (r.classList.contains("m-light")) return false; var d = r.getAttribute("data-theme"); if (d === "dark") return true; if (d === "light") return false; return matchMedia("(prefers-color-scheme: dark)").matches; }
+  var ICONS = {
+    back: '<path d="M15 5l-7 7 7 7"/>', fwd: '<path d="M9 5l7 7-7 7"/>', reload: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', warn: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
+    home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>', globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+    star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>', key: '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2.5"/>',
+    shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>', menu: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', puzzle: '<path d="M4 9h4.5a2.5 2.5 0 1 1 5 0H18v4.5a2.5 2.5 0 1 1 0 5V21H4z"/>',
+    download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', bookmark: '<path d="M6 3.5h12V21l-6-4-6 4z"/>',
+    settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>', sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+    private: '<path d="M6.5 10L8.7 4.5h6.6L17.5 10z"/><path d="M3 11.5h18"/><circle cx="7.5" cy="17" r="3"/><circle cx="16.5" cy="17" r="3"/><path d="M10.5 16.5q1.5-1 3 0"/>',
+    sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/>', receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    keyboard: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/>'
+  };
+  function icon(n, cls){ return '<svg class="ic ' + (cls||'') + '" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[n]||'') + '</svg>'; }
+  function applyTheme(){ var r = document.documentElement; r.classList.remove("m-light","m-dark"); if (st.theme === "light") r.classList.add("m-light"); if (st.theme === "dark") r.classList.add("m-dark"); r.classList.toggle("compact", st.density === "compact"); }
+
+  /* the page body (internal page or fake site) */
+  function pageHtml(){ var t = cur(); var s = siteOf(t.url);
+    if (t.loading) return '<div class="loading"><i></i></div>';
+    if (s.internal && !PAGES[s.internal]) return '<div class="ip"><div class="ip-wrap"><header class="ip-head"><div><h1>' + esc(s.title) + '</h1><p class="ip-lede">Not drawn in this prototype. Open Passwords, Shield or Settings to see the new page design.</p></div></header></div></div>';
+    if (s.internal) return '<div class="ip"><div class="ip-wrap">' + PAGES[s.internal].body(st) + '</div></div>';
+    return '<div class="web">' + s.body() + '</div>'; }
+
+  /* the site panel: one place for connection, Shield, logins and receipts for this page */
+  function sitePanelHtml(){ var t = cur(); var s = siteOf(t.url); var sec = security(t.url); var host = hostOf(t.url); var on = st.shieldOn && st.siteShield[host] !== false;
+    if (s.internal) return '<div class="sp"><div class="sp-head sec-internal"><b>Recognition page</b><span>Stays on this computer. No network requests.</span></div></div>';
+    return '<div class="sp"><div class="sp-head sec-' + sec + '"><b>' + esc(host) + '</b><span>' + SEC[sec].words + '</span></div>' +
+      '<div class="sp-row"><div><b>Shield for this site</b><span>' + (on ? (s.trackers + ' trackers and ads blocked on this page') : 'Off: nothing is blocked here') + '</span></div>' + toggle("site-shield", on, "Shield for this site") + '</div>' +
+      '<div class="sp-row"><div><b>Cookies</b><span>' + s.cookies + ' set by this site, third-party cookies blocked</span></div><button class="btn ghost sm" data-act="toast" data-msg="Cookies for ' + esc(host) + ' cleared.">Clear</button></div>' +
+      (s.login ? '<div class="sp-row"><div><b>Login</b><span>alex.m@example.com in SoteriaVault</span></div><button class="btn sm primary" data-act="fill">Fill</button></div>' : '') +
+      '<div class="sp-row"><div><b>Receipts</b><span>This visit is in the action ledger, witnessed by NFL</span></div><span class="chip ok">Witnessed</span></div></div>'; }
+
+  /* events shared by all variants (delegated) */
+  function handle(e){
+    var el = e.target.closest("[data-act]"); if (!el) return false;
+    var a = el.getAttribute("data-act");
+    if (el.tagName === "FORM") return false;
+    e.preventDefault();
+    switch (a) {
+      case "go": go(el.getAttribute("data-url")); break;
+      case "tab": st.active = +el.getAttribute("data-i"); st.pop = null; break;
+      case "close": e.stopPropagation(); closeTab(+el.getAttribute("data-id")); break;
+      case "new": newTab(); setTimeout(function(){ var a = document.getElementById("addr"); if (a) a.focus(); }, 0); break;
+      case "private": newTab(); toast("Private tab: nothing from it is saved after you close it."); break;
+      case "reopen": if (st.closed.length) newTab(st.closed.pop()); else toast("No closed tabs to reopen."); break;
+      case "back": case "fwd": toast("Back and forward work as usual in the real browser."); break;
+      case "reload": cur().loading = true; setTimeout(function(){ cur().loading = false; App.render(); }, 380); break;
+      case "pop": var p = el.getAttribute("data-pop"); st.pop = st.pop === p ? null : p; break;
+      case "toggle": var id = el.getAttribute("data-id");
+        if (id === "shield-all") st.shieldOn = !st.shieldOn;
+        else if (id === "site-shield") { var h = hostOf(cur().url); st.siteShield[h] = st.siteShield[h] === false; toast(st.siteShield[h] === false ? "Shield is off for " + h + "." : "Shield is on for " + h + "."); }
+        else if (id.indexOf("list-") === 0) { var l = LISTS.filter(function(x){ return "list-" + x.id === id; })[0]; if (l) l.on = !l.on; }
+        else if (id === "https") SETTINGS.httpsFirst = !SETTINGS.httpsFirst; else if (id === "restore") SETTINGS.restore = !SETTINGS.restore;
+        break;
+      case "seg": var k = el.getAttribute("data-id"), v = el.getAttribute("data-val"); if (k === "theme") { st.theme = v; } if (k === "density") st.density = v; applyTheme(); break;
+      case "move": LOGINS.forEach(function(l){ l.where = "SoteriaVault"; }); toast("Moved to SoteriaVault. Duplicates were merged there."); break;
+      case "fill": var em = document.getElementById("w-email"), pw = document.getElementById("w-pass"); st.pop = null;
+        toast("SoteriaVault asked you, and you allowed it. Filled, not submitted.");
+        setTimeout(function(){ var em2 = document.getElementById("w-email"), pw2 = document.getElementById("w-pass"); if (em2) em2.value = "alex.m@example.com"; if (pw2) pw2.value = "correct-horse-battery"; }, 30); break;
+      case "site-signin": toast("This is a pretend site: nothing was sent."); break;
+      case "toast": toast(el.getAttribute("data-msg")); st.pop = null; break;
+      case "theme-quick": st.theme = isDark() ? "light" : "dark"; applyTheme(); break;
+      case "noop": break;
+      default: return false;
+    }
+    App.render(); return true;
+  }
+
+  function wire(root){
+    root.addEventListener("click", function(e){
+      if (handle(e)) return;
+      if (st.pop && !e.target.closest(".pop") && !e.target.closest("[data-pop]")) { st.pop = null; App.render(); }
+    });
+    root.addEventListener("submit", function(e){ e.preventDefault(); var f = e.target; if (f.getAttribute("data-act") === "addr" ) { go(document.getElementById("addr").value); App.render(); } if (f.getAttribute("data-act") === "start-search") { go(document.getElementById("start-q").value); App.render(); } });
+    root.addEventListener("input", function(e){ if (e.target.id === "pw-filter") { st.pwFilter = e.target.value; var pos = e.target.selectionStart; App.render(); var f = document.getElementById("pw-filter"); if (f) { f.focus(); f.setSelectionRange(pos,pos); } } });
+    document.addEventListener("keydown", function(e){
+      var mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "t") { e.preventDefault(); newTab(); App.render(); var a = document.getElementById("addr"); if (a) a.focus(); }
+      else if (mod && e.key.toLowerCase() === "w") { e.preventDefault(); closeTab(cur().id); App.render(); }
+      else if (mod && e.key.toLowerCase() === "l") { e.preventDefault(); var b = document.getElementById("addr"); if (b) { b.focus(); b.select(); } }
+      else if (e.key === "Escape" && st.pop) { st.pop = null; App.render(); }
+      else if (App.key) App.key(e);
+    });
+  }
+
+  newTab("https://news.example/"); newTab("https://shop.example/"); newTab("recognition:passwords"); st.active = 0;
+
+  return { st: st, icon: icon, isDark: isDark, esc: esc, siteOf: siteOf, hostOf: hostOf, security: security, SEC: SEC, PAGES: PAGES, pageHtml: pageHtml, sitePanelHtml: sitePanelHtml, wire: wire, go: go, newTab: newTab, cur: cur, toast: toast, applyTheme: applyTheme, parse: parse };
+})();
+
+var App = (function(){
+  var I = R.icon, st = R.st, esc = R.esc, mini = false, cmdOpen = false, cmdQ = "", cmdSel = 0;
+  var PINS = [["passwords","key","Passwords"],["shield","shield","Shield"],["history","history","History"],["downloads","download","Downloads"]];
+  function commands(){
+    var c = [
+      { g: "Actions", ic: "plus", label: "New tab", hint: "Ctrl+T", run: function(){ R.newTab(); } },
+      { g: "Actions", ic: "private", label: "New private tab", hint: "Ctrl+Shift+N", run: function(){ R.newTab(); R.toast("Private tab: nothing from it is saved after you close it."); } },
+      { g: "Actions", ic: "reload", label: "Reopen closed tab", hint: "Ctrl+Shift+T", run: function(){ if (st.closed.length) R.newTab(st.closed.pop()); else R.toast("No closed tabs to reopen."); } },
+      { g: "Actions", ic: "search", label: "Find in page", hint: "Ctrl+F", run: function(){ R.toast("Find bar opens above the page."); } },
+      { g: "Actions", ic: "receipt", label: "Save page as PDF", hint: "", run: function(){ R.toast("Saved as PDF (prototype)."); } },
+      { g: "Actions", ic: "receipt", label: "Full-page screenshot", hint: "", run: function(){ R.toast("Screenshot saved (prototype)."); } },
+      { g: "Actions", ic: "sun", label: "Switch light / dark", hint: "", run: function(){ st.theme = R.isDark() ? "light" : "dark"; R.applyTheme(); } },
+      { g: "Actions", ic: "sidebar", label: mini ? "Expand sidebar" : "Collapse sidebar", hint: "Ctrl+B", run: function(){ mini = !mini; } },
+      { g: "Actions", ic: "receipt", label: "Export session (evidence packet)", hint: "", run: function(){ R.toast("Session packet written to packets\\outbox (prototype)."); } },
+      { g: "Pages", ic: "key", label: "Passwords", url: "recognition:passwords" }, { g: "Pages", ic: "shield", label: "Shield", url: "recognition:shield" },
+      { g: "Pages", ic: "settings", label: "Settings", url: "recognition:settings" }, { g: "Pages", ic: "puzzle", label: "Extensions", url: "recognition:extensions" },
+      { g: "Pages", ic: "history", label: "History", url: "recognition:history" }, { g: "Pages", ic: "download", label: "Downloads", url: "recognition:downloads" }
+    ];
+    st.tabs.forEach(function(t, i){ var s = R.siteOf(t.url); c.push({ g: "Open tabs", ic: "globe", label: s.title, hint: s.short, tab: i }); });
+    var q = cmdQ.trim().toLowerCase();
+    var out = c.filter(function(x){ return !q || x.label.toLowerCase().indexOf(q) >= 0 || (x.hint||"").toLowerCase().indexOf(q) >= 0; });
+    if (q) out.push({ g: "Go", ic: "search", label: (R.parse(cmdQ)||"").indexOf("search.example") >= 0 ? "Search for “" + cmdQ.trim() + "”" : "Open " + cmdQ.trim(), go: cmdQ });
+    return out;
+  }
+  function runCmd(x){ cmdOpen = false; cmdQ = ""; if (!x) return; if (x.run) x.run(); else if (x.url) R.go(x.url); else if (x.tab != null) st.active = x.tab; else if (x.go) R.go(x.go); render(); }
+
+  function render(){
+    var t = R.cur(), s = R.siteOf(t.url), sec = R.security(t.url), host = R.hostOf(t.url);
+    var shieldOn = st.shieldOn && st.siteShield[host] !== false;
+    var addrVal = s.internal ? (s.internal === "start" ? "" : t.url) : t.url.replace(/^https:\/\//, "").replace(/\/$/, "");
+    var focusId = document.activeElement && document.activeElement.id, typed = focusId === "addr" ? document.getElementById("addr").value : null;
+    var h = '<aside class="side' + (mini?' mini':'') + '" aria-label="Tabs and address">' +
+      '<div class="srow"><button class="ib" data-act="sidebar" title="' + (mini?'Expand':'Collapse') + ' sidebar (Ctrl+B)" aria-label="Toggle sidebar">' + I("sidebar") + '</button><span class="grow hide-mini"></span>' +
+        '<button class="ib hide-mini" data-act="back" title="Back" aria-label="Back">' + I("back") + '</button><button class="ib hide-mini" data-act="fwd" title="Forward" aria-label="Forward">' + I("fwd") + '</button><button class="ib hide-mini" data-act="reload" title="Reload" aria-label="Reload">' + I("reload") + '</button></div>' +
+      '<div class="omni"><button class="site ' + sec + '" data-act="pop" data-pop="site" title="' + esc(R.SEC[sec].words) + '" aria-label="Site information">' + I(R.SEC[sec].glyph) + '</button>' +
+        '<form data-act="addr"><input id="addr" aria-label="Address" placeholder="Search or type an address" value="' + esc(typed != null ? typed : addrVal) + '" autocomplete="off" spellcheck="false"></form></div>' +
+      '<div class="pins">' + PINS.map(function(p){ return '<button class="pin' + (s.internal===p[0]?' on':'') + '" data-act="go" data-url="recognition:' + p[0] + '" title="' + p[2] + '" aria-label="' + p[2] + '">' + I(p[1]) + '</button>'; }).join('') + '</div>' +
+      '<div class="lbl"><span>Tabs</span><span class="num">' + st.tabs.length + '</span></div>' +
+      '<div class="tlist" role="tablist">' + st.tabs.map(function(tb, i){ var ss = R.siteOf(tb.url);
+        return '<div class="vt' + (i===st.active?' on':'') + '" role="tab" aria-selected="' + (i===st.active) + '" tabindex="0" data-act="tab" data-i="' + i + '" title="' + esc(ss.title) + '">' +
+          (tb.loading ? '<span class="spin"></span>' : '<span class="fav" style="background:' + ss.color + '">' + ss.letter + '</span>') + '<span class="t">' + esc(ss.title) + '</span>' +
+          '<button class="x" data-act="close" data-id="' + tb.id + '" aria-label="Close tab">' + I("x") + '</button></div>'; }).join('') +
+        '<button class="vt add" data-act="new" title="New tab (Ctrl+T)">' + I("plus") + '<span class="t">New tab</span></button></div>' +
+      '<button class="kbar" data-act="cmd" title="Command bar (Ctrl+K)">' + I("keyboard") + '<span>Commands and pages</span><kbd>Ctrl K</kbd></button>' +
+      '<div class="srow"><button class="ib" data-act="go" data-url="recognition:settings" title="Settings" aria-label="Settings">' + I("settings") + '</button><button class="ib hide-mini" data-act="go" data-url="recognition:extensions" title="Extensions" aria-label="Extensions">' + I("puzzle") + '</button><span class="grow"></span><button class="ib hide-mini" data-act="theme-quick" title="Switch light / dark" aria-label="Switch light or dark">' + I("sun") + '</button></div>' +
+      '</aside>' +
+      '<div class="main"><div class="pbar"><span class="title">' + esc(s.title) + '</span>' +
+        (!s.internal ? '<button class="shieldpill ' + (shieldOn?'on':'off') + '" data-act="pop" data-pop="site" title="Shield and site settings">' + I("shield") + '<span class="num">' + (shieldOn ? s.trackers + ' blocked' : 'Shield off') + '</span></button>' : '') +
+        (s.login ? '<button class="ib on" data-act="pop" data-pop="site" title="Logins for this site (SoteriaVault)" aria-label="Logins">' + I("key") + '</button>' : '') +
+        (!s.internal ? '<button class="ib" data-act="toast" data-msg="Bookmarked." title="Bookmark (Ctrl+D)" aria-label="Bookmark">' + I("star") + '</button>' : '') +
+        '<div class="wc" aria-hidden="true"><span>—</span><span>□</span><span>✕</span></div></div>' +
+        '<div class="card">' + R.pageHtml() + (st.pop==="site" ? '<div class="pop site-pop">' + R.sitePanelHtml() + '</div>' : '') + '</div></div>' +
+      (cmdOpen ? cmdHtml() : '') + (st.toast ? '<div class="toast" role="status">' + esc(st.toast) + '</div>' : '');
+    document.getElementById("app").innerHTML = h;
+    if (cmdOpen) { var ci = document.getElementById("cmdq"); ci.focus(); ci.setSelectionRange(ci.value.length, ci.value.length); var sel = document.querySelector(".cmd-i.sel"); if (sel) sel.scrollIntoView({ block: "nearest" }); }
+    else if (focusId === "addr") { var a = document.getElementById("addr"); a.focus(); a.setSelectionRange(a.value.length, a.value.length); }
+  }
+  function cmdHtml(){ var list = commands(), g = null; if (cmdSel >= list.length) cmdSel = Math.max(0, list.length - 1);
+    return '<div class="scrim" data-act="cmd-close"><div class="cmd" role="dialog" aria-label="Command bar"><div class="cmd-in">' + I("search") + '<input id="cmdq" placeholder="Type a command, a page, an open tab or an address" value="' + esc(cmdQ) + '" autocomplete="off" aria-label="Command"></div><div class="cmd-list" role="listbox">' +
+      list.map(function(x, i){ var head = x.g !== g ? '<div class="cmd-g">' + x.g + '</div>' : ''; g = x.g; return head + '<button class="cmd-i' + (i===cmdSel?' sel':'') + '" role="option" aria-selected="' + (i===cmdSel) + '" data-act="cmd-run" data-i="' + i + '">' + I(x.ic) + '<span>' + esc(x.label) + '</span>' + (x.hint ? '<small>' + esc(x.hint) + '</small>' : '') + '</button>'; }).join('') +
+      (list.length ? '' : '<div class="cmd-g">Nothing matches</div>') + '</div><div class="cmd-foot"><span>↑↓ choose</span><span>Enter open</span><span>Esc close</span></div></div></div>'; }
+  function extra(e){
+    var el = e.target.closest("[data-act]"); if (!el) return false; var a = el.getAttribute("data-act");
+    if (a === "sidebar") { mini = !mini; render(); return true; }
+    if (a === "cmd") { cmdOpen = true; cmdQ = ""; cmdSel = 0; st.pop = null; render(); return true; }
+    if (a === "cmd-run") { runCmd(commands()[+el.getAttribute("data-i")]); return true; }
+    if (a === "cmd-close" && e.target === el) { cmdOpen = false; render(); return true; }
+    if (cmdOpen && e.target.closest(".cmd")) return true;
+    return false;
+  }
+  function key(e){
+    var mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); cmdOpen = !cmdOpen; cmdQ = ""; cmdSel = 0; render(); return; }
+    if (mod && e.key.toLowerCase() === "b") { e.preventDefault(); mini = !mini; render(); return; }
+    if (!cmdOpen) return;
+    if (e.key === "Escape") { cmdOpen = false; render(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); cmdSel = Math.min(cmdSel + 1, commands().length - 1); render(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); cmdSel = Math.max(cmdSel - 1, 0); render(); }
+    else if (e.key === "Enter") { e.preventDefault(); runCmd(commands()[cmdSel]); }
+  }
+  function input(e){ if (e.target.id === "cmdq") { cmdQ = e.target.value; cmdSel = 0; render(); } }
+  return { render: render, extra: extra, key: key, input: input };
+})();
+(function(){ var app = document.getElementById("app"); app.addEventListener("click", function(e){ if (App.extra(e)) e.stopImmediatePropagation(); }, true); app.addEventListener("input", App.input); R.wire(app); R.applyTheme(); App.render(); })();
+</script>
+</body>

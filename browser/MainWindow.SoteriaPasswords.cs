@@ -59,12 +59,18 @@ namespace Recognition.Browser
 
         // ---- key button --------------------------------------------------------------------------------------------------
 
+        private readonly SoteriaProbeThrottle _svProbe = new();   // audit F16: not one exchange (receipt, ledger entry, NFL run) per page load
+
         private async Task UpdateKeyBtnSoteriaAsync(BrowserTab tab)
         {
             var url = PageAddressOf(tab);
+            var origin = PasswordRules.OriginOf(url); if (origin == null) return;
+            if (!_svProbe.ShouldAsk(origin, DateTime.UtcNow, out var known)) { if (known == true) KeyBtn.Visibility = Visibility.Visible; return; }
             var res = await SvRequestAsync(new JsonObject { ["op"] = "list", ["page_url"] = url }, "list", 5000);
+            bool ok = SoteriaBridgeProtocol.Bool(res, "ok");
+            bool has = ok && res["entries"] is JsonArray a && a.Count > 0;
+            if (ok) _svProbe.Answered(origin, DateTime.UtcNow, has); else _svProbe.NoAnswer(DateTime.UtcNow);
             if (Active != tab || PageAddressOf(tab) != url) return;
-            bool has = SoteriaBridgeProtocol.Bool(res, "ok") && res["entries"] is JsonArray a && a.Count > 0;
             if (has) KeyBtn.Visibility = Visibility.Visible;
         }
 
@@ -141,6 +147,7 @@ namespace Recognition.Browser
         {
             var url = "https://" + (PasswordRules.NormalizeOrigin(origin) ?? origin.Trim()) + "/";
             if (PasswordRules.OriginOf(url) == null) { PostToPwPage(new { type = "action", ok = false, text = "type the site as example.com" }); return; }
+            _svProbe.Forget();
             var req = new JsonObject { ["op"] = "save", ["page_url"] = url, ["username"] = username, ["password"] = password, ["title"] = "" };
             var res = await SvRequestAsync(req, "save");
             if (SoteriaBridgeProtocol.Str(res, "outcome") == "needs_decision")
@@ -174,9 +181,10 @@ namespace Recognition.Browser
             EnsurePin();
             if (_pin.IsSet && !EnsureUnlocked("Move your saved logins to SoteriaVault.")) return;
             var count = _vault.Entries.Count;
+            _svProbe.Forget();
             var res = await SvRequestAsync(SoteriaPasswords.ImportRequest(_vault.Entries), "import");
             if (!SoteriaBridgeProtocol.Bool(res, "ok")) { report(SoteriaPasswords.Explain(res)); return; }
-            var added = res["added"]?.GetValue<int>() ?? 0; var merged = res["merged"]?.GetValue<int>() ?? 0; var conflicts = res["conflicts"]?.GetValue<int>() ?? 0;
+            var added = JsonNum.Int(res, "added"); var merged = JsonNum.Int(res, "merged"); var conflicts = JsonNum.Int(res, "conflicts");
             var text = $"Moved {count} login(s) to SoteriaVault: {added} new, {merged} already there (merged), {conflicts} with a different password (SoteriaVault asks you to review them).";
             if (MessageBox.Show(this, text + "\n\nRemove them from Recognition now? SoteriaVault keeps them; Recognition will use SoteriaVault for passwords.",
                     "Recognition - passwords moved", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
@@ -209,7 +217,7 @@ namespace Recognition.Browser
             {
                 case "sv-pm-on":
                 case "sv-pm-off":
-                    _soteriaPasswords = msg == "sv-pm-on"; _svPmStatus = null; SaveSettings();
+                    _soteriaPasswords = msg == "sv-pm-on"; _svPmStatus = null; _svProbe.Forget(); SaveSettings();
                     _actions?.Append("soteria.password_manager", _soteriaPasswords ? "on" : "off");
                     _ = SendSoteriaPmState(post);
                     return;

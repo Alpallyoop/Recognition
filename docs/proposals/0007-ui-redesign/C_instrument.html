@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recognition Instrument</title>
+<style>
+/* Direction C, "Instrument": Recognition shows its evidence. Tabs and toolbar on top; a right-hand Inspector shows what Shield did on this
+   page, its cookies, the login and the ledger receipts; the bottom strip states facts about this page instead of a fixed slogan.
+   Layout: tabs / toolbar / page + inspector / evidence strip. Precise, squared, graphite with an amber signal colour. */
+:root{
+  --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif; --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code",Consolas,"SF Mono",ui-monospace,monospace;
+  --h1:26px;--h1w:650;--h1ls:-.01em;--r-btn:6px;--r-card:8px;
+  --desk:#d9dcdf; --frame:#eceef0; --toolbar:#f7f8f9; --page:#f3f4f5; --surface:#ffffff; --surface2:#eceef0; --hover:rgba(20,24,28,.06);
+  --line:#dde0e3; --line-strong:#c4c8cd; --text:#16191c; --muted:#5b636b;
+  --accent:#c2620a; --accent2:#2c7da0; --accent-ink:#fff; --accent-text:#a65000;
+  --ok:#1b7a4a; --ok-bg:#e2f3e9; --ok-line:#b9e0c9; --warn:#a14d00; --warn-bg:#ffefdc; --bad:#b3261e; --bad-bg:#fce6e4;
+  --toast:#16191c; --toast-ink:#fff; --shadow:0 12px 30px rgba(20,24,28,.18),0 2px 6px rgba(20,24,28,.08); --shadow-sm:0 1px 2px rgba(20,24,28,.08);
+  --bar-a:#c2620a; --bar-b:#2c7da0; --bar-c:#7a5c99;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --desk:#0b0c0d; --frame:#141618; --toolbar:#1b1e21; --page:#17191c; --surface:#1f2226; --surface2:#17191c; --hover:rgba(255,255,255,.06);
+  --line:#2b2f34; --line-strong:#3a3f45; --text:#e6e8ea; --muted:#9aa2aa;
+  --accent:#f0913a; --accent2:#5fb3d6; --accent-ink:#1a0e02; --accent-text:#f4a45a;
+  --ok:#5fcf91; --ok-bg:rgba(95,207,145,.12); --ok-line:rgba(95,207,145,.28); --warn:#f6ad55; --warn-bg:rgba(246,173,85,.13); --bad:#ff8a80; --bad-bg:rgba(255,138,128,.12);
+  --toast:#e6e8ea; --toast-ink:#141618; --shadow:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3); --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --bar-a:#f0913a; --bar-b:#5fb3d6; --bar-c:#b39ddb;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --desk:#0b0c0d; --frame:#141618; --toolbar:#1b1e21; --page:#17191c; --surface:#1f2226; --surface2:#17191c; --hover:rgba(255,255,255,.06);
+  --line:#2b2f34; --line-strong:#3a3f45; --text:#e6e8ea; --muted:#9aa2aa;
+  --accent:#f0913a; --accent2:#5fb3d6; --accent-ink:#1a0e02; --accent-text:#f4a45a;
+  --ok:#5fcf91; --ok-bg:rgba(95,207,145,.12); --ok-line:rgba(95,207,145,.28); --warn:#f6ad55; --warn-bg:rgba(246,173,85,.13); --bad:#ff8a80; --bad-bg:rgba(255,138,128,.12);
+  --toast:#e6e8ea; --toast-ink:#141618; --shadow:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3); --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --bar-a:#f0913a; --bar-b:#5fb3d6; --bar-c:#b39ddb;
+}
+/* shared by the three prototypes: pages, controls, fake sites. Colour comes only from the variant's tokens. */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--desk);color:var(--text);font-family:var(--font);font-size:13.5px;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.ic{width:18px;height:18px;flex:none;display:block}
+.num{font-variant-numeric:tabular-nums}
+.fav{width:18px;height:18px;border-radius:5px;display:inline-grid;place-items:center;color:#fff;font-size:10.5px;font-weight:700;flex:none;letter-spacing:0}
+.fav.sm{width:28px;height:28px;border-radius:8px;font-size:13px}
+
+/* buttons, chips, toggles, segmented */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:var(--r-btn);border:1px solid var(--line-strong);background:var(--surface);font-weight:550;font-size:13px;white-space:nowrap;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--accent-text)}
+.btn.ghost:hover{background:var(--hover)}
+.btn.sm{height:28px;padding:0 10px;font-size:12.5px}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}.chip.warn{background:var(--warn-bg);color:var(--warn)}.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}.dot.ok{background:var(--ok);box-shadow:0 0 0 4px var(--ok-bg)}
+.tgl{width:38px;height:22px;border-radius:999px;background:var(--line-strong);position:relative;flex:none;transition:background .15s}
+.tgl i{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s}
+.tgl.on{background:var(--accent)}.tgl.on i{transform:translateX(16px)}
+.seg{display:inline-flex;padding:3px;border-radius:calc(var(--r-btn) + 2px);background:var(--surface2);border:1px solid var(--line);gap:2px;flex-wrap:wrap}
+.seg button{height:26px;padding:0 12px;border-radius:var(--r-btn);font-size:12.5px;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+/* internal pages */
+.ip{height:100%;overflow:auto;background:var(--page)}
+.ip-wrap{max-width:820px;margin:0 auto;padding:40px 32px 80px;display:flex;flex-direction:column;gap:14px}
+.ip-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.ip-head h1{font-family:var(--display);font-size:var(--h1);font-weight:var(--h1w);letter-spacing:var(--h1ls);margin:0 0 4px;text-wrap:balance}
+.ip-lede{margin:0;color:var(--muted);max-width:60ch;line-height:1.5}
+.ip-h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:650;margin:18px 0 0}
+.ip-banner{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--r-card);background:var(--ok-bg);border:1px solid var(--ok-line);flex-wrap:wrap}
+.ip-banner>div{flex:1 1 220px;display:flex;flex-direction:column;gap:2px}.ip-banner span{color:var(--muted);font-size:12.5px}
+.ip-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{padding:14px 16px;border-radius:var(--r-card);background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.stat b{font-size:24px;font-weight:650;font-family:var(--display);letter-spacing:-.01em}.stat span{color:var(--muted);font-size:12.5px}
+.stat.warn b{color:var(--warn)}
+.ip-toolbar input{width:100%;height:36px;padding:0 12px;border-radius:var(--r-btn);border:1px solid var(--line-strong);background:var(--surface)}
+.ip-list{border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);overflow:hidden}
+.ip-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap;min-height:56px}
+.ip-item:first-child{border-top:0}
+.ip-item-main{flex:1 1 200px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ip-item-main b{font-weight:600}.ip-item-main span{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.ip-where{font-size:12px;color:var(--muted);width:92px}
+.ip-actions{display:flex;gap:4px}
+.ip-val{color:var(--muted);font-size:13px}
+.ip-how{color:var(--muted);font-size:12.5px;line-height:1.55;margin-top:8px}
+.ip-how summary{cursor:pointer;color:var(--accent-text);font-weight:550;width:max-content}
+.ip-how p{max-width:68ch}
+
+/* start page */
+.ip-start{display:flex;flex-direction:column;align-items:center;gap:28px;padding-top:9vh}
+.ip-start-brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:22px;font-weight:650;letter-spacing:-.01em}
+.ip-mark{width:26px;height:26px;border-radius:8px;background:conic-gradient(from 210deg,var(--accent),var(--accent2),var(--accent));box-shadow:inset 0 0 0 5px var(--page)}
+.ip-search{display:flex;width:min(560px,100%);height:48px;border-radius:999px;background:var(--surface);border:1px solid var(--line-strong);box-shadow:var(--shadow-sm);overflow:hidden}
+.ip-search input{flex:1;border:0;background:transparent;padding:0 20px;font-size:15px;outline:none;min-width:0}
+.ip-search button{width:48px;font-size:18px;color:var(--accent-text)}
+.ip-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;width:min(660px,100%)}
+.ip-tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:var(--r-card);color:var(--text);text-decoration:none;font-size:12.5px;text-align:center;overflow-wrap:break-word;min-width:0}
+.ip-tile:hover{background:var(--hover)}.ip-tile .fav{width:36px;height:36px;border-radius:10px;font-size:15px}
+.ip-week{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;color:var(--muted);font-size:12.5px}
+.ip-week div{display:flex;align-items:baseline;gap:6px}.ip-week b{color:var(--text);font-size:15px}
+
+/* site panel */
+.sp{display:flex;flex-direction:column;min-width:0}
+.sp-head{padding:14px 16px;display:flex;flex-direction:column;gap:3px;border-bottom:1px solid var(--line)}
+.sp-head b{font-size:14px}.sp-head span{color:var(--muted);font-size:12.5px;line-height:1.4}
+.sp-head.sec-secure span{color:var(--ok)}.sp-head.sec-notsecure{background:var(--warn-bg)}.sp-head.sec-notsecure span{color:var(--warn)}
+.sp-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}
+.sp-row:first-of-type{border-top:0}
+.sp-row>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.sp-row span{color:var(--muted);font-size:12px}
+
+/* loading, toast */
+.loading{height:100%;display:grid;place-items:center;background:var(--page)}
+.loading i{width:28px;height:28px;border-radius:50%;border:3px solid var(--line-strong);border-top-color:var(--accent);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--toast);color:var(--toast-ink);padding:10px 16px;border-radius:10px;box-shadow:var(--shadow);font-size:13px;z-index:50}
+
+/* the fake web: websites keep their own light look in every theme, as real ones do */
+.web{height:100%;overflow:auto;background:#fff;color:#1f2328;font-family:Georgia,"Times New Roman",serif}
+.w-site{min-height:100%}
+.w-mast{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;padding:16px 28px;border-bottom:1px solid #e5e7eb;font-family:system-ui,"Segoe UI",sans-serif}
+.w-mast b{font-size:19px}.w-mast span{color:#6b7280;font-size:13px}
+.w-art{max-width:680px;margin:0 auto;padding:28px 24px 60px;font-size:17px;line-height:1.6}
+.w-art h2{font-size:30px;line-height:1.2;margin:4px 0 8px;text-wrap:balance}
+.w-kick{font:600 12px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.1em;color:#c2410c}
+.w-meta{font:13px system-ui,sans-serif;color:#6b7280}
+.w-img{height:220px;border-radius:6px;background:linear-gradient(160deg,#9cc3d5 0%,#cfe0d8 45%,#e8d9b5 46%,#c9b48a 100%)}
+.w-ad{font:12px system-ui,sans-serif;color:#9ca3af;border:1px dashed #d1d5db;border-radius:6px;padding:20px;text-align:center;margin:18px 0}
+.w-post{border-top:1px solid #e5e7eb;padding:12px 0}.w-post b{font:600 14px system-ui,sans-serif}.w-post p{margin:4px 0 0}
+.w-warnbox{font:13px system-ui,sans-serif;background:#fff7e6;color:#92400e;border:1px solid #f5d39b;border-radius:6px;padding:12px;margin-top:18px}
+.w-login{max-width:360px;margin:48px auto;padding:28px;border:1px solid #e5e7eb;border-radius:10px;font-family:system-ui,"Segoe UI",sans-serif;display:flex;flex-direction:column;gap:12px}
+.w-login h2{font-size:20px;margin:0 0 4px}.w-login label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:#374151}
+.w-login input{height:38px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;color:#111;background:#fff}
+.w-btn{height:40px;border-radius:6px;background:#15803d;color:#fff;font-weight:600;margin-top:4px}
+.w-small{font-size:12px;color:#6b7280;margin:0}
+.w-res{padding:10px 0;border-bottom:1px solid #eee;display:flex;flex-direction:column;font-family:system-ui,sans-serif}.w-res a{color:#1d4ed8;font-size:17px}.w-res span{color:#15803d;font-size:12.5px}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:640px){.ip-wrap{padding:24px 16px 60px}.ip-where{display:none}}
+
+:root.m-light{color-scheme:light;
+  --desk:#d9dcdf; --frame:#eceef0; --toolbar:#f7f8f9; --page:#f3f4f5; --surface:#fff; --surface2:#eceef0; --hover:rgba(20,24,28,.06);
+  --line:#dde0e3; --line-strong:#c4c8cd; --text:#16191c; --muted:#5b636b; --accent:#c2620a; --accent2:#2c7da0; --accent-ink:#fff; --accent-text:#a65000;
+  --ok:#1b7a4a; --ok-bg:#e2f3e9; --ok-line:#b9e0c9; --warn:#a14d00; --warn-bg:#ffefdc; --bad:#b3261e; --bad-bg:#fce6e4;
+  --toast:#16191c; --toast-ink:#fff; --shadow:0 12px 30px rgba(20,24,28,.18),0 2px 6px rgba(20,24,28,.08); --shadow-sm:0 1px 2px rgba(20,24,28,.08); --bar-a:#c2620a; --bar-b:#2c7da0; --bar-c:#7a5c99}
+:root.m-dark{color-scheme:dark;
+  --desk:#0b0c0d; --frame:#141618; --toolbar:#1b1e21; --page:#17191c; --surface:#1f2226; --surface2:#17191c; --hover:rgba(255,255,255,.06);
+  --line:#2b2f34; --line-strong:#3a3f45; --text:#e6e8ea; --muted:#9aa2aa; --accent:#f0913a; --accent2:#5fb3d6; --accent-ink:#1a0e02; --accent-text:#f4a45a;
+  --ok:#5fcf91; --ok-bg:rgba(95,207,145,.12); --ok-line:rgba(95,207,145,.28); --warn:#f6ad55; --warn-bg:rgba(246,173,85,.13); --bad:#ff8a80; --bad-bg:rgba(255,138,128,.12);
+  --toast:#e6e8ea; --toast-ink:#141618; --shadow:0 14px 36px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3); --shadow-sm:0 1px 2px rgba(0,0,0,.4); --bar-a:#f0913a; --bar-b:#5fb3d6; --bar-c:#b39ddb}
+
+.mono{font-family:var(--mono);font-size:11.5px;letter-spacing:0}
+#app{height:100%;display:flex;flex-direction:column;background:var(--frame)}
+/* tabs */
+.tbar{display:flex;align-items:stretch;height:38px;min-width:0;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;padding:0 14px 0 12px;font-weight:650;font-size:12.5px;letter-spacing:.02em;border-right:1px solid var(--line);flex:none}
+.brand i{width:14px;height:14px;border-radius:4px;background:var(--accent);box-shadow:inset 0 0 0 3.5px var(--frame)}
+.tabs{display:flex;min-width:0;flex:0 1 auto;overflow:hidden}
+.tab{position:relative;display:flex;align-items:center;gap:8px;width:210px;min-width:56px;flex:0 1 210px;padding:0 6px 0 12px;border-right:1px solid var(--line);color:var(--muted);font-size:12.5px;cursor:default}
+.tab:hover{background:var(--hover)}
+.tab.on{background:var(--toolbar);color:var(--text);margin-bottom:-1px}
+.tab.on::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent)}
+.tab .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab .x{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;opacity:.65}.tab .x:hover{background:var(--hover);opacity:1}.tab .x .ic{width:13px;height:13px}
+.tab .spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--accent);animation:spin .7s linear infinite;flex:none}
+.tab .fav{border-radius:4px}
+.newtab{width:38px;display:grid;place-items:center;color:var(--muted);flex:none}.newtab:hover{background:var(--hover);color:var(--text)}
+.drag{flex:1}
+.wc{display:flex}.wc span{width:44px;display:grid;place-items:center;color:var(--muted);font-size:12px}
+/* toolbar */
+.tool{display:flex;align-items:center;gap:2px;height:44px;padding:0 8px;background:var(--toolbar);border-bottom:1px solid var(--line)}
+.ib{width:32px;height:32px;border-radius:6px;display:grid;place-items:center;color:var(--text);flex:none;position:relative}
+.ib:hover{background:var(--hover)}.ib.dim{color:var(--muted)}.ib.active{background:var(--hover);color:var(--accent-text)}
+.addr{flex:1;display:flex;align-items:center;height:32px;margin:0 8px;border-radius:6px;background:var(--surface);border:1px solid var(--line-strong);min-width:0;overflow:hidden}
+.addr:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.state{display:flex;align-items:center;gap:6px;align-self:stretch;padding:0 10px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;border-right:1px solid var(--line);white-space:nowrap;flex:none}
+.state .ic{width:14px;height:14px}
+.state.secure{color:var(--ok)}.state.notsecure{color:var(--warn);background:var(--warn-bg)}.state.internal{color:var(--accent-text)}.state:hover{filter:brightness(.97)}
+.addr form{flex:1;min-width:0;display:flex}
+.addr input{flex:1;min-width:0;border:0;background:transparent;outline:none;padding:0 10px;font-size:13.5px}
+.addr .ib{width:30px;height:30px;color:var(--muted)}.addr .ib .ic{width:16px;height:16px}.addr .ib.key{color:var(--accent-text)}
+.insp-btn{display:flex;align-items:center;gap:7px;height:32px;padding:0 10px;border-radius:6px;border:1px solid var(--line-strong);font-size:12.5px;font-weight:600;color:var(--text);flex:none}
+.insp-btn:hover{background:var(--hover)}.insp-btn.on{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:var(--accent-text)}
+.insp-btn .ic{width:16px;height:16px}
+/* body */
+.body{flex:1;min-height:0;display:flex}
+.view{flex:1;min-width:0;position:relative;background:var(--page)}
+.insp{width:320px;flex:none;border-left:1px solid var(--line);background:var(--toolbar);overflow:auto;display:flex;flex-direction:column}
+.isec{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.isec h3{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:650;display:flex;align-items:center;justify-content:space-between}
+.conn{display:flex;align-items:center;gap:10px}.conn .ic{width:22px;height:22px}
+.conn.secure{color:var(--ok)}.conn.notsecure{color:var(--warn)}.conn b{color:var(--text);font-size:14px;display:block}.conn span{color:var(--muted);font-size:12px;line-height:1.4;display:block}
+.conn.notsecure span{color:var(--warn)}
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar{display:grid;grid-template-columns:92px 1fr 28px;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.bar u{display:block;height:6px;border-radius:3px;background:var(--surface2);position:relative;text-decoration:none;overflow:hidden}
+.bar u i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.bar b{text-align:right;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.srow{display:flex;align-items:center;gap:10px}.srow>div{flex:1;min-width:0}.srow b{font-size:13px;display:block}.srow span{font-size:12px;color:var(--muted)}
+.ledger{display:flex;flex-direction:column;margin:0 -4px}
+.lg{display:grid;grid-template-columns:14px 1fr auto;gap:8px;align-items:start;padding:6px 4px;border-radius:5px}
+.lg:hover{background:var(--hover)}
+.lg i{width:8px;height:8px;border-radius:50%;background:var(--ok);margin-top:5px;justify-self:center;box-shadow:0 0 0 3px var(--ok-bg)}
+.lg div{display:flex;flex-direction:column;min-width:0}.lg div span{font-size:12.5px}.lg div small{color:var(--muted)}
+.lg em{font-style:normal;color:var(--muted);font-size:11px}
+/* evidence strip */
+.strip{display:flex;align-items:center;gap:0;height:26px;padding:0 8px;background:var(--toolbar);border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);overflow:hidden;white-space:nowrap}
+.strip>span{padding:0 10px;border-right:1px solid var(--line);display:flex;align-items:center;gap:5px}
+.strip>span:last-child{border-right:0;margin-left:auto}
+.strip .ok{color:var(--ok)}.strip .warn{color:var(--warn)}
+/* internal pages: a strip of Recognition pages across the top instead of a side menu */
+.ptabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--toolbar);overflow-x:auto}
+.ptabs a{display:flex;align-items:center;gap:7px;height:40px;padding:0 12px;color:var(--muted);text-decoration:none;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}
+.ptabs a:hover{color:var(--text)}.ptabs a.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}.ptabs a .ic{width:16px;height:16px}
+.with-tabs{display:flex;flex-direction:column;height:100%}.with-tabs .ip{flex:1;min-height:0}
+/* popover menu */
+.pop{position:absolute;z-index:30;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}
+.pop.menu{right:8px;top:4px;width:290px;max-width:calc(100% - 16px);padding:4px;max-height:calc(100% - 12px);overflow:auto}
+.menu .mi{display:flex;align-items:center;gap:12px;width:100%;padding:0 10px;height:32px;border-radius:5px;text-align:left}
+.menu .mi:hover{background:var(--hover)}.menu .mi .ic{width:16px;height:16px;color:var(--muted)}
+.menu .mi kbd{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+.menu .mh{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:650;padding:8px 10px 4px}
+.compact .tool{height:38px}.compact .tbar{height:32px}
+@media (max-width:900px){.insp{position:absolute;right:0;top:0;bottom:0;z-index:20;box-shadow:var(--shadow);max-width:calc(100% - 32px)}.view-wrap{position:relative}}
+@media (max-width:640px){.brand,.wc,.tool .hide-s,.strip .hide-s{display:none}.tab{flex-basis:120px}.insp-btn span{display:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* Recognition UI prototype: shared model (tabs, addresses, fake sites, internal pages). Each variant supplies render(). */
+var R = (function(){
+  var esc = function(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); };
+
+  /* ---- fake web (only .example addresses: nothing here is a real site) ---- */
+  var SITES = {
+    "news.example": { title: "Harbor Daily: city council approves riverfront plan", color: "#c2410c", letter: "H", trackers: 23, cookies: 11, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Harbor Daily</b><span>Local · Business · Weather · Opinion</span></div>' +
+      '<div class="w-art"><div class="w-kick">City Hall</div><h2>Council approves the riverfront plan after a four-hour hearing</h2>' +
+      '<p class="w-meta">By the Harbor Daily newsroom · 6 min read</p><div class="w-img"></div>' +
+      '<p>The seven-member council voted 5 to 2 on Tuesday night to approve the first phase of the riverfront plan, which turns two disused rail yards into a park, a market hall and 340 homes.</p>' +
+      '<p>Residents queued for more than an hour to speak. Most supported the park; several asked for a firmer promise on the share of affordable homes, which the plan sets at 20 percent.</p>' +
+      '<div class="w-ad">Advertisement slot · blocked by Shield</div><p>Construction of the market hall could begin next spring if the state grant arrives on time.</p></div></div>'; } },
+    "shop.example": { title: "Trailhead Outfitters · Sign in", color: "#15803d", letter: "T", trackers: 9, cookies: 6, login: true, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Trailhead Outfitters</b><span>Tents · Packs · Footwear</span></div>' +
+      '<div class="w-login"><h2>Sign in to your account</h2><label>Email<input id="w-email" type="text" autocomplete="off" placeholder="you@example.com"></label>' +
+      '<label>Password<input id="w-pass" type="password" autocomplete="off"></label><button class="w-btn" type="button" data-act="site-signin">Sign in</button>' +
+      '<p class="w-small">Recognition fills a saved login only when you choose it from the key button. It never submits the form for you.</p></div></div>'; } },
+    "forum.example": { title: "Fieldnotes forum · Bread baking thread", color: "#7c3aed", letter: "F", trackers: 4, cookies: 3, http: true, body: function(){ return '' +
+      '<div class="w-site"><div class="w-mast"><b>Fieldnotes forum</b><span>Kitchen · Garden · Workshop</span></div>' +
+      '<div class="w-art"><h2>Sourdough starter keeps collapsing after day five</h2>' +
+      '<div class="w-post"><b>marta_k</b><p>Feeding twice a day at 1:1:1, kitchen around 19 °C. It doubles by day four and then goes flat and smells of nail polish.</p></div>' +
+      '<div class="w-post"><b>oldmill</b><p>That smell is hunger. Try 1:2:2 and keep it somewhere warmer, 24 to 26 °C, for a week.</p></div>' +
+      '<div class="w-warnbox">This forum is served over plain http. Anyone on the network can read or change what you send it.</div></div></div>'; } }
+  };
+
+  /* ---- internal pages (the redesigned recognition: pages) ---- */
+  var LOGINS = [
+    { site: "shop.example", user: "alex.m@example.com", strength: "Strong", where: "SoteriaVault", used: "2 days ago" },
+    { site: "library.example", user: "alexm", strength: "Weak", where: "SoteriaVault", used: "3 weeks ago" },
+    { site: "bank.example", user: "a.morgan", strength: "Strong", where: "SoteriaVault", used: "yesterday" },
+    { site: "games.example", user: "alexm", strength: "Reused", where: "Recognition", used: "4 months ago" },
+    { site: "recipes.example", user: "alex.m@example.com", strength: "Reused", where: "Recognition", used: "1 year ago" }
+  ];
+  var LISTS = [
+    { id: "ads", name: "Ads", detail: "EasyList", rules: "71,412 rules", on: true },
+    { id: "trk", name: "Trackers", detail: "EasyPrivacy", rules: "52,066 rules", on: true },
+    { id: "fp", name: "Fingerprinting protection", detail: "Canvas, audio and font probes get noise", rules: "built in", on: true },
+    { id: "ann", name: "Cookie banners", detail: "Hide consent pop-ups, choosing “reject” where possible", rules: "1,980 rules", on: false }
+  ];
+  var SETTINGS = { httpsFirst: true, restore: true, search: "DuckDuckGo", downloads: "Ask every time", telemetry: false, theme: "system", density: "comfortable" };
+
+  function strengthChip(s){ var k = s === "Strong" ? "ok" : s === "Weak" ? "bad" : "warn"; return '<span class="chip ' + k + '">' + s + '</span>'; }
+  function toggle(id, on, label){ return '<button class="tgl' + (on ? ' on' : '') + '" role="switch" aria-checked="' + on + '" aria-label="' + esc(label) + '" data-act="toggle" data-id="' + id + '"><i></i></button>'; }
+
+  var PAGES = {
+    start: { title: "New tab", body: function(st){ return '' +
+      '<div class="ip-start"><div class="ip-start-brand"><span class="ip-mark"></span>Recognition</div>' +
+      '<form class="ip-search" data-act="start-search"><input id="start-q" type="text" placeholder="Search or type an address" autocomplete="off"><button type="submit" aria-label="Search">→</button></form>' +
+      '<div class="ip-tiles">' + ["news.example","shop.example","forum.example","recognition:passwords","recognition:shield","recognition:settings"].map(function(u){
+        var s = siteOf(parse(u)); return '<a class="ip-tile" href="#" data-act="go" data-url="' + u + '"><span class="fav" style="background:' + s.color + '">' + s.letter + '</span><span>' + esc(s.short) + '</span></a>'; }).join('') + '</div>' +
+      '<div class="ip-week"><div><b class="num">1,284</b><span>trackers blocked this week</span></div><div><b class="num">342</b><span>ads blocked</span></div><div><b class="num">57</b><span>fingerprinting attempts blurred</span></div></div></div>'; } },
+
+    passwords: { title: "Passwords", body: function(st){ var weak = LOGINS.filter(function(l){return l.strength!=="Strong";}).length; var local = LOGINS.filter(function(l){return l.where==="Recognition";}).length; return '' +
+      '<header class="ip-head"><div><h1>Passwords</h1><p class="ip-lede">' + LOGINS.length + ' saved logins. Nothing is filled or submitted until you choose a login.</p></div><button class="btn primary" data-act="toast" data-msg="In the real browser this opens the Add login form.">Add login</button></header>' +
+      '<section class="ip-banner"><span class="dot ok"></span><div><b>Kept in SoteriaVault</b><span>Connected and unlocked. Each fill asks you in SoteriaVault first.</span></div>' +
+        (local ? '<button class="btn" data-act="move">Move ' + local + ' logins from Recognition</button>' : '<span class="chip ok">All moved</span>') + '</section>' +
+      '<section class="ip-stats"><div class="stat"><b class="num">' + LOGINS.length + '</b><span>saved</span></div><div class="stat ' + (weak?'warn':'') + '"><b class="num">' + weak + '</b><span>weak or reused</span></div><div class="stat"><b class="num">0</b><span>found in known breaches</span></div></section>' +
+      '<div class="ip-toolbar"><input id="pw-filter" type="search" placeholder="Filter logins" aria-label="Filter logins" value="' + esc(st.pwFilter||"") + '"></div>' +
+      '<div class="ip-list" role="list">' + LOGINS.filter(function(l){ var f=(st.pwFilter||"").toLowerCase(); return !f || l.site.indexOf(f)>=0 || l.user.toLowerCase().indexOf(f)>=0; }).map(function(l){ return '' +
+        '<div class="ip-item" role="listitem"><span class="fav sm" style="background:' + colorFor(l.site) + '">' + l.site[0].toUpperCase() + '</span>' +
+        '<div class="ip-item-main"><b>' + esc(l.site) + '</b><span>' + esc(l.user) + ' · used ' + esc(l.used) + '</span></div>' +
+        strengthChip(l.strength) + '<span class="ip-where">' + l.where + '</span>' +
+        '<div class="ip-actions"><button class="btn ghost sm" data-act="toast" data-msg="Copied. The clipboard is cleared in 30 seconds.">Copy</button><button class="btn ghost sm" data-act="go" data-url="https://' + l.site + '">Open site</button></div></div>'; }).join('') + '</div>' +
+      '<details class="ip-how"><summary>How Recognition keeps passwords</summary><p>With SoteriaVault switched on, Recognition asks the running SoteriaVault app for one password at a time, for the exact site you are on, and you allow each one there. The password goes into that page and is dropped. Logins still stored in Recognition are encrypted for your Windows account; any program running as you could still ask Windows to decrypt them, which is why moving them to SoteriaVault is recommended.</p></details>'; } },
+
+    shield: { title: "Shield", body: function(st){ return '' +
+      '<header class="ip-head"><div><h1>Shield</h1><p class="ip-lede">Blocks ads, trackers and fingerprinting on every site unless you turn it off for one.</p></div>' + toggle("shield-all", st.shieldOn, "Shield on every site") + '</header>' +
+      '<section class="ip-stats"><div class="stat"><b class="num">1,284</b><span>trackers this week</span></div><div class="stat"><b class="num">342</b><span>ads</span></div><div class="stat"><b class="num">57</b><span>fingerprinting probes</span></div><div class="stat"><b class="num">~41 MB</b><span>data saved</span></div></section>' +
+      '<h2 class="ip-h2">Filter lists</h2><div class="ip-list">' + LISTS.map(function(l){ return '<div class="ip-item"><div class="ip-item-main"><b>' + l.name + '</b><span>' + l.detail + ' · ' + l.rules + '</span></div>' + toggle("list-" + l.id, l.on, l.name) + '</div>'; }).join('') + '</div>' +
+      '<h2 class="ip-h2">Turned off for</h2><div class="ip-list"><div class="ip-item"><span class="fav sm" style="background:#0e7490">W</span><div class="ip-item-main"><b>weather.example</b><span>radar map needs its tile server</span></div><button class="btn ghost sm" data-act="toast" data-msg="Shield is on again for weather.example.">Turn Shield back on</button></div></div>' +
+      '<details class="ip-how"><summary>Known limit</summary><p>A request address longer than 4,096 characters is not checked against the filter lists (audit F9). This is waiting for a decision.</p></details>'; } },
+
+    settings: { title: "Settings", body: function(st){ var s = SETTINGS; function row(label, hint, control){ return '<div class="ip-item"><div class="ip-item-main"><b>' + label + '</b>' + (hint ? '<span>' + hint + '</span>' : '') + '</div>' + control + '</div>'; }
+      function seg(id, opts, cur){ return '<div class="seg" role="radiogroup" aria-label="' + id + '">' + opts.map(function(o){ return '<button role="radio" aria-checked="' + (o.toLowerCase()===cur) + '" class="' + (o.toLowerCase()===cur?'on':'') + '" data-act="seg" data-id="' + id + '" data-val="' + o.toLowerCase() + '">' + o + '</button>'; }).join('') + '</div>'; }
+      return '<header class="ip-head"><div><h1>Settings</h1><p class="ip-lede">Changes apply at once.</p></div></header>' +
+      '<h2 class="ip-h2">Appearance</h2><div class="ip-list">' + row("Theme", "System follows Windows", seg("theme", ["System","Light","Dark"], st.theme)) + row("Density", "Compact fits more tabs", seg("density", ["Comfortable","Compact"], st.density)) + '</div>' +
+      '<h2 class="ip-h2">Browsing</h2><div class="ip-list">' + row("HTTPS first", "Try the secure address first; warn before a plain http page", toggle("https", s.httpsFirst, "HTTPS first")) + row("Reopen tabs from last time", "", toggle("restore", s.restore, "Reopen tabs")) + row("Search engine", "", '<span class="ip-val">' + s.search + ' ▾</span>') + row("Downloads", "", '<span class="ip-val">' + s.downloads + ' ▾</span>') + '</div>' +
+      '<h2 class="ip-h2">Evidence</h2><div class="ip-list">' + row("Export this session", "A governed packet with receipts for what this session did", '<button class="btn" data-act="toast" data-msg="Session packet written to packets\\outbox (prototype).">Export</button>') + row("Integration receipts", "Witnessed by the browser and by NFL", '<span class="chip ok">Witnessed</span>') + '</div>'; } }
+  };
+
+  function colorFor(site){ if (SITES[site]) return SITES[site].color; var c = ["#c2410c","#15803d","#7c3aed","#0e7490","#b91c1c","#a16207","#1d4ed8"]; var h = 0; for (var i=0;i<site.length;i++) h = (h*31 + site.charCodeAt(i)) >>> 0; return c[h % c.length]; }
+
+  function parse(input){
+    var t = String(input||"").trim(); if (!t) return null;
+    if (/^recognition:/i.test(t)) { var p = t.slice(12).toLowerCase(); return /^[a-z]{1,20}$/.test(p) ? "recognition:" + p : "recognition:start"; }
+    var m = t.match(/^(https?):\/\/([^\/\s]+)(\/.*)?$/i);
+    if (m) return m[1].toLowerCase() + "://" + m[2].toLowerCase() + (m[3]||"/");
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t)) { var host = t.split("/")[0].toLowerCase(); var site = SITES[host]; return (site && site.http ? "http://" : "https://") + t.toLowerCase() + (t.indexOf("/")<0 ? "/" : ""); }
+    return "https://search.example/?q=" + encodeURIComponent(t);
+  }
+  function hostOf(url){ var m = String(url).match(/^https?:\/\/([^\/]+)/); return m ? m[1] : ""; }
+  function security(url){ if (/^recognition:/.test(url)) return "internal"; if (/^https:/.test(url)) return "secure"; if (/^http:/.test(url)) return "notsecure"; return "other"; }
+  var SEC = { secure: { label: "Secure", words: "Connection is secure (https)", glyph: "lock" }, notsecure: { label: "Not secure", words: "This page is not encrypted (http). Do not type passwords or card numbers here.", glyph: "warn" }, internal: { label: "Recognition", words: "A Recognition page, it stays on this computer", glyph: "home" }, other: { label: "", words: "Page", glyph: "globe" } };
+
+  function siteOf(url){
+    if (/^recognition:/.test(url)) { var id = url.slice(12); var title = PAGES[id] ? PAGES[id].title : id.charAt(0).toUpperCase() + id.slice(1); return { title: title, short: title, color: "#3b5bdb", letter: "R", internal: id }; }
+    var host = hostOf(url);
+    if (host === "search.example") { var q = decodeURIComponent((url.split("q=")[1]||"")); return { title: q + " · Search", short: "Search", color: "#475569", letter: "S", trackers: 2, cookies: 1, body: function(){ return '<div class="w-site"><div class="w-mast"><b>search.example</b><span>Results for “' + esc(q) + '”</span></div><div class="w-art">' + ["news.example","forum.example","shop.example"].map(function(h){ return '<div class="w-res"><a href="#" data-act="go" data-url="' + h + '">' + esc(SITES[h].title) + '</a><span>' + (SITES[h].http?"http":"https") + '://' + h + '/</span></div>'; }).join('') + '</div></div>'; } }; }
+    var s = SITES[host];
+    if (s) return { title: s.title, short: host, color: s.color, letter: s.letter, trackers: s.trackers, cookies: s.cookies, login: s.login, body: s.body };
+    return { title: host || url, short: host || url, color: colorFor(host||url), letter: (host||"?")[0].toUpperCase(), trackers: 0, cookies: 0, body: function(){ return '<div class="w-site"><div class="w-art"><h2>' + esc(host) + '</h2><p>This prototype only knows news.example, shop.example and forum.example. Try one of those, or recognition:passwords.</p></div></div>'; } };
+  }
+
+  var st = { tabs: [], active: 0, nextId: 1, closed: [], shieldOn: true, siteShield: {}, pwFilter: "", theme: "system", density: "comfortable", pop: null, toast: "", toastT: 0, palette: "" };
+
+  function newTab(url, at){ var t = { id: st.nextId++, url: url || "recognition:start", loading: false }; if (at == null) st.tabs.push(t); else st.tabs.splice(at, 0, t); st.active = st.tabs.indexOf(t); st.pop = null; return t; }
+  function closeTab(id){ var i = st.tabs.findIndex(function(t){return t.id===id;}); if (i<0) return; st.closed.push(st.tabs[i].url); st.tabs.splice(i,1); if (!st.tabs.length) newTab(); if (st.active >= st.tabs.length) st.active = st.tabs.length-1; else if (i < st.active) st.active--; }
+  function go(input){ var u = parse(input); if (!u) return; var t = st.tabs[st.active]; t.url = u; t.loading = true; st.pop = null; setTimeout(function(){ t.loading = false; App.render(); }, 380); }
+  function cur(){ return st.tabs[st.active]; }
+
+  function toast(msg){ st.toast = msg; clearTimeout(st.toastT); st.toastT = setTimeout(function(){ st.toast = ""; App.render(); }, 2600); }
+
+  function isDark(){ var r = document.documentElement; if (r.classList.contains("m-dark")) return true; if (r.classList.contains("m-light")) return false; var d = r.getAttribute("data-theme"); if (d === "dark") return true; if (d === "light") return false; return matchMedia("(prefers-color-scheme: dark)").matches; }
+  var ICONS = {
+    back: '<path d="M15 5l-7 7 7 7"/>', fwd: '<path d="M9 5l7 7-7 7"/>', reload: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', warn: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
+    home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>', globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+    star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>', key: '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2.5"/>',
+    shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>', menu: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', puzzle: '<path d="M4 9h4.5a2.5 2.5 0 1 1 5 0H18v4.5a2.5 2.5 0 1 1 0 5V21H4z"/>',
+    download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', bookmark: '<path d="M6 3.5h12V21l-6-4-6 4z"/>',
+    settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>', sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+    private: '<path d="M6.5 10L8.7 4.5h6.6L17.5 10z"/><path d="M3 11.5h18"/><circle cx="7.5" cy="17" r="3"/><circle cx="16.5" cy="17" r="3"/><path d="M10.5 16.5q1.5-1 3 0"/>',
+    sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/>', receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    keyboard: '<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/>'
+  };
+  function icon(n, cls){ return '<svg class="ic ' + (cls||'') + '" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[n]||'') + '</svg>'; }
+  function applyTheme(){ var r = document.documentElement; r.classList.remove("m-light","m-dark"); if (st.theme === "light") r.classList.add("m-light"); if (st.theme === "dark") r.classList.add("m-dark"); r.classList.toggle("compact", st.density === "compact"); }
+
+  /* the page body (internal page or fake site) */
+  function pageHtml(){ var t = cur(); var s = siteOf(t.url);
+    if (t.loading) return '<div class="loading"><i></i></div>';
+    if (s.internal && !PAGES[s.internal]) return '<div class="ip"><div class="ip-wrap"><header class="ip-head"><div><h1>' + esc(s.title) + '</h1><p class="ip-lede">Not drawn in this prototype. Open Passwords, Shield or Settings to see the new page design.</p></div></header></div></div>';
+    if (s.internal) return '<div class="ip"><div class="ip-wrap">' + PAGES[s.internal].body(st) + '</div></div>';
+    return '<div class="web">' + s.body() + '</div>'; }
+
+  /* the site panel: one place for connection, Shield, logins and receipts for this page */
+  function sitePanelHtml(){ var t = cur(); var s = siteOf(t.url); var sec = security(t.url); var host = hostOf(t.url); var on = st.shieldOn && st.siteShield[host] !== false;
+    if (s.internal) return '<div class="sp"><div class="sp-head sec-internal"><b>Recognition page</b><span>Stays on this computer. No network requests.</span></div></div>';
+    return '<div class="sp"><div class="sp-head sec-' + sec + '"><b>' + esc(host) + '</b><span>' + SEC[sec].words + '</span></div>' +
+      '<div class="sp-row"><div><b>Shield for this site</b><span>' + (on ? (s.trackers + ' trackers and ads blocked on this page') : 'Off: nothing is blocked here') + '</span></div>' + toggle("site-shield", on, "Shield for this site") + '</div>' +
+      '<div class="sp-row"><div><b>Cookies</b><span>' + s.cookies + ' set by this site, third-party cookies blocked</span></div><button class="btn ghost sm" data-act="toast" data-msg="Cookies for ' + esc(host) + ' cleared.">Clear</button></div>' +
+      (s.login ? '<div class="sp-row"><div><b>Login</b><span>alex.m@example.com in SoteriaVault</span></div><button class="btn sm primary" data-act="fill">Fill</button></div>' : '') +
+      '<div class="sp-row"><div><b>Receipts</b><span>This visit is in the action ledger, witnessed by NFL</span></div><span class="chip ok">Witnessed</span></div></div>'; }
+
+  /* events shared by all variants (delegated) */
+  function handle(e){
+    var el = e.target.closest("[data-act]"); if (!el) return false;
+    var a = el.getAttribute("data-act");
+    if (el.tagName === "FORM") return false;
+    e.preventDefault();
+    switch (a) {
+      case "go": go(el.getAttribute("data-url")); break;
+      case "tab": st.active = +el.getAttribute("data-i"); st.pop = null; break;
+      case "close": e.stopPropagation(); closeTab(+el.getAttribute("data-id")); break;
+      case "new": newTab(); setTimeout(function(){ var a = document.getElementById("addr"); if (a) a.focus(); }, 0); break;
+      case "private": newTab(); toast("Private tab: nothing from it is saved after you close it."); break;
+      case "reopen": if (st.closed.length) newTab(st.closed.pop()); else toast("No closed tabs to reopen."); break;
+      case "back": case "fwd": toast("Back and forward work as usual in the real browser."); break;
+      case "reload": cur().loading = true; setTimeout(function(){ cur().loading = false; App.render(); }, 380); break;
+      case "pop": var p = el.getAttribute("data-pop"); st.pop = st.pop === p ? null : p; break;
+      case "toggle": var id = el.getAttribute("data-id");
+        if (id === "shield-all") st.shieldOn = !st.shieldOn;
+        else if (id === "site-shield") { var h = hostOf(cur().url); st.siteShield[h] = st.siteShield[h] === false; toast(st.siteShield[h] === false ? "Shield is off for " + h + "." : "Shield is on for " + h + "."); }
+        else if (id.indexOf("list-") === 0) { var l = LISTS.filter(function(x){ return "list-" + x.id === id; })[0]; if (l) l.on = !l.on; }
+        else if (id === "https") SETTINGS.httpsFirst = !SETTINGS.httpsFirst; else if (id === "restore") SETTINGS.restore = !SETTINGS.restore;
+        break;
+      case "seg": var k = el.getAttribute("data-id"), v = el.getAttribute("data-val"); if (k === "theme") { st.theme = v; } if (k === "density") st.density = v; applyTheme(); break;
+      case "move": LOGINS.forEach(function(l){ l.where = "SoteriaVault"; }); toast("Moved to SoteriaVault. Duplicates were merged there."); break;
+      case "fill": var em = document.getElementById("w-email"), pw = document.getElementById("w-pass"); st.pop = null;
+        toast("SoteriaVault asked you, and you allowed it. Filled, not submitted.");
+        setTimeout(function(){ var em2 = document.getElementById("w-email"), pw2 = document.getElementById("w-pass"); if (em2) em2.value = "alex.m@example.com"; if (pw2) pw2.value = "correct-horse-battery"; }, 30); break;
+      case "site-signin": toast("This is a pretend site: nothing was sent."); break;
+      case "toast": toast(el.getAttribute("data-msg")); st.pop = null; break;
+      case "theme-quick": st.theme = isDark() ? "light" : "dark"; applyTheme(); break;
+      case "noop": break;
+      default: return false;
+    }
+    App.render(); return true;
+  }
+
+  function wire(root){
+    root.addEventListener("click", function(e){
+      if (handle(e)) return;
+      if (st.pop && !e.target.closest(".pop") && !e.target.closest("[data-pop]")) { st.pop = null; App.render(); }
+    });
+    root.addEventListener("submit", function(e){ e.preventDefault(); var f = e.target; if (f.getAttribute("data-act") === "addr" ) { go(document.getElementById("addr").value); App.render(); } if (f.getAttribute("data-act") === "start-search") { go(document.getElementById("start-q").value); App.render(); } });
+    root.addEventListener("input", function(e){ if (e.target.id === "pw-filter") { st.pwFilter = e.target.value; var pos = e.target.selectionStart; App.render(); var f = document.getElementById("pw-filter"); if (f) { f.focus(); f.setSelectionRange(pos,pos); } } });
+    document.addEventListener("keydown", function(e){
+      var mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "t") { e.preventDefault(); newTab(); App.render(); var a = document.getElementById("addr"); if (a) a.focus(); }
+      else if (mod && e.key.toLowerCase() === "w") { e.preventDefault(); closeTab(cur().id); App.render(); }
+      else if (mod && e.key.toLowerCase() === "l") { e.preventDefault(); var b = document.getElementById("addr"); if (b) { b.focus(); b.select(); } }
+      else if (e.key === "Escape" && st.pop) { st.pop = null; App.render(); }
+      else if (App.key) App.key(e);
+    });
+  }
+
+  newTab("https://news.example/"); newTab("https://shop.example/"); newTab("recognition:passwords"); st.active = 0;
+
+  return { st: st, icon: icon, isDark: isDark, esc: esc, siteOf: siteOf, hostOf: hostOf, security: security, SEC: SEC, PAGES: PAGES, pageHtml: pageHtml, sitePanelHtml: sitePanelHtml, wire: wire, go: go, newTab: newTab, cur: cur, toast: toast, applyTheme: applyTheme, parse: parse };
+})();
+
+var App = (function(){
+  var I = R.icon, st = R.st, esc = R.esc, insp = window.innerWidth >= 900, ledgerSeq = 4812;
+  var PT = [["start","home","New tab"],["passwords","key","Passwords"],["shield","shield","Shield"],["history","history","History"],["downloads","download","Downloads"],["extensions","puzzle","Extensions"],["settings","settings","Settings"]];
+  function hx(s){ var h = 2166136261 >>> 0, out = ""; for (var r = 0; r < 4; r++){ for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i) + r; h = Math.imul(h, 16777619) >>> 0; } out += ("00000000" + h.toString(16)).slice(-8); } return out; }
+  function receipts(host){ var base = ledgerSeq + st.tabs.length; return [
+      { what: "visit", detail: host, n: base }, { what: "shield.block", detail: "trackers and ads on " + host, n: base - 1 },
+      { what: "cookie.policy", detail: "third-party cookies refused", n: base - 2 }, { what: "integration.receipt", detail: "recognition > soteriavault", n: base - 7 } ]; }
+  function menuHtml(){ return '<div class="pop menu" role="menu"><div class="mh">Tabs</div>' + mi("plus","New tab","new","Ctrl+T") + mi("private","New private tab","private","Ctrl+Shift+N") + mi("reload","Reopen closed tab","reopen","Ctrl+Shift+T") +
+      '<div class="mh">This page</div>' + mi("search","Find in page","toast:Find bar opens under the toolbar.","Ctrl+F") + mi("receipt","Save as PDF or screenshot","toast:Saved (prototype).","") + mi("receipt","Save page snapshot with evidence","toast:Snapshot (.mhtml + evidence) saved (prototype).","") +
+      '<div class="mh">Recognition</div>' + mi("key","Passwords","go:recognition:passwords","") + mi("shield","Shield","go:recognition:shield","") + mi("puzzle","Extensions","go:recognition:extensions","") + mi("settings","Settings","go:recognition:settings","") +
+      mi("sun","Switch light / dark","theme-quick","") + mi("receipt","Export session (evidence packet)","toast:Session packet written to packets\\outbox (prototype).","") + '</div>'; }
+  function mi(ic, label, act, kbd){ var a = act, extra = ""; if (act.indexOf("go:")===0){ a="go"; extra=' data-url="' + act.slice(3) + '"'; } else if (act.indexOf("toast:")===0){ a="toast"; extra=' data-msg="' + esc(act.slice(6)) + '"'; }
+    return '<button class="mi" role="menuitem" data-act="' + a + '"' + extra + '>' + I(ic) + '<span>' + label + '</span>' + (kbd ? '<kbd>' + kbd + '</kbd>' : '') + '</button>'; }
+  function inspector(s, sec, host, shieldOn){
+    if (s.internal) return '<aside class="insp" aria-label="Inspector"><div class="isec"><h3>This page</h3><div class="conn"><span class="ic-wrap">' + I("home") + '</span><div><b>Recognition page</b><span>Built on this computer. It makes no network requests.</span></div></div></div>' +
+      '<div class="isec"><h3>Ledger <span class="mono">#' + (ledgerSeq + st.tabs.length) + '</span></h3><div class="ledger">' + '<div class="lg"><i></i><div><span>page.open</span><small class="mono">' + hx(s.internal).slice(0, 16) + '</small></div><em>now</em></div></div></div></aside>';
+    var total = shieldOn ? s.trackers : 0, ads = Math.round(total * .4), trk = Math.round(total * .48), fp = Math.max(0, total - ads - trk), max = Math.max(1, ads, trk, fp);
+    function bar(label, n, color){ return '<div class="bar"><span>' + label + '</span><u><i style="width:' + Math.round(100 * n / max) + '%;background:' + color + '"></i></u><b>' + n + '</b></div>'; }
+    return '<aside class="insp" aria-label="Inspector">' +
+      '<div class="isec"><h3>Connection</h3><div class="conn ' + sec + '">' + I(R.SEC[sec].glyph) + '<div><b>' + esc(host) + '</b><span>' + R.SEC[sec].words + '</span></div></div></div>' +
+      '<div class="isec"><h3>Shield <span>' + '<button class="tgl' + (shieldOn?' on':'') + '" role="switch" aria-checked="' + shieldOn + '" aria-label="Shield for this site" data-act="toggle" data-id="site-shield"><i></i></button></span></h3>' +
+        (shieldOn ? '<div class="bars">' + bar("Ads", ads, "var(--bar-a)") + bar("Trackers", trk, "var(--bar-b)") + bar("Fingerprinting", fp, "var(--bar-c)") + '</div>' : '<span style="color:var(--warn);font-size:12.5px">Off for ' + esc(host) + ': nothing is blocked on this site.</span>') + '</div>' +
+      '<div class="isec"><h3>Cookies</h3><div class="srow"><div><b class="num">' + s.cookies + ' first-party</b><span>third-party cookies refused</span></div><button class="btn sm" data-act="toast" data-msg="Cookies for ' + esc(host) + ' cleared.">Clear</button></div></div>' +
+      (s.login ? '<div class="isec"><h3>Login</h3><div class="srow"><div><b>alex.m@example.com</b><span>in SoteriaVault · asks you before each fill</span></div><button class="btn sm primary" data-act="fill">Fill</button></div></div>' : '') +
+      '<div class="isec"><h3>Ledger <span class="mono">' + 'NFL ✓' + '</span></h3><div class="ledger">' + receipts(host).map(function(r, i){ return '<div class="lg" title="Receipt ' + r.n + '"><i></i><div><span>' + r.what + '</span><small>' + esc(r.detail) + '</small><small class="mono">' + hx(r.what + r.detail + r.n).slice(0, 16) + '…</small></div><em>' + (i===0?'now':i + ' min') + '</em></div>'; }).join('') + '</div></div>' +
+      '</aside>';
+  }
+  function render(){
+    var t = R.cur(), s = R.siteOf(t.url), sec = R.security(t.url), host = R.hostOf(t.url);
+    var shieldOn = st.shieldOn && st.siteShield[host] !== false;
+    var addrVal = s.internal ? (s.internal === "start" ? "" : t.url) : t.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    var focusId = document.activeElement && document.activeElement.id, typed = focusId === "addr" ? document.getElementById("addr").value : null;
+    var stateLabel = sec === "secure" ? "HTTPS" : sec === "notsecure" ? "HTTP · NOT SECURE" : sec === "internal" ? "LOCAL" : "";
+    var h = '<div class="tbar"><div class="brand"><i></i>Recognition</div><div class="tabs" role="tablist">' + st.tabs.map(function(tb, i){ var ss = R.siteOf(tb.url);
+        return '<div class="tab' + (i===st.active?' on':'') + '" role="tab" aria-selected="' + (i===st.active) + '" tabindex="0" data-act="tab" data-i="' + i + '" title="' + esc(ss.title) + '">' +
+          (tb.loading ? '<span class="spin"></span>' : '<span class="fav" style="background:' + ss.color + '">' + ss.letter + '</span>') + '<span class="t">' + esc(ss.title) + '</span>' +
+          '<button class="x" data-act="close" data-id="' + tb.id + '" aria-label="Close tab">' + I("x") + '</button></div>'; }).join('') + '</div>' +
+      '<button class="newtab" data-act="new" title="New tab (Ctrl+T)" aria-label="New tab">' + I("plus") + '</button><div class="drag"></div><div class="wc" aria-hidden="true"><span>—</span><span>□</span><span>✕</span></div></div>' +
+      '<div class="tool"><button class="ib" data-act="back" title="Back" aria-label="Back">' + I("back") + '</button><button class="ib dim hide-s" data-act="fwd" title="Forward" aria-label="Forward">' + I("fwd") + '</button><button class="ib" data-act="reload" title="Reload" aria-label="Reload">' + I("reload") + '</button>' +
+        '<div class="addr">' + (stateLabel ? '<button class="state ' + sec + '" data-act="insp" title="' + esc(R.SEC[sec].words) + '">' + I(R.SEC[sec].glyph) + stateLabel + '</button>' : '') +
+          '<form data-act="addr"><input id="addr" aria-label="Address" placeholder="Search or type an address" value="' + esc(typed != null ? typed : addrVal) + '" autocomplete="off" spellcheck="false"></form>' +
+          (s.login ? '<button class="ib key" data-act="insp-open" title="Login for this site (SoteriaVault)" aria-label="Login">' + I("key") + '</button>' : '') +
+          (!s.internal ? '<button class="ib" data-act="toast" data-msg="Bookmarked." title="Bookmark" aria-label="Bookmark">' + I("star") + '</button>' : '') + '</div>' +
+        '<button class="insp-btn' + (insp?' on':'') + '" data-act="insp" title="Inspector: what happened on this page" aria-pressed="' + insp + '">' + I("shield") + '<span class="num">' + (s.internal ? 'Inspector' : (shieldOn ? s.trackers + ' blocked' : 'Shield off')) + '</span></button>' +
+        '<button class="ib hide-s" data-act="go" data-url="recognition:downloads" title="Downloads" aria-label="Downloads">' + I("download") + '</button>' +
+        '<button class="ib' + (st.pop==="menu"?' active':'') + '" data-act="pop" data-pop="menu" title="Menu" aria-label="Menu">' + I("menu") + '</button></div>' +
+      '<div class="body"><div class="view">' + page(s) + (st.pop==="menu" ? menuHtml() : '') + '</div>' + (insp ? inspector(s, sec, host, shieldOn) : '') + '</div>' +
+      '<div class="strip">' + (s.internal ? '<span>recognition:' + esc(s.internal) + '</span><span>local, no network</span>' :
+        '<span class="' + (sec==="secure"?'ok':'warn') + '">' + I(R.SEC[sec].glyph).replace('class="ic ', 'style="width:12px;height:12px" class="ic ') + (sec==="secure"?'https':'http, not secure') + '</span><span class="num">' + (shieldOn ? s.trackers + ' blocked' : 'Shield off') + '</span><span class="num hide-s">' + s.cookies + ' cookies</span>') +
+        '<span class="mono hide-s">ledger #' + (ledgerSeq + st.tabs.length) + ' · ' + hx(t.url).slice(0, 8) + '</span><span class="ok">witnessed by NFL</span></div>' +
+      (st.toast ? '<div class="toast" role="status">' + esc(st.toast) + '</div>' : '');
+    document.getElementById("app").innerHTML = h;
+    if (focusId === "addr") { var a = document.getElementById("addr"); a.focus(); a.setSelectionRange(a.value.length, a.value.length); }
+  }
+  function page(s){
+    if (!s.internal || R.cur().loading) return R.pageHtml();
+    return '<div class="with-tabs"><nav class="ptabs" aria-label="Recognition pages">' + PT.map(function(p){ return '<a href="#" class="' + (s.internal===p[0]?'on':'') + '" data-act="go" data-url="recognition:' + p[0] + '">' + I(p[1]) + p[2] + '</a>'; }).join('') + '</nav>' + R.pageHtml() + '</div>';
+  }
+  function extra(e){ var el = e.target.closest("[data-act]"); if (!el) return false; var a = el.getAttribute("data-act");
+    if (a === "insp") { insp = !insp; render(); return true; } if (a === "insp-open") { insp = true; render(); return true; } return false; }
+  return { render: render, extra: extra, key: function(e){ if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === "i") { e.preventDefault(); insp = !insp; render(); } } };
+})();
+(function(){ var app = document.getElementById("app"); app.addEventListener("click", function(e){ if (App.extra(e)) e.stopImmediatePropagation(); }, true); R.wire(app); R.applyTheme(); App.render(); })();
+</script>
+</body>

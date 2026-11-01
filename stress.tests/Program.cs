@@ -144,12 +144,20 @@ try
                 var wl = new List<string>();
                 for (int i = 0; i < Q(50, 15); i++) { var o = outs[rng.Next(outs.Length)]; IntegrationReceipts.AppendWitnessed(wf, wl, h => wl.Add(h), null, "recognition", "soteriavault", "consumer", null, null, rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "W" + i); }
                 var wgood = File.ReadAllBytes(wf); var wlines = Encoding.UTF8.GetString(wgood).TrimEnd('\n').Split('\n');
+                var wWitnessed = wl.ToList();
                 var prevOfLast = wlines.Length > 1 ? IntegrationReceipts.Hash(wlines[^2]) : IntegrationReceipts.Genesis;
                 int forged = Q(300, 60), chainFooled = 0, witnessCaught = 0;
                 for (int t = 0; t < forged; t++)
                 {
-                    var o = outs[rng.Next(outs.Length)];
-                    var fake = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", rng.Next(2) == 0 ? null : "soteriavault.connector_contract.v1", rng.Next(2) == 0 ? null : Sha(), rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "FORGED_" + t, prevOfLast);
+                    // a "forgery" that comes out byte-identical to the real newest receipt is no forgery (seen at seed 20261021, round 3):
+                    // draw again; and every attempt starts from the same witnessed history, so an accepted append cannot leak into the next one
+                    wl.Clear(); wl.AddRange(wWitnessed);
+                    string o, fake;
+                    do
+                    {
+                        o = outs[rng.Next(outs.Length)];
+                        fake = IntegrationReceipts.Line("recognition", "soteriavault", "consumer", rng.Next(2) == 0 ? null : "soteriavault.connector_contract.v1", rng.Next(2) == 0 ? null : Sha(), rng.Next(2) == 0 ? null : Sha(), none, o, o == "ok" ? null : "FORGED_" + t, prevOfLast);
+                    } while (fake == wlines[^1]);
                     var mode = rng.Next(3);
                     var body = mode switch
                     {

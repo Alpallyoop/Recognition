@@ -2306,6 +2306,61 @@ Console.WriteLine("== animated header pictures ==");
     }
 }
 
+// ---- audit 2026-10-31: F14 crash guard, F15 site icon, F16 SoteriaVault check throttle, F17 bridge numbers ----
+{
+    Check(SiteSecurityRules.Of("https://example.com/a", false) == SiteSecurity.Secure && SiteSecurityRules.Of("http://example.com/", false) == SiteSecurity.NotSecure
+        && SiteSecurityRules.Of("file:///C:/x.pdf", false) == SiteSecurity.File && SiteSecurityRules.Of("https://example.com/", true) == SiteSecurity.Internal
+        && SiteSecurityRules.Of("", false) == SiteSecurity.Other && SiteSecurityRules.Of("about:blank", false) == SiteSecurity.Other && SiteSecurityRules.Of("not a url", false) == SiteSecurity.Other
+        && SiteSecurityRules.Of("HTTP://EXAMPLE.COM", false) == SiteSecurity.NotSecure,
+        "site icon: https is secure, plain http is not, files and Recognition pages are their own kind, anything else is neutral (F15)");
+    Check(SiteSecurityRules.Look(SiteSecurity.NotSecure).Tone == "warn" && SiteSecurityRules.Look(SiteSecurity.Secure).Tone == "ok"
+        && new[] { SiteSecurity.Internal, SiteSecurity.File, SiteSecurity.Other }.All(x => SiteSecurityRules.Look(x).Tone == "muted" && SiteSecurityRules.Look(x).Glyph != SiteSecurityRules.Look(SiteSecurity.Secure).Glyph),
+        "site icon: only https shows the lock; http shows a warning; nothing else borrows the lock");
+
+    var u31_thr = new SoteriaProbeThrottle(); var u31_t0 = new DateTime(2026, 10, 31, 12, 0, 0, DateTimeKind.Utc);
+    bool u31_a1 = u31_thr.ShouldAsk("https://a.example", u31_t0, out var u31_k1);
+    u31_thr.Answered("https://a.example", u31_t0, true);
+    bool u31_a2 = u31_thr.ShouldAsk("https://a.example", u31_t0.AddSeconds(59), out var u31_k2);
+    bool u31_a3 = u31_thr.ShouldAsk("https://a.example", u31_t0.AddSeconds(61), out _);
+    bool u31_b1 = u31_thr.ShouldAsk("https://b.example", u31_t0.AddSeconds(1), out var u31_kb);
+    Check(u31_a1 && u31_k1 == null && !u31_a2 && u31_k2 == true && u31_a3 && u31_b1 && u31_kb == null, "SoteriaVault check: an answer for a site is reused for a minute, then asked again; other sites are asked (F16)");
+    u31_thr.NoAnswer(u31_t0.AddSeconds(100));
+    bool u31_c1 = u31_thr.ShouldAsk("https://c.example", u31_t0.AddSeconds(110), out _), u31_c2 = u31_thr.ShouldAsk("https://c.example", u31_t0.AddSeconds(131), out _);
+    bool u31_a4 = u31_thr.ShouldAsk("https://a.example", u31_t0.AddSeconds(105), out var u31_k4);
+    Check(!u31_c1 && u31_c2 && !u31_a4 && u31_k4 == null, "SoteriaVault check: after no answer (not running, locked, not allowed) the automatic check waits 30 seconds");
+    u31_thr.Answered("https://d.example", u31_t0, false); u31_thr.Forget();
+    Check(u31_thr.ShouldAsk("https://d.example", u31_t0.AddSeconds(1), out _) && u31_thr.ShouldAsk("https://c.example", u31_t0.AddSeconds(101), out _), "SoteriaVault check: saving, moving or switching forgets everything known");
+    bool u31_clock = u31_thr.ShouldAsk("https://e.example", u31_t0, out _); u31_thr.Answered("https://e.example", u31_t0.AddMinutes(5), true);
+    Check(u31_clock && u31_thr.ShouldAsk("https://e.example", u31_t0, out _), "SoteriaVault check: a u31_clock that went backwards never keeps an old answer");
+    var u31_big = new SoteriaProbeThrottle(); for (int i = 0; i < 1000; i++) u31_big.Answered("https://s" + i + ".example", u31_t0, true);
+    Check(!u31_big.ShouldAsk("https://s999.example", u31_t0, out _), "SoteriaVault check: memory stays bounded and the newest answer is kept");
+    var u31_srcPw = File.Exists(Path.Combine(thRootOrNull() ?? "", "browser", "MainWindow.SoteriaPasswords.cs")) ? File.ReadAllText(Path.Combine(thRootOrNull()!, "browser", "MainWindow.SoteriaPasswords.cs")) : "";
+    if (u31_srcPw.Length > 0)
+        Check(u31_srcPw.Contains("_svProbe.ShouldAsk(origin") && !u31_srcPw.Contains("GetValue<int>()") && u31_srcPw.Contains("JsonNum.Int(res, \"added\")"), "SoteriaVault glue: the key-button check is throttled; bridge numbers are read safely");
+
+    var u31_jo = System.Text.Json.Nodes.JsonNode.Parse("{\"a\":3,\"b\":\"7\",\"c\":2.9,\"d\":null,\"e\":99999999999,\"f\":[1],\"g\":-4}")!.AsObject();
+    Check(JsonNum.Int(u31_jo, "a") == 3 && JsonNum.Int(u31_jo, "b") == 0 && JsonNum.Int(u31_jo, "c") == 2 && JsonNum.Int(u31_jo, "d") == 0 && JsonNum.Int(u31_jo, "e") == int.MaxValue
+        && JsonNum.Int(u31_jo, "f") == 0 && JsonNum.Int(u31_jo, "g") == -4 && JsonNum.Int(u31_jo, "missing") == 0,
+        "bridge numbers: missing, text, null, arrays and huge values never throw (F17)");
+
+    Exception u31_thrown; try { throw new InvalidOperationException("outer", new IOException("inner\r\nline")); } catch (Exception ex) { u31_thrown = ex; }
+    var u31_entry = CrashLog.Entry(u31_thrown, "window", u31_t0);
+    Check(u31_entry.StartsWith("=== 2026-10-31T12:00:00Z  window\n") && u31_entry.Contains("System.InvalidOperationException: outer") && u31_entry.Contains("--- inner: System.IO.IOException: inner") && !u31_entry.Contains("\r\n"),
+        "crash log: when, where, the whole error chain, LF only (F14)");
+    Check(CrashLog.FileName(u31_t0) == "crash_20261031.log" && CrashLog.StatusLine(new Exception(new string('x', 500))).Length < 260 && !CrashLog.StatusLine(new Exception("a\nb")).Contains('\n'),
+        "crash log: one file a day; the status line is short and on one line");
+    Check(CrashLog.IsFatal(new OutOfMemoryException()) && CrashLog.IsFatal(new AggregateException(new AccessViolationException())) && !CrashLog.IsFatal(new InvalidOperationException()) && !CrashLog.IsFatal(new IOException()),
+        "crash guard: ordinary errors are survived, ones the process cannot survive are not swallowed");
+    var u31_appSrc = File.Exists(Path.Combine(thRootOrNull() ?? "", "browser", "App.xaml.cs")) ? File.ReadAllText(Path.Combine(thRootOrNull()!, "browser", "App.xaml.cs")) : "";
+    if (u31_appSrc.Length > 0)
+        Check(u31_appSrc.Contains("DispatcherUnhandledException += OnUnhandledUiError") && u31_appSrc.Contains("UnobservedTaskException") && u31_appSrc.Contains("if (CrashLog.IsFatal(e.Exception)) return;") && u31_appSrc.Contains("e.Handled = true"),
+            "crash guard glue: installed at start-up, logs, keeps the browser running except for fatal errors");
+    var u31_xamlSrc = File.Exists(Path.Combine(thRootOrNull() ?? "", "browser", "MainWindow.xaml")) ? File.ReadAllText(Path.Combine(thRootOrNull()!, "browser", "MainWindow.xaml")) : "";
+    if (u31_xamlSrc.Length > 0)
+        Check(u31_xamlSrc.Contains("x:Name=\"SiteIcon\"") && !u31_xamlSrc.Contains("Value=\"#E4E7EC\"") && !u31_xamlSrc.Contains("Background=\"#1E1F22\""), "window: the site icon is live; suggestions and the page area follow the theme (no fixed dark colours)");
+}
+static string? thRootOrNull() { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser", "MainWindow.xaml"))) return d.FullName; return null; }
+
 Console.WriteLine();
 Console.WriteLine($"checks passed: {pass}  failed: {fail}");
 if (fail > 0) { Console.Error.WriteLine("BROWSER_GOVERNED_ACTIONS_TESTS_FAIL: " + fail); return 1; }

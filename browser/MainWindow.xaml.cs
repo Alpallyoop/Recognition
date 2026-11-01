@@ -218,7 +218,7 @@ document.addEventListener('keydown',function(e){
             catch { }
         }
 
-        private static string FindRepoRoot(string start)
+        internal static string FindRepoRoot(string start)
         {
             var d = new DirectoryInfo(start);
             while (d != null)
@@ -615,7 +615,23 @@ document.addEventListener('keydown',function(e){
             _suppressSuggest = true;
             AddressBar.Text = tab.IsInternal ? (tab.Internal == "start" ? "" : "recognition:" + tab.Internal) : tab.CurrentUrl;
             _suppressSuggest = false;
+            UpdateSiteIcon(tab);
         }
+
+        // audit F15: the site icon follows the page (it was a green lock on every page, plain http included)
+        private void UpdateSiteIcon(BrowserTab tab)
+        {
+            var (glyph, tone, words) = SiteSecurityRules.Look(SiteSecurityRules.Of(tab.IsInternal ? null : PageAddressOf(tab), tab.IsInternal));
+            SiteIcon.Text = glyph; SiteIcon.ToolTip = words;
+            SiteIcon.Foreground = tone switch
+            {
+                "ok" => new SolidColorBrush(Color.FromRgb(0x6F, 0xCF, 0x97)),
+                "warn" => new SolidColorBrush(Color.FromRgb(0xF2, 0xB3, 0x4C)),
+                _ => (Brush)FindResource("ChromeMuted"),
+            };
+        }
+
+        internal void ReportRecoveredError(Exception ex) { try { Status(CrashLog.StatusLine(ex)); } catch { } }
 
         // ---- favicons -----------------------------------------------------------
 

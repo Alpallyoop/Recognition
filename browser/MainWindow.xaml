@@ -57,7 +57,7 @@
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#6FCF97" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13"/>
+            <TextBlock x:Name="SiteIcon" Grid.Column="0" Text="&#xE774;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource ChromeMuted}" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13" Background="Transparent"/>
             <TextBox x:Name="AddressBar" Grid.Column="1" Background="Transparent" Foreground="{DynamicResource ChromeText}"
                      BorderThickness="0" VerticalContentAlignment="Center" Padding="8,7" CaretBrush="{DynamicResource ChromeText}"
                      FontSize="13" PreviewKeyDown="Address_PreviewKeyDown" KeyDown="Address_KeyDown" TextChanged="Address_TextChanged"
@@ -217,7 +217,7 @@
         </StackPanel>
       </Border>
 
-      <Grid x:Name="WebHost" Background="#1E1F22">
+      <Grid x:Name="WebHost" Background="{DynamicResource ChromeWin}">
         <Grid x:Name="LoadingCover" Grid.ColumnSpan="3" Panel.ZIndex="20" Background="{DynamicResource ChromeWin}">
           <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock x:Name="LoadingText" Text="Unpacking files..." FontSize="15" Foreground="{DynamicResource ChromeText}" HorizontalAlignment="Center" Margin="0,0,0,6"/>
@@ -250,7 +250,7 @@
           <ListBox.ItemContainerStyle>
             <Style TargetType="ListBoxItem">
               <Setter Property="Padding" Value="8,6"/>
-              <Setter Property="Foreground" Value="#E4E7EC"/>
+              <Setter Property="Foreground" Value="{DynamicResource ChromeText}"/>
               <Setter Property="Template">
                 <Setter.Value>
                   <ControlTemplate TargetType="ListBoxItem">
@@ -258,8 +258,8 @@
                       <ContentPresenter/>
                     </Border>
                     <ControlTemplate.Triggers>
-                      <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#26456E"/></Trigger>
-                      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#20242C"/></Trigger>
+                      <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeMenuSel}"/></Trigger>
+                      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource ChromeHover}"/></Trigger>
                     </ControlTemplate.Triggers>
                   </ControlTemplate>
                 </Setter.Value>
