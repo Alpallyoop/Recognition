@@ -43,3 +43,13 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
 - SoteriaVault now has its own **browser extension** for other browsers. It reaches the app through `svhost.exe`
   (native messaging), which is a second client of the same bridge and is paired and approved exactly like
   Recognition. Nothing changes for Recognition: same pipe, same protocol, same per-fill approval.
+
+## SoteriaVault side, 2026-11-10, later (installer and security audit; Recognition change: 0943899)
+
+- SoteriaVault now installs per user into `%LOCALAPPDATA%\Programs\SoteriaVault` (`SoteriaVault-Setup.exe`), where
+  the vault lives after the move. Recognition's "open SoteriaVault" now starts the installed app first (from the
+  setup's Apps & Features entry) and falls back to the linked folder's build (commit 0943899).
+- The extension helper was renamed `svhost.exe` -> `SoteriaVaultHelper.exe` (Defender flagged the svchost look-alike),
+  and it now refuses to run unless a browser started it for the pinned extension. Recognition talks to the bridge
+  directly, so neither change touches it: same pipe, same protocol, same per-fill approval.
+- Audit report: SoteriaVault `docs\audits\SOTERIAVAULT_AUDIT_2026-11-10.md`.
