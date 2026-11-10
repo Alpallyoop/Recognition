@@ -40,3 +40,6 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
   and never from the network; the bridge protocol is unchanged.
 - **Safe copies** (`.svsafe`) and **Sync everything** are SoteriaVault-only; logins saved from Recognition are included
   in a safe copy like any other item. `SoteriaBridgeProtocol.cs` stays byte-identical.
+- SoteriaVault now has its own **browser extension** for other browsers. It reaches the app through `svhost.exe`
+  (native messaging), which is a second client of the same bridge and is paired and approved exactly like
+  Recognition. Nothing changes for Recognition: same pipe, same protocol, same per-fill approval.
