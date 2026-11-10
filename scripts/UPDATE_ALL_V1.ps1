@@ -3,7 +3,7 @@
 #   pwsh -File scripts\UPDATE_ALL_V1.ps1            (from the source checkout; or double-click UPDATE_ALL.cmd)
 #
 # What it does, in order, and stops at the first failure (nothing is installed unless everything before it passed):
-#   1  checks pwsh 7, git and the .NET SDK
+#   1  checks pwsh 7, git and the .NET SDK (no passphrase prompt: the selftests get a one-time random one)
 #   2  pulls the source repositories that have a remote (Recognition, SoteriaVault, Constellation) - fast-forward only,
 #      never on a repository with uncommitted changes, never a forced update
 #   3  asks Constellation to validate the ecosystem map (read only)
@@ -55,6 +55,7 @@ $env:TEMP = $LocalTmp; $env:TMP = $LocalTmp
 
 $script:rows = @()
 $script:failed = $false
+$script:madePassphrase = $false   # set when this run made its own one-time passphrase for the selftests (see preflight)
 function Say([string]$m,[string]$c="Gray"){ Write-Host $m -ForegroundColor $c; Add-Content -LiteralPath $Log -Value $m }
 function Row([string]$step,[string]$status,[string]$note){
   $script:rows += [pscustomobject]@{ Step=$step; Status=$status; Note=$note }
@@ -85,12 +86,14 @@ if(-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))){ Row "preflight" 
 elseif(-not (Have "git")){ Row "preflight" "FAIL" "git was not found" }
 elseif(-not (Have "dotnet")){ Row "preflight" "FAIL" ".NET SDK was not found (winget install Microsoft.DotNet.SDK.8)" }
 else {
+  # The release gate's selftests only need SOME passphrase: each one sets its own random one on throwaway data, and nothing in the
+  # update (tests, gate, packager, installer, identity check) opens your real profile with it. So no prompt: a one-time random
+  # value for this run, removed again at the end so the reopened browser never inherits it (CI does the same with a fixed value).
   if([string]::IsNullOrEmpty($env:RECOGNITION_PASSPHRASE)){
-    $sec = Read-Host "Recognition passphrase (used for this run only, never saved)" -AsSecureString
-    $env:RECOGNITION_PASSPHRASE = [System.Net.NetworkCredential]::new("", $sec).Password
+    $env:RECOGNITION_PASSPHRASE = "update-all-run-" + [Guid]::NewGuid().ToString("N")
+    $script:madePassphrase = $true
   }
-  if([string]::IsNullOrEmpty($env:RECOGNITION_PASSPHRASE)){ Row "preflight" "FAIL" "no passphrase given" }
-  else { Row "preflight" "PASS" ("pwsh " + $PSVersionTable.PSVersion + ", git, dotnet " + (& dotnet --version)) }
+  Row "preflight" "PASS" ("pwsh " + $PSVersionTable.PSVersion + ", git, dotnet " + (& dotnet --version))
 }
 
 # ---- 2 pull ------------------------------------------------------------------------------------------------------------------
@@ -184,6 +187,7 @@ else {
         New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "runtime") | Out-Null
         [System.IO.File]::WriteAllText((Join-Path $InstallDir "runtime\source_root.txt"), $RepoRoot, (New-Object System.Text.UTF8Encoding($false)))
       } catch { }
+      if($script:madePassphrase){ Remove-Item Env:\RECOGNITION_PASSPHRASE -ErrorAction SilentlyContinue }
       if($Relaunch){
         $exe = Join-Path $InstallDir "browser\RecognitionBrowser.exe"
         if(Test-Path -LiteralPath $exe){ Start-Process -FilePath $exe; Row "reopen" "PASS" "Recognition started" } else { Row "reopen" "WARN" "installed exe not found" }
@@ -201,6 +205,7 @@ Say "" "Gray"
 Say "Summary" "White"
 $script:rows | Format-Table -AutoSize | Out-String | ForEach-Object { Say $_ "Gray" }
 Say ("Log: " + $Log) "DarkGray"
+if($script:madePassphrase){ Remove-Item Env:\RECOGNITION_PASSPHRASE -ErrorAction SilentlyContinue }
 if($script:failed){ Say "UPDATE_ALL_V1_FAIL" "Red"; exit 1 }
 Say "UPDATE_ALL_V1_OK" "Green"
 exit 0

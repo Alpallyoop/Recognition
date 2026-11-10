@@ -356,9 +356,10 @@ try
             for (int i = 0; i < Q(2000, 300); i++) if (evil.Match(longUrl.Substring(0, longUrl.Length - rng.Next(0, 2000)) + (rng.Next(2) == 0 ? "b" : "c"), "https://page.example/", ResType.Script).Blocked) evilHits++;
             sw3.Stop(); timings.Add(("filter: pathological rules x repeated", sw3.Elapsed.TotalMilliseconds));
             Check(evilHits > 0 && sw3.Elapsed.TotalMilliseconds < 10_000, $"filter: {Q(2000, 300)} near-limit URLs against the pathological rules: {evilHits} blocked, {sw3.Elapsed.TotalMilliseconds:F0} ms in total");
-            var overLimit = "https://" + blockedHosts[0] + "/" + new string('p', FilterEngine.MaxUrlLength);
-            if (round == 1 && !fe.Match(overLimit, "https://page.example/", ResType.Script).Blocked)
-                Console.WriteLine($"  NOTE - known gap (not counted as a failure): a request URL longer than {FilterEngine.MaxUrlLength} characters is never matched, so a blocked domain is let through when its URL is padded past that length (FilterEngine.Match returns 'not blocked'). See docs/AUDIT_2026-10-21.md F9.");
+            // F9 (fixed 2026-11-04): a blocked host padded past the length cap must still be blocked by its host rule.
+            var overLimit = "https://" + blockedHosts[0] + "/" + new string('p', FilterEngine.MaxUrlLength + 5000) + "?x=" + new string('q', 5000);
+            Check(fe.Match(overLimit, "https://page.example/", ResType.Script).Blocked,
+                $"filter: a blocked host with a {overLimit.Length:N0}-character padded URL is still blocked (no fail-open past the length cap)");
             int junkCrash = 0; var junkFe = new FilterEngine();
             for (int i = 0; i < Q(20_000, 3000); i++) { var b = new char[rng.Next(0, 200)]; for (int j = 0; j < b.Length; j++) b[j] = (char)rng.Next(1, 0x3000); try { junkFe.AddLine(new string(b), "junk"); } catch { junkCrash++; } }
             int matchCrash = 0;

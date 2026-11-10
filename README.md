@@ -132,3 +132,8 @@ pwsh -NoProfile -File scripts/recognition_rotate_attest_key_v1.ps1 -RepoRoot .  
 pwsh -NoProfile -File scripts/recognition_publish_scan_v1.ps1 -RepoRoot .              # must print _OK
 pwsh -NoProfile -File scripts/recognition_clean_publish_history_v1.ps1 -RepoRoot .     # then -Execute, then git push --force
 ```
+
+## Licence
+
+Source available, not open source: all rights reserved (see `LICENSE`). The code is public so it can be read and
+reviewed; using, copying or redistributing it needs the author's written permission.

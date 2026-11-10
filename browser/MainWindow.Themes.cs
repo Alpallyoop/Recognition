@@ -65,11 +65,6 @@ namespace Recognition.Browser
             catch { return false; }
         }
 
-        private void RemoveInstalledTheme(string id)
-        {
-            try { if (ThemeLibrary.ValidId(id)) { var f = Path.Combine(ThemesDir, id + ".json"); if (File.Exists(f)) File.Delete(f); } } catch { }
-        }
-
         // ---- fetching the library (only on your click) -------------------------------------------------------------------------
         private async Task<string> FetchLibraryTextAsync()
         {
@@ -136,7 +131,7 @@ namespace Recognition.Browser
                 }
                 else if (msg.StartsWith("cz-mine-rm:", StringComparison.Ordinal))
                 {
-                    RemoveInstalledTheme(msg.Substring("cz-mine-rm:".Length)); note("theme removed (the current look stays until you pick another)");
+                    note(RemovePackToKept(msg.Substring("cz-mine-rm:".Length)));   // moved to Removed, not deleted (proposal 0008)
                 }
                 else if (msg == "cz-pack-import")
                 {
@@ -212,6 +207,7 @@ namespace Recognition.Browser
                 foreach (var p in mine) sb.Append(PackCard(p, "cz-mine-apply:" + p.Id, "Use", "cz-mine-rm:" + p.Id));
                 sb.Append("</div>");
             }
+            sb.Append(KeptThemesHtml());
             return sb.ToString();
         }
 

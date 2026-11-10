@@ -444,6 +444,10 @@ Console.WriteLine("=== Filter engine (executed C#) ===");
     // base-list style host entries, including a path entry that the old host-only list could never match
     var feK = new FilterEngine(); foreach (var h in new[] { "doubleclick.net", "facebook.com/tr", "t.co", "bad host!" }) feK.AddHostBlock(h, "base");
     Check(Blk(feK, "https://ad.doubleclick.net/x") && Blk(feK, "https://www.facebook.com/tr?id=1") && !Blk(feK, "https://www.facebook.com/home") && Blk(feK, "https://t.co/abc") && feK.Rejected == 1, "AddHostBlock: host entries and host/path entries both work (the path entry matches only that path); junk is rejected");
+    // F9 (fixed 2026-11-04): a URL padded past the length cap does not fail open — the full host is still matched against host rules.
+    var padded = "https://ad.doubleclick.net/t/" + new string('p', FilterEngine.MaxUrlLength + 4000) + "?q=" + new string('z', 3000);
+    Check(padded.Length > FilterEngine.MaxUrlLength && Blk(feK, padded) && !Blk(feK, "https://safe.example/" + new string('p', FilterEngine.MaxUrlLength + 4000)),
+        "filter: an over-length URL on a blocked host is still blocked (no fail-open); an over-length URL on an unlisted host is still allowed");
 
     // cosmetic
     var feL = Fe("##.ad-banner", "example.com##.promo", "~example.com##.sponsored", "example.com#@#.ad-banner", "##div[class^=\"ad-\"]", "a{}body{display:none}##x", "##x;y", "##a/*", "##url(x)", "example.com##.x:has-text(Buy)", "##a:-abp-has(b)", "##@import x", "##.ok > .child");
@@ -2358,6 +2362,279 @@ Console.WriteLine("== animated header pictures ==");
     var u31_xamlSrc = File.Exists(Path.Combine(thRootOrNull() ?? "", "browser", "MainWindow.xaml")) ? File.ReadAllText(Path.Combine(thRootOrNull()!, "browser", "MainWindow.xaml")) : "";
     if (u31_xamlSrc.Length > 0)
         Check(u31_xamlSrc.Contains("x:Name=\"SiteIcon\"") && !u31_xamlSrc.Contains("Value=\"#E4E7EC\"") && !u31_xamlSrc.Contains("Background=\"#1E1F22\""), "window: the site icon is live; suggestions and the page area follow the theme (no fixed dark colours)");
+}
+
+// ---- kept library (proposal 0008): removing keeps things; Add back and Delete forever ----
+{
+    var k8Root = Path.Combine(Path.GetTempPath(), "rec-kept-" + Guid.NewGuid().ToString("N"));
+    var k8Up = Path.Combine(k8Root, "runtime", "extensions_dev");
+    string H(char c) => new string(c, 64);
+    var k8t0 = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    Check(Kept.ValidId("extension", H('a')) && Kept.ValidId("theme", H('b')) && Kept.ValidId("devbuild", "0123456789abcdef") && Kept.ValidId("pack", "dusk-harbor")
+        && !Kept.ValidId("extension", "..\\..\\x") && !Kept.ValidId("extension", H('A')) && !Kept.ValidId("devbuild", H('a')) && !Kept.ValidId("pack", "../x") && !Kept.ValidId("nope", H('a')) && !Kept.ValidId("theme", null),
+        "kept: ids are checked per kind (hashes, project ids, theme ids); anything else is refused");
+    var k8f = Kept.Folder(k8Root, "extension", H('a'));
+    Check(k8f != null && k8f.StartsWith(Path.Combine(k8Root, "runtime", "kept") + Path.DirectorySeparatorChar) && Kept.Folder(k8Root, "extension", "../../evil") == null && Kept.Folder(k8Root, "other", H('a')) == null,
+        "kept: files only ever live under runtime\\kept\\<kind>\\<id>");
+
+    var k8 = new KeptFile();
+    var e1 = Kept.Upsert(k8, "theme", H('1'), "Purple starfield", "", "Firefox Add-ons: purple-starfield", 123456, k8t0);
+    Kept.Upsert(k8, "extension", H('2'), "Dark Reader", "4.9", "chromewebstore.google.com", 900000, k8t0.AddMinutes(1));
+    Check(Kept.InUse(k8, "theme").Count == 1 && Kept.Removed(k8).Count == 0 && e1.AddedUtc == "2026-11-01T12:00:00Z", "kept: a theme you bring in is on your list, not removed");
+    Kept.MarkRemoved(k8, "extension", H('2'), k8t0.AddMinutes(5)); Kept.MarkRemoved(k8, "theme", H('1'), k8t0.AddMinutes(9));
+    var rm = Kept.Removed(k8);
+    Check(rm.Count == 2 && rm[0].Id == H('1') && rm[1].Id == H('2') && Kept.InUse(k8, "theme").Count == 0 && Kept.Removed(k8, "extension").Count == 1 && Kept.Removed(k8, "theme", "pack").Count == 1,
+        "kept: Remove moves an entry to Removed (newest first, filtered by page)");
+    Check(Kept.MarkBack(k8, "theme", H('1')) && Kept.InUse(k8, "theme").Count == 1 && !Kept.MarkBack(k8, "theme", H('1')) && !Kept.MarkBack(k8, "theme", H('9')),
+        "kept: Add back puts it on your list again (only once; unknown ids do nothing)");
+    var again = Kept.Upsert(k8, "extension", H('2'), "Dark Reader", "4.9.1", "file", 1, k8t0.AddHours(1));
+    Check(!again.IsRemoved && again.AddedUtc == "2026-11-01T12:01:00Z" && again.Version == "4.9.1" && k8.Items.Count == 2, "kept: bringing the same thing in again refreshes it and takes it out of Removed (no duplicate)");
+    Check(Kept.Forget(k8, "extension", H('2')) && !Kept.Forget(k8, "extension", H('2')) && k8.Items.Count == 1, "kept: Delete forever forgets the entry");
+    bool k8threw = false; try { Kept.Upsert(k8, "extension", "x", "n", "", "", 0, k8t0); } catch (ArgumentException) { k8threw = true; }
+    Check(k8threw, "kept: an invalid id is never stored");
+
+    var many = new KeptFile();
+    for (int i = 0; i < 3000; i++) { var id = i.ToString("x64"); Kept.Upsert(many, "theme", id, "t" + i, "", "", 0, k8t0); if (i % 2 == 0) Kept.MarkRemoved(many, "theme", id, k8t0.AddSeconds(i)); }
+    var manyBack = Kept.Parse(Kept.Serialize(many), k8Up);
+    Check(many.Items.Count == 3000 && manyBack.Items.Count == 3000 && Kept.Removed(manyBack).Count == 1500 && Kept.InUse(manyBack, "theme").Count == 1500 && Kept.MaxEntries >= 1_000_000,
+        "kept: nothing is ever dropped to make room (3,000 entries, removed or in use, all survive saving and reading); only Delete forever takes one away");
+    var ser = Kept.Serialize(k8); var back = Kept.Parse(ser, k8Up);
+    Check(Kept.Serialize(back) == ser && !ser.Contains("\r") && back.Items.Count == k8.Items.Count, "kept: the list file round-trips byte for byte, LF only");
+    var shuffled = new KeptFile { Items = k8.Items.AsEnumerable().Reverse().ToList() }; Kept.Upsert(shuffled, "pack", "a-pack", "A", "", "", 1, k8t0); Kept.Upsert(k8, "pack", "a-pack", "A", "", "", 1, k8t0);
+    Check(Kept.Serialize(shuffled) == Kept.Serialize(k8), "kept: the same list gives the same bytes whatever the order");
+
+    var hostile = "{\"Schema\":\"recognition.kept.v1\",\"Items\":[" +
+        "{\"Kind\":\"extension\",\"Id\":\"../../../Windows\",\"Name\":\"x\"}," +
+        "{\"Kind\":\"theme\",\"Id\":\"" + H('c') + "\",\"Name\":\"ok\",\"Folder\":\"C:\\\\Windows\"}," +
+        "{\"Kind\":\"theme\",\"Id\":\"" + H('c') + "\",\"Name\":\"dup\"}," +
+        "{\"Kind\":\"devbuild\",\"Id\":\"0123456789abcdef\",\"Name\":\"up\",\"Folder\":\"C:\\\\Windows\\\\System32\",\"Uploaded\":true}," +
+        "{\"Kind\":\"devbuild\",\"Id\":\"fedcba9876543210\",\"Name\":\"rel\",\"Folder\":\"relative\\\\path\"}," +
+        "{\"Kind\":\"bogus\",\"Id\":\"" + H('d') + "\"}," +
+        "{\"Kind\":\"extension\",\"Id\":\"" + H('e') + "\",\"Name\":\"bad\\u0007name\"}," +
+        "{\"Kind\":\"extension\",\"Id\":\"" + H('f') + "\",\"Name\":\"neg\",\"Bytes\":-5}]}";
+    var hp = Kept.Parse(hostile, k8Up);
+    Check(hp.Items.Count == 1 && hp.Items[0].Id == H('c') && hp.Items[0].Name == "ok" && hp.Items[0].Folder == "",
+        "kept: a hand-edited list can only lose entries: traversal ids, duplicates, unknown kinds, control characters and negative sizes are dropped; only developer builds carry a folder");
+    var devOk = "{\"Schema\":\"recognition.kept.v1\",\"Items\":[{\"Kind\":\"devbuild\",\"Id\":\"0123456789abcdef\",\"Name\":\"up\",\"Folder\":\"" + Path.Combine(k8Up, H('a')).Replace("\\", "\\\\") + "\",\"Uploaded\":true}]}";
+    Check(Kept.Parse(devOk, k8Up).Items.Count == 1, "kept: an uploaded developer build is kept only inside runtime\\extensions_dev");
+    Check(Kept.Parse("not json", k8Up).Items.Count == 0 && Kept.Parse("{\"Schema\":\"other\",\"Items\":[]}", k8Up).Items.Count == 0 && Kept.Parse(null, k8Up).Items.Count == 0, "kept: a damaged or foreign file is an empty list, never an error");
+
+    // the glue keeps the governance rules: files re-hashed before anything comes back, the policy decides again, the ledger records it again
+    var kr = thRootOrNull();
+    if (kr != null)
+    {
+        var kg = File.ReadAllText(Path.Combine(kr, "browser", "MainWindow.Kept.cs"));
+        var ex = File.ReadAllText(Path.Combine(kr, "browser", "MainWindow.Extensions.cs"));
+        var cz = File.ReadAllText(Path.Combine(kr, "browser", "MainWindow.Customize.cs"));
+        var th = File.ReadAllText(Path.Combine(kr, "browser", "MainWindow.Themes.cs"));
+        var dv = File.ReadAllText(Path.Combine(kr, "browser", "MainWindow.ExtensionDev.cs"));
+        Check(kg.Contains("if (staged.Identity.Id != e.Id)") && kg.Contains("StageBytes(File.ReadAllBytes(zip!), \"added back: \"") && kg.Contains("StageFolder(dir!, \"added back: \"") && kg.Contains("if (decision == \"allow\") { ExtInstall(false); return; }")
+            && !kg.Contains("ExtGovernance.Record("), "kept glue: an extension comes back only if its files are unchanged, through review and ExtInstall (no ledger short cut)");
+        Check(ex.Contains("bool kept = KeepRemovedExtension(dir, gid,") && ex.Contains("if (!kept) {") && ex.Contains("\"deny\", new[] { \"user_removed\" }") && ex.Contains("ForgetKeptExtension(gid);"),
+            "kept glue: removing an extension still records the removal and stops it; its files move to Removed instead of being deleted");
+        Check(kg.Contains("MessageBox.Show(this, \"Delete \\\"\" + e.Name + \"\\\" forever?") && kg.Contains("// your own folder is never touched") && kg.Contains("if (e.Uploaded && IsUnderUploads(e.Folder)"),
+            "kept glue: Delete forever asks first and never deletes a developer's own folder");
+        Check(cz.Contains("var kept = KeepThemeFolder(root, pack, source);") && cz.Contains("KeepThemeFolder(f, pack,") && ex.Contains("KeepThemeFolder(tp.Root, pack, tp.Source)") && kg.Contains("ExtGovernance.ComputeIdentity(dir).Id != id"),
+            "kept glue: every imported theme is kept (link, file, folder, Extensions page) and used again only if its files are unchanged");
+        Check(th.Contains("note(RemovePackToKept(") && !th.Contains("RemoveInstalledTheme(") && th.Contains("sb.Append(KeptThemesHtml());") && dv.Contains("KeepRemovedDevBuild(p);") && !dv.Contains("if (p.Uploaded && IsUnderUploads(p.Folder)) { try { Directory.Delete(p.Folder, true)"),
+            "kept glue: library themes and developer builds move to Removed instead of being deleted");
+        Check(!kg.Contains("MaxThemeBytes") && kg.Contains("Kept.ThemeFiles(pack, StartPictureMaxBytes, MaxHeaderFileBytes)") && kg.Contains("CompressVerified(dir, zip, gid)") && kg.Contains("ExtPackage.Unpack(File.ReadAllBytes(part)")
+            && kg.Contains("if (ExtGovernance.ComputeIdentity(root).Id != gid) { File.Delete(part); return false; }") && kg.Contains("else { Directory.Move(dir, dst); stored = id.TotalBytes; }"),
+            "kept glue: no theme size cut-off; extensions are kept compressed only when the archive gives back the same identity, otherwise as a folder");
+        Check(kg.Contains("if (_keptUnreadable) {") && kg.Contains("catch { _keptUnreadable = true; }"), "kept glue: a list file that cannot be read is never overwritten (nothing in it is lost)");
+    }
+    // real files: moving an extension into runtime\kept keeps its identity; one changed byte does not
+    {
+        var k8src = Path.Combine(k8Root, "runtime", "extensions", "x"); Directory.CreateDirectory(Path.Combine(k8src, "js"));
+        File.WriteAllText(Path.Combine(k8src, "manifest.json"), "{\"manifest_version\":3,\"name\":\"Kept demo\",\"version\":\"1.0\"}");
+        File.WriteAllText(Path.Combine(k8src, "js", "a.js"), "console.log(1)");
+        var k8before = ExtGovernance.ComputeIdentity(k8src).Id;
+        var k8dst = Kept.Folder(k8Root, "extension", k8before)!; Directory.CreateDirectory(Path.GetDirectoryName(k8dst)!); Directory.Move(k8src, k8dst);
+        var k8after = ExtGovernance.ComputeIdentity(k8dst).Id;
+        File.AppendAllText(Path.Combine(k8dst, "js", "a.js"), " ");
+        var k8tampered = ExtGovernance.ComputeIdentity(k8dst).Id;
+        Check(k8before == k8after && k8tampered != k8before, "kept: an extension moved into Removed keeps its identity; a single changed byte means it cannot be added back");
+    }
+    // which files of a theme are kept: only the ones it uses, as safe relative paths
+    {
+        var tp = new ThemePack("t", "T", "#000000", "#111111", "#ffffff", "default", true, NtpImage: "images\\bg.png", Header: new ThemeHeader("#000000", 100, new[] { new HeaderLayer("img/head.svg", "right", "top", "no-repeat"), new HeaderLayer("../../evil.png", "left", "top", "no-repeat"), new HeaderLayer("img/head.svg", "left", "top", "repeat") }));
+        var tf = Kept.ThemeFiles(tp, 40_000_000, 16L * 1024 * 1024);
+        Check(tf.Select(x => x.Rel).SequenceEqual(new[] { "manifest.json", ThemeLibrary.PackageThemeFile, "images/bg.png", "img/head.svg" }) && tf.First(x => x.Rel == "images/bg.png").MaxBytes == 40_000_000 && tf.First(x => x.Rel == "img/head.svg").MaxBytes == 16L * 1024 * 1024,
+            "kept themes: just the manifest, recognition.theme.json and the pictures it uses are kept (each up to what the browser reads; no escape paths; no duplicates)");
+        var bad = new ThemePack("t", "T", "#000000", "#111111", "#ffffff", "default", true, NtpImage: "C:\\Windows\\x.png");
+        var bad2 = new ThemePack("t", "T", "#000000", "#111111", "#ffffff", "default", true, NtpImage: "a/../../x.png");
+        Check(Kept.ThemeFiles(bad, 1, 1).Count == 2 && Kept.ThemeFiles(bad2, 1, 1).Count == 2, "kept themes: a picture path outside the theme is never kept");
+    }
+    // real files: a removed extension kept compressed unpacks (with the hostile-package checks) to the same identity
+    {
+        var xs = Path.Combine(k8Root, "zipsrc"); Directory.CreateDirectory(Path.Combine(xs, "js")); Directory.CreateDirectory(Path.Combine(xs, "_locales", "en"));
+        File.WriteAllText(Path.Combine(xs, "manifest.json"), "{\"manifest_version\":3,\"name\":\"Zip demo\",\"version\":\"2.0\",\"default_locale\":\"en\"}");
+        File.WriteAllText(Path.Combine(xs, "js", "big.js"), string.Concat(Enumerable.Repeat("function f(){return 42}\n", 2000)));
+        File.WriteAllText(Path.Combine(xs, "_locales", "en", "messages.json"), "{}");
+        File.WriteAllBytes(Path.Combine(xs, "icon.png"), Enumerable.Range(0, 5000).Select(i => (byte)(i * 7919 % 251)).ToArray());
+        var xid = ExtGovernance.ComputeIdentity(xs);
+        var xz = Path.Combine(k8Root, "x.zip");
+        System.IO.Compression.ZipFile.CreateFromDirectory(xs, xz, System.IO.Compression.CompressionLevel.SmallestSize, false);
+        var xr = ExtPackage.Unpack(File.ReadAllBytes(xz), Path.Combine(k8Root, "unz"));
+        Check(ExtGovernance.ComputeIdentity(xr).Id == xid.Id && new FileInfo(xz).Length < xid.TotalBytes / 2,
+            "kept extensions: the compressed copy unpacks to exactly the same identity and takes well under half the space here");
+    }
+    try { Directory.Delete(k8Root, true); } catch { }
+}
+
+// ---- cookie import (CookieImport.cs, SqliteReader.cs): read other browsers' cookie stores and bring them in safely ----
+{
+    string? cxDir = null;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+        if (File.Exists(Path.Combine(d.FullName, "browser.tests", "fixtures", "chromium_cookies.sqlite"))) { cxDir = Path.Combine(d.FullName, "browser.tests", "fixtures"); break; }
+    Check(cxDir != null, "cookie fixtures found (real SQLite written by Python sqlite3)");
+    if (cxDir != null)
+    {
+        var chromeBytes = File.ReadAllBytes(Path.Combine(cxDir, "chromium_cookies.sqlite"));
+        var ffBytes = File.ReadAllBytes(Path.Combine(cxDir, "firefox_cookies.sqlite"));
+
+        // the SQLite reader
+        var ct = SqliteReader.Read(chromeBytes, "cookies");
+        Check(ct.Columns.SequenceEqual(new[] { "creation_utc", "host_key", "name", "value", "path", "expires_utc", "is_secure", "is_httponly", "samesite", "encrypted_value", "last_access_utc" }),
+            "sqlite: column names are read from the CREATE TABLE statement");
+        Check(ct.Rows.Count == 6, "sqlite: every row of the cookies table is read");
+        var big = ct.Rows.First(r => (string)r[ct.ColumnIndex("name")]! == "token");
+        Check(((string)big[ct.ColumnIndex("value")]!).Length == 5000 && ((string)big[ct.ColumnIndex("value")]!).All(ch => ch == 'x'),
+            "sqlite: a value too large for one page is reassembled from overflow pages, byte for byte");
+        var ft = SqliteReader.Read(ffBytes, "moz_cookies");
+        Check(ft.Rows.Count == 2 && ft.Rows[0][ft.ColumnIndex("id")] is long && ft.ColumnIndex("host") >= 0,
+            "sqlite: an INTEGER PRIMARY KEY column reads back as its rowid");
+        bool sqThrew = false; try { SqliteReader.Read(new byte[] { 1, 2, 3, 4 }, "cookies"); } catch (SqliteException) { sqThrew = true; }
+        Check(sqThrew, "sqlite: a file that is not a database is a clean error, never a wrong row");
+        bool noTab = false; try { SqliteReader.Read(chromeBytes, "nope"); } catch (SqliteException) { noTab = true; }
+        // audit 2026-11-04: crafted or corrupt databases (found by fuzzing) must all surface as SqliteException, never a raw
+        // IndexOutOfRange/Argument/Overflow from reading past a cell. The reader never writes and never runs anything.
+        int sqHard = 0, sqOther = 0; var sqRng = new Random(99);
+        var sqSeeds = new[] { chromeBytes, ffBytes };
+        for (int t = 0; t < 400; t++)
+        {
+            byte[] b;
+            int mode = sqRng.Next(4);
+            if (mode == 0) { b = new byte[sqRng.Next(0, 160)]; sqRng.NextBytes(b); }
+            else if (mode == 1) { b = (byte[])sqSeeds[sqRng.Next(2)].Clone(); for (int k = 0; k < sqRng.Next(1, 30); k++) b[sqRng.Next(b.Length)] = (byte)sqRng.Next(256); }
+            else if (mode == 2) { int n = sqRng.Next(100, chromeBytes.Length); b = new byte[n]; Array.Copy(chromeBytes, b, n); }   // truncated
+            else { b = (byte[])chromeBytes.Clone(); b[16] = (byte)sqRng.Next(256); b[17] = (byte)sqRng.Next(256); b[20] = (byte)sqRng.Next(256); }   // corrupt header
+            try { SqliteReader.Read(b, sqRng.Next(2) == 0 ? "cookies" : "moz_cookies"); }
+            catch (SqliteException) { sqHard++; }
+            catch { sqOther++; }
+        }
+        Check(sqOther == 0 && sqHard > 0, "sqlite: 400 crafted/corrupt databases all fail as SqliteException, never a raw parser crash (hardened 2026-11-04)");
+        Check(noTab, "sqlite: asking for a table that is not there is an error");
+
+        // mapping Chromium rows -> cookies (no key here, so the one encrypted value is marked unreadable, not guessed)
+        var cc = CookieImport.FromChromium(ct, null, null);
+        Check(cc.Count == 6, "chromium: every row becomes a cookie record");
+        var sid = cc.First(c => c.Name == "sid");
+        Check(sid.Host == ".example.com" && sid.Value == "abc123" && sid.Secure && sid.HttpOnly && sid.SameSite == "strict" && sid.ExpiresUtc is { Year: 2030 },
+            "chromium: host, value, flags, strict same-site and the 1601-based expiry are read");
+        Check(cc.First(c => c.Name == "sess").ExpiresUtc == null, "chromium: expires_utc 0 is a session cookie");
+        var enc = cc.First(c => c.Name == "secret");
+        Check(enc.DecryptFailed && !CookieImport.Importable(enc), "chromium: a v10 value with no key is marked unreadable and never imported as blank");
+        Check(!CookieImport.Importable(cc.First(c => c.Host == "bad host")), "chromium: a cookie with an invalid host is not importable");
+
+        var fc = CookieImport.FromFirefox(ft);
+        Check(fc.Count == 2 && fc[0].Host == ".moz.example" && fc[0].Value == "v1" && fc[0].SameSite == "strict" && fc[0].ExpiresUtc is { Year: 2030 } && fc[1].ExpiresUtc == null,
+            "firefox: host, value, same-site and the unix expiry are read; 0 is a session cookie");
+
+        var sum = CookieImport.Summarize(cc, new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc));
+        Check(sum.Total == 6 && sum.Failed == 1 && sum.Live == 4 && sum.Sites == 3,
+            "summary: counts the live importable cookies, their sites, and how many could not be read");
+    }
+
+    // AES-GCM / DPAPI decryption, with round trips (no fixture needed: the format is "v10" + 12-byte nonce + ciphertext + 16-byte tag)
+    {
+        var key = new byte[32]; for (int i = 0; i < 32; i++) key[i] = (byte)(i * 7 + 1);
+        var nonce = new byte[12]; for (int i = 0; i < 12; i++) nonce[i] = (byte)(i + 3);
+        var plain = System.Text.Encoding.UTF8.GetBytes("session=9f8e7d; really-secret");
+        var ct = new byte[plain.Length]; var tag = new byte[16];
+        using (var gcm = new System.Security.Cryptography.AesGcm(key, 16)) gcm.Encrypt(nonce, plain, ct, tag);
+        var blob = new byte[3 + 12 + ct.Length + 16];
+        System.Text.Encoding.ASCII.GetBytes("v10").CopyTo(blob, 0); nonce.CopyTo(blob, 3); ct.CopyTo(blob, 15); tag.CopyTo(blob, 15 + ct.Length);
+        Check(CookieImport.DecryptChromiumValue(blob, key, null) == "session=9f8e7d; really-secret", "decrypt: a v10 AES-256-GCM value is read with the right key");
+        var wrong = (byte[])key.Clone(); wrong[0] ^= 0xFF;
+        Check(CookieImport.DecryptChromiumValue(blob, wrong, null) == null, "decrypt: the wrong key fails closed (no plaintext), never a wrong value");
+        Check(CookieImport.DecryptChromiumValue(blob, null, null) == null, "decrypt: no key means the value is skipped");
+        var v20 = new byte[20]; System.Text.Encoding.ASCII.GetBytes("v20").CopyTo(v20, 0);
+        Check(CookieImport.DecryptChromiumValue(v20, key, _ => new byte[] { 1 }) == null, "decrypt: a newer app-bound (v20) value is skipped, not mis-read via DPAPI");
+        Check(CookieImport.DecryptChromiumValue(new byte[] { 1, 2, 3 }, null, _ => System.Text.Encoding.UTF8.GetBytes("legacy!")) == "legacy!", "decrypt: an older value with no v10 marker is handed to DPAPI");
+        // Local State key handling
+        var ls = "{\"os_crypt\":{\"encrypted_key\":\"" + Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("DPAPI")) + "\"}}";
+        var kb = CookieImport.KeyBlobFromLocalState(ls)!;
+        Check(CookieImport.KeyBlobFromLocalState("{}") == null && kb.Length == 5 && CookieImport.StripDpapiPrefix(kb).Length == 0,
+            "key: the wrapped key is taken from Local State and its DPAPI marker is stripped");
+    }
+
+    // Netscape cookies.txt fallback
+    {
+        var txt = "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tTRUE\t2000000000\tsid\tABC\n" +
+                  "#HttpOnly_login.example\tFALSE\t/app\tFALSE\t0\tsess\tXYZ\n\n# a comment\nbad line without tabs\n";
+        var n = CookieImport.FromNetscape(txt);
+        Check(n.Count == 2 && n[0].Host == ".example.com" && n[0].Secure && n[0].Name == "sid" && n[0].Value == "ABC" && n[0].ExpiresUtc is { }
+            && n[1].HttpOnly && n[1].ExpiresUtc == null && n[1].Path == "/app",
+            "netscape: tab-separated lines, the #HttpOnly_ marker and session cookies are parsed; comments and junk are skipped");
+    }
+
+    // Importable: control characters, over-long values and empty names are refused (the engine would choke on them)
+    {
+        ImportedCookie C(string name, string val, string host = "a.example") => new() { Host = host, Name = name, Value = val, Path = "/" };
+        Check(CookieImport.Importable(C("ok", "value")) && !CookieImport.Importable(C("a\nb", "v")) && !CookieImport.Importable(C("k", "a;b"))
+            && !CookieImport.Importable(C(" lead", "v")) && !CookieImport.Importable(C("", "")) && !CookieImport.Importable(C("k", "v", "")),
+            "import filter: no control characters, no semicolons, no leading-space names, a real host and some content");
+    }
+
+    // sorting cookies into kinds, so sign-ins come over and trackers are left off by default
+    {
+        ImportedCookie C(string name, bool http = false, bool sec = false) => new() { Host = "a.example", Name = name, Value = "x", Path = "/", HttpOnly = http, Secure = sec };
+        string K(string name, bool http = false, bool sec = false) => CookieImport.CategoryKey(CookieImport.Classify(C(name, http, sec)));
+        Check(K("sid") == "signin" && K("PHPSESSID") == "signin" && K("auth_token") == "signin" && K("__Secure-1PSID") == "signin" && K("__Host-session") == "signin" && K("c_user") == "signin" && K("li_at") == "signin",
+            "classify: session and auth cookie names, and the __Secure-/__Host- prefixes, are sign-ins");
+        Check(K("_ga") == "analytics" && K("_ga_ABC123") == "analytics" && K("_gid") == "analytics" && K("__utma") == "analytics" && K("_hjSessionUser_1") == "analytics" && K("_clck") == "analytics",
+            "classify: Google Analytics, Hotjar and Clarity names are analytics");
+        Check(K("_fbp") == "ads" && K("fr") == "ads" && K("IDE") == "ads" && K("_gcl_au") == "ads" && K("MUID") == "ads" && K("personalization_id") == "ads",
+            "classify: Facebook, DoubleClick and other ad names are advertising");
+        Check(K("lang") == "prefs" && K("theme") == "prefs" && K("cookieconsent") == "prefs" && K("euconsent-v2") == "prefs" && K("currency") == "prefs",
+            "classify: language, theme and consent names are preferences");
+        Check(K("random_blob") == "other" && K("x") == "other" && K("sess_tracker", http: true, sec: true) == "signin" && K("abc", http: true, sec: true) == "signin",
+            "classify: an unknown name is other, but an unknown HttpOnly+Secure cookie is treated as a sign-in, not a tracker");
+        Check(CookieImport.OnByDefault(CookieCategory.SignIn) && CookieImport.OnByDefault(CookieCategory.Preferences) && CookieImport.OnByDefault(CookieCategory.Other)
+            && !CookieImport.OnByDefault(CookieCategory.Analytics) && !CookieImport.OnByDefault(CookieCategory.Advertising),
+            "classify: sign-ins, preferences and other are on by default; analytics and advertising are off (no point carrying trackers)");
+
+        var now = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc);
+        DateTime soon = now.AddYears(1);
+        var mixed = new List<ImportedCookie>
+        {
+            new() { Host = ".shop.example", Name = "sid", Value = "1", Path = "/", ExpiresUtc = soon, Secure = true, HttpOnly = true },
+            new() { Host = "shop.example", Name = "lang", Value = "en", Path = "/", ExpiresUtc = soon },
+            new() { Host = "track.example", Name = "_ga", Value = "GA1", Path = "/", ExpiresUtc = soon },
+            new() { Host = "ads.example", Name = "_fbp", Value = "fb", Path = "/", ExpiresUtc = soon },
+            new() { Host = "old.example", Name = "sid", Value = "2", Path = "/", ExpiresUtc = now.AddDays(-1) },   // expired
+        };
+        var sum = CookieImport.Summarize(mixed, now);
+        Check(sum.Cat("signin") == 1 && sum.Cat("prefs") == 1 && sum.Cat("analytics") == 1 && sum.Cat("ads") == 1 && sum.Live == 4,
+            "classify summary: each live cookie is counted in exactly one category; the expired one is not counted");
+        var def = CookieImport.Selected(mixed, now, new HashSet<string> { "signin", "prefs", "other" });
+        Check(def.Count == 2 && def.Any(c => c.Name == "sid") && def.Any(c => c.Name == "lang") && !def.Any(c => c.Name == "_ga" || c.Name == "_fbp"),
+            "classify select: the default choice brings sign-ins and preferences, never the trackers or the expired cookie");
+        Check(CookieImport.Selected(mixed, now, new HashSet<string> { "ads" }).Single().Name == "_fbp" && CookieImport.Selected(mixed, now, new HashSet<string>()).Count == 0,
+            "classify select: you can choose exactly which categories come over; none selected imports nothing");
+    }
+
+    var ciRoot = thRootOrNull();
+    if (ciRoot != null)
+    {
+        var cig = File.ReadAllText(Path.Combine(ciRoot, "browser", "MainWindow.CookieImport.cs"));
+        Check(cig.Contains("DataProtectionScope.CurrentUser") && cig.Contains("FileShare.ReadWrite") && cig.Contains("MessageBox.Show(this,") && cig.Contains("\"cookies.import\"")
+            && cig.Contains("t.Internal != \"overview\"") && !cig.Contains("t.Private")
+            && cig.Contains("CookieImport.Selected(s.Cookies, now, categories)") && cig.Contains("EnsureCookieScanAsync") && cig.Contains("ParseCats("),
+            "cookie import glue: unwraps the key as the current Windows user, reads the locked file share-mode, imports only the chosen categories, scans on its own, asks before importing, writes a receipt, posts only to the overview page");
+    }
 }
 static string? thRootOrNull() { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "browser", "MainWindow.xaml"))) return d.FullName; return null; }
 

@@ -133,6 +133,7 @@
                 <MenuItem Header="VPN / proxy" Click="Vpn_Click"/>
                 <MenuItem Header="Network"   Click="MenuNetwork_Click"/>
                 <MenuItem Header="SoteriaVault link" Click="MenuSoteria_Click"/>
+                <MenuItem Header="Import cookies from another browser..." Click="MenuImportCookies_Click"/>
               </MenuItem>
               <MenuItem Header="Extensions" Click="MenuExtensions_Click"/>
               <MenuItem Header="Customize (themes, colours, backgrounds)" Click="MenuCustomize_Click"/>

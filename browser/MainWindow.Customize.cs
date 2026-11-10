@@ -91,7 +91,7 @@ namespace Recognition.Browser
         }
 
         // ---- importing a Chrome theme ---------------------------------------------------------------------------------------
-        private async Task<string> ApplyThemeFromPackageAsync(byte[] package)
+        private async Task<string> ApplyThemeFromPackageAsync(byte[] package, string source = "theme file")
         {
             var staging = NewStagingDir();
             try
@@ -109,8 +109,10 @@ namespace Recognition.Browser
                     if (full.StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full;
                 }
                 ApplyPack(pack, img, root);   // ImportStartPicture and SetThemeHeader copy the pictures, so the staging folder can go
+                var kept = KeepThemeFolder(root, pack, source);   // kept with its pictures under Themes you added (proposal 0008)
                 return "applied the theme \"" + pack.Name + "\"" + (pack.NtpImage != null && img == null ? " (its picture could not be used)" : "") +
-                       (pack.Header != null ? (_header == null ? " (its header picture could not be used)" : " with its header picture" + (_headerNote.Length > 0 ? " (" + _headerNote + ")" : "")) : "");
+                       (pack.Header != null ? (_header == null ? " (its header picture could not be used)" : " with its header picture" + (_headerNote.Length > 0 ? " (" + _headerNote + ")" : "")) : "") +
+                       (kept == null ? ". It is kept under Themes you added." : "; " + kept + ".");
             }
             catch (Exception ex) { return "could not use that theme: " + ex.Message; }
             finally { try { Directory.Delete(staging, true); } catch { } }
@@ -168,6 +170,7 @@ namespace Recognition.Browser
             void Note(string t) { Status(t); try { tab.Web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "note", text = t })); } catch { } }
             try
             {
+                if (msg.StartsWith("cz-kept-", StringComparison.Ordinal)) { if (tab.Internal == "customize") HandleKeptCustomize(tab, msg, Note); return; }
                 if (msg.StartsWith("cz-top:", StringComparison.Ordinal) || msg == "cz-lib-fetch" || msg.StartsWith("cz-lib-add:", StringComparison.Ordinal) ||
                     msg.StartsWith("cz-mine-", StringComparison.Ordinal) || msg == "cz-pack-import")
                 {
@@ -217,7 +220,8 @@ namespace Recognition.Browser
                         if (pack == null) { Note(perr ?? "that is not a theme"); return; }
                         string? img = null;
                         if (pack.NtpImage != null) { var full = Path.GetFullPath(Path.Combine(f, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar))); if (full.StartsWith(Path.GetFullPath(f).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full; }
-                        ApplyPack(pack, img, f); Note("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "")); RefreshCustomize(tab); return;
+                        ApplyPack(pack, img, f); var keptF = KeepThemeFolder(f, pack, "folder " + Path.GetFileName(f.TrimEnd('\\', '/')));
+                        Note("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "") + (keptF == null ? ". It is kept under Themes you added." : "; " + keptF + ".")); RefreshCustomize(tab); return;
                     }
                     Note(await ApplyThemeFromPackageAsync(data));
                 }
@@ -231,14 +235,14 @@ namespace Recognition.Browser
                         var file = ExtSources.FirefoxFileUrl(Encoding.UTF8.GetString(await DownloadExtensionAsync(ExtSources.FirefoxApiUrl(ffSlug))));
                         if (file == null) { Note("Mozilla did not return a download for \"" + ffSlug + "\" (it may not exist, or is not public)"); return; }
                         Note("downloading the Firefox theme...");
-                        Note(await ApplyThemeFromPackageAsync(await DownloadExtensionAsync(file)));
+                        Note(await ApplyThemeFromPackageAsync(await DownloadExtensionAsync(file), "Firefox Add-ons: " + ffSlug));
                         RefreshCustomize(tab); return;
                     }
                     var src = ExtSources.Parse(link);
                     if (src == null) { Note("paste a Chrome Web Store, Edge Add-ons or Firefox Add-ons theme link (or an extension id)"); return; }
                     Note("downloading the theme from the " + (src.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store") + "...");
                     var bytes = await DownloadExtensionAsync(ExtSources.Url(src, EngineMajor()));
-                    Note(await ApplyThemeFromPackageAsync(bytes));
+                    Note(await ApplyThemeFromPackageAsync(bytes, src.Store == "edge" ? "Edge Add-ons" : "Chrome Web Store"));
                 }
                 else return;
                 RefreshCustomize(tab);

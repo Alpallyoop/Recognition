@@ -264,7 +264,8 @@ namespace Recognition.Browser
                 }).ToList(),
                 pending = PendingView(),
                 ledger = new { count = ledger.Count, head = ledger.Head, error = ledger.Error },
-                dev = ExtDevView()
+                dev = ExtDevView(),
+                removed = KeptExtView()
             });
         }
 
@@ -356,8 +357,9 @@ namespace Recognition.Browser
                         var full = Path.GetFullPath(Path.Combine(tp.Root, pack.NtpImage.Replace('/', Path.DirectorySeparatorChar)));
                         if (full.StartsWith(Path.GetFullPath(tp.Root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) img = full;
                     }
-                    ApplyPack(pack, img, tp.Root); DiscardPending();   // pictures are copied before the staging folder goes
-                    ExtReport("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "") + ". Change it any time on the Customize page.");
+                    ApplyPack(pack, img, tp.Root);                     // pictures are copied before the staging folder goes
+                    var kept = KeepThemeFolder(tp.Root, pack, tp.Source); DiscardPending();   // kept under Customize, Themes you added (proposal 0008)
+                    ExtReport("applied the theme \"" + pack.Name + "\"" + (pack.Header != null && _header != null ? " with its header picture" : "") + (kept == null ? ". It is kept on the Customize page under Themes you added." : "; " + kept + ". Change it any time on the Customize page."));
                     SendExtSnapshot(); return;
                 }
                 if (msg.StartsWith("ext-install:")) { ExtInstall(msg.EndsWith(":approve")); return; }
@@ -383,6 +385,7 @@ namespace Recognition.Browser
                 }
                 if (msg.StartsWith("ext-toggle:")) { await ExtToggleAsync(msg.Substring("ext-toggle:".Length)); return; }
                 if (msg.StartsWith("ext-remove:")) { await ExtRemoveAsync(msg.Substring("ext-remove:".Length)); return; }
+                if (msg.StartsWith("ext-kept-")) { await HandleKeptExtMessage(msg); return; }
             }
             catch (ExtGovException ex) { ExtReport("not accepted: " + ex.Message + (ex.Message.Contains("not a CRX or ZIP") ? ". That address is a web page or another kind of file, not an extension package. Paste a store page link (Chrome Web Store, Edge Add-ons or Firefox Add-ons), an extension id, or a direct .crx, .zip or .xpi address." : ""), false); }
             catch (Exception ex) { ExtReport("error: " + ex.Message, false); }
@@ -412,6 +415,7 @@ namespace Recognition.Browser
                 SaveExtState();
                 _actions?.Append("extension.install", gid + ":" + (decision == "review" ? "approved" : "allowed"));
                 DiscardPending();
+                ForgetKeptExtension(gid);   // installed again: a kept copy of the same bytes is no longer needed
                 ExtReport("installed " + CleanLabel(p.Manifest.Name) + (_extEnabled ? "." : ". Extension support is off: turn it on and restart to load it."));
                 if (_extEnabled) _ = LoadOneAsync(_extState.Items.First(i => i.Gid == gid));
             }
@@ -454,7 +458,7 @@ namespace Recognition.Browser
         private async Task ExtRemoveAsync(string gid)
         {
             var it = _extState.Items.FirstOrDefault(i => i.Gid == gid); if (it == null) return;
-            if (MessageBox.Show(this, "Remove \"" + it.Name + "\"?\n\nIts files are deleted and the removal is recorded in the governance ledger. Its stored data in the browser engine is removed with it.", "Recognition — Extensions", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            if (MessageBox.Show(this, "Remove \"" + it.Name + "\"?\n\nIt stops running and the removal is recorded in the governance ledger. Its stored data in the browser engine is removed with it. Its files are kept under Removed on this page: Add back installs it again (checked again), Delete forever deletes them.", "Recognition — Extensions", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             await RemoveFromProfileAsync(it);
             var dir = ExtDirAbs(it);
             try
@@ -466,7 +470,8 @@ namespace Recognition.Browser
                 }
             }
             catch { /* a damaged copy is still removed below; the earlier ledger records stay as they are */ }
-            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch (Exception ex) { ExtReport("removed from the list, but some files could not be deleted: " + ex.Message, false); }
+            bool kept = KeepRemovedExtension(dir, gid, it.Name, it.Version, it.Source);   // moved to runtime\kept, not deleted (proposal 0008)
+            if (!kept) { try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch (Exception ex) { ExtReport("removed from the list, but some files could not be deleted: " + ex.Message, false); } }
             _extState.Items.Remove(it); _extStatus.Remove(gid); SaveExtState();
             _actions?.Append("extension.remove", gid);
             ExtReport("removed " + it.Name);
@@ -567,6 +572,10 @@ namespace Recognition.Browser
 <h1 style='font-size:16px'>My installed</h1>
 <div id='list'></div>
 
+<h1 style='font-size:16px'>Removed</h1>
+<div class='muted'>Extensions and developer builds you removed wait here with their files. Add back installs an extension again: its files must be exactly the ones you removed, the policy decides again, and the ledger records it. Delete forever deletes the files.</div>
+<div id='removed'></div>
+
 <h1 style='font-size:16px'>Try a demo</h1>
 <div class='muted'>Two small built-in examples so you can see the whole flow without installing anything real.</div>
 <div class='card'><div class='info'><h3>Demo: safe extension <span class='tag good'>no review needed</span></h3><p>Asks for almost nothing. Shows what an easy install looks like.</p></div><div class='acts'><a class='btn' data-c='ext-demo:hello-good'>Load for review</a></div></div>
@@ -607,6 +616,11 @@ function render(m){
   if(!m.items.length)L.appendChild(card('Nothing installed yet','Find one under Get extensions, or try a demo.'));
   m.items.forEach(function(x){var c=card(x.name+'  '+x.version,x.status+'  ·  from '+x.source,x.enabled?'on':'off',x.enabled?'good':'warn');
     var acts=el('div',null,'acts');acts.appendChild(btn(x.enabled?'Disable':'Enable','ext-toggle:'+x.gid,true));acts.appendChild(btn('Test','ext-test:'+x.gid,true));acts.appendChild(btn('Remove','ext-remove:'+x.gid,true));c.appendChild(acts);L.appendChild(c)});
+  var RM=$('removed');RM.textContent='';
+  if(!m.removed||!m.removed.length)RM.appendChild(card('Nothing removed','Anything you remove waits here until you add it back or delete it.'));
+  else{var tot=0;m.removed.forEach(function(x){tot+=x.stored||0});RM.appendChild(el('div',m.removed.length+' removed, taking '+kb(tot)+' on disk (extensions are kept compressed).','u'))}
+  (m.removed||[]).forEach(function(x){var c=card(x.name+(x.version?'  '+x.version:''),x.label+'  ·  removed '+x.removed+(x.bytes?'  ·  '+kb(x.bytes)+(x.stored&&x.stored<x.bytes?' (kept compressed in '+kb(x.stored)+')':''):'')+(x.source?'  ·  from '+x.source:'')+(x.missing?'  ·  its files are gone':''),x.missing?'missing':null,x.missing?'bad':null);
+    var acts=el('div',null,'acts');if(!x.missing)acts.appendChild(btn('Add back','ext-kept-back:'+x.kind+':'+x.id));acts.appendChild(btn('Delete forever','ext-kept-del:'+x.kind+':'+x.id,true));c.appendChild(acts);RM.appendChild(c)});
   renderDev(m.dev);
   $('ledger').textContent=m.ledger.error?('PROBLEM: '+m.ledger.error+'. Extensions will not load until this is resolved.'):(m.ledger.count+' records, head '+(m.ledger.head||'').slice(0,16)+'…')}
 " + ExtDevScript + @"

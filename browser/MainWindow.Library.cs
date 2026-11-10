@@ -442,6 +442,7 @@ namespace Recognition.Browser
 <div class='sec'>Most blocked trackers and ads this session</div><div id='trk'></div>
 <div class='sec'>Cookies and sites</div><div class='cards' id='c_cook'></div><div id='ck'></div>
 <div style='margin:8px 0'><a class='btn ghost' onclick=""send('ov-cookies-all')"">Delete all cookies</a></div>
+<div class='sec'>Import cookies from another browser</div><div id='imp'><div class='u'>Looking for other browsers...</div></div>
 <div class='sec'>Your library</div><div class='cards' id='c_lib'></div>
 <div class='sec'>Most visited</div><div id='top'></div>
 <div class='sec'>Filter lists</div><div id='lists'></div>
@@ -486,8 +487,39 @@ function render(m){
   m.lists.forEach(function(x){var r=el('div',null,'row');var d=el('div');d.appendChild(el('div',x.name+(x.enabled?'':'  (off)'),'t'));d.appendChild(el('div',x.rules?fmt(x.rules)+' rules · updated '+(x.updated?x.updated.slice(0,10):'?'):'not downloaded','u'));r.appendChild(d);L.appendChild(r)});
   var n=m.net;$('c_net').textContent='';card($('c_net'),n.vpn,'connection');card($('c_net'),n.uptime,'this session');card($('c_net'),n.engine,'web engine');
 }
-window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!m)return;if(m.type==='ov')render(m);else if(m.type==='note')$('msg').textContent=m.text});
-send('ov-state');setInterval(function(){send('ov-state')},4000);
+
+var _impCats=null;   // the category choices, kept across redraws
+function catState(cats){if(_impCats)return _impCats;_impCats={};cats.forEach(function(c){_impCats[c.key]=c.on});return _impCats}
+function selectedCats(){var out=[];for(var k in _impCats)if(_impCats[k])out.push(k);return out}
+function renderImport(m){var box=$('imp');box.textContent='';
+  if(m.scanning){box.appendChild(el('div','Looking for other browsers on this computer...','u'));return}
+  if(!m.sources){return}
+  box.appendChild(el('div','Your sign-ins and settings from another browser on this computer, found automatically (nothing to locate or type). Cookies are grouped by what they are for; by default only what keeps you signed in and your settings come over, and trackers are left off. The other browser is not changed.','u'));
+  if(m.categories){var cs=catState(m.categories);var cbar=el('div',null,'row');cbar.style.flexWrap='wrap';var cd=el('div');cd.style.flex='1';cd.appendChild(el('div','Bring over','t'));
+    var wrap=el('div');wrap.style.cssText='display:flex;gap:14px;flex-wrap:wrap;margin-top:6px';
+    m.categories.forEach(function(c){var lab=el('label');lab.style.cssText='display:inline-flex;align-items:center;gap:6px;font-size:13px';
+      var cb=el('input');cb.type='checkbox';cb.checked=!!cs[c.key];cb.onchange=function(){cs[c.key]=cb.checked;renderImport(_lastScan)};
+      lab.appendChild(cb);lab.appendChild(el('span',c.label));wrap.appendChild(lab)});
+    cd.appendChild(wrap);cbar.appendChild(cd);box.appendChild(cbar)}
+  if(!m.sources.length){box.appendChild(el('div','No other browser with cookies was found for your Windows account.','u'))}
+  m.sources.forEach(function(s){var c=el('div',null,'row');var d=el('div');d.style.flex='1';
+    d.appendChild(el('div',s.label,'t'));
+    if(s.problem){d.appendChild(el('div','Could not read it: '+s.problem,'u'))}
+    else{var parts=[];var names={signin:'sign-in',prefs:'preferences',analytics:'analytics',ads:'advertising',other:'other'};
+      ['signin','prefs','analytics','ads','other'].forEach(function(k){if(s.cats&&s.cats[k])parts.push(s.cats[k]+' '+names[k])});
+      d.appendChild(el('div',(s.live||0)+' cookie(s) across '+(s.sites||0)+' site(s)'+(parts.length?('  ·  '+parts.join(', ')):'')+(s.failed?('  ·  '+s.failed+' could not be read'):''),'u'));
+      if(s.top)d.appendChild(el('div',s.top,'u'))}
+    c.appendChild(d);
+    var t=el('div',null,'ts');
+    if(!s.problem){var sel=selectedCats();var n=0;sel.forEach(function(k){n+=(s.cats&&s.cats[k])||0});
+      var a=el('a','Import'+(n?(' '+n):''),'btn');a.onclick=function(){if(!selectedCats().length){$('msg').textContent='Choose at least one category to bring over.';return}send('ov-cookie-import:'+s.id+':'+selectedCats().join(','))};
+      if(!n){a.className='btn ghost';a.textContent='Nothing selected'}t.appendChild(a)}
+    else t.appendChild(el('span','unavailable','u'));
+    c.appendChild(t);box.appendChild(c)});
+  var r=el('div',null,'ts');r.style.marginTop='8px';var ra=el('a','Rescan','btn ghost');ra.onclick=function(){send('ov-cookie-rescan')};r.appendChild(ra);box.appendChild(r)}
+var _lastScan=null;
+window.chrome.webview.addEventListener('message',function(ev){var m=ev.data;if(!m)return;if(m.type==='ov')render(m);else if(m.type==='note')$('msg').textContent=m.text;else if(m.type==='import-scan'){_lastScan=m;renderImport(m)};else if(m.type==='import-done'){$('msg').textContent=m.text;$('msg').style.color=m.ok?'':'#e57373';send('ov-cookie-import-scan')}});
+send('ov-state');setInterval(function(){send('ov-state')},4000);send('ov-cookie-import-scan');
 </script>");
             sb.Append(SendScript()).Append(PageFoot);
             return sb.ToString();
@@ -582,6 +614,7 @@ send('ov-state');setInterval(function(){send('ov-state')},4000);
             try
             {
                 if (msg == "ov-state") { await SendOverviewAsync(tab); return; }
+                if (await HandleCookieImportMessageAsync(msg)) return;
                 void Note(string t) { try { tab.Web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "note", text = t })); } catch { } }
                 var core = MainCore();
                 if (msg == "ov-cookies-all")

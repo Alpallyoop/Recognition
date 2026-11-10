@@ -15,6 +15,7 @@ namespace Recognition.Browser
     // embeds it, so it makes no web requests.
     public partial class MainWindow
     {
+        private const long StartPictureMaxBytes = 40_000_000;   // the largest start page picture the browser reads (also what a kept theme keeps)
         private string _startBg = "default";                 // persisted as start_bg in browser_settings.json
         private string? _startImageUrl;                      // cached data: URL of runtime\start_bg.jpg
         private MotionRecipe _startMotion = StartMotion.None;  // persisted as start_motion (StartMotion.cs validates it)
@@ -193,7 +194,7 @@ namespace Recognition.Browser
             try
             {
                 var fi = new FileInfo(path);
-                if (!fi.Exists || fi.Length > 40_000_000) return "that picture is missing or larger than 40 MB";
+                if (!fi.Exists || fi.Length > StartPictureMaxBytes) return "that picture is missing or larger than 40 MB";
                 int origW;
                 using (var s = File.OpenRead(path)) origW = BitmapFrame.Create(s, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).PixelWidth;
                 byte[]? best = null;

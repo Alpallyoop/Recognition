@@ -313,7 +313,8 @@ namespace Recognition.Browser
                 else
                 {
                     var old = p.Folder; p.Folder = dir;
-                    if (!string.Equals(old, dir, StringComparison.OrdinalIgnoreCase) && IsUnderUploads(old) && !ExtDev.Projects.Any(x => x != p && string.Equals(x.Folder, old, StringComparison.OrdinalIgnoreCase)))
+                    if (!string.Equals(old, dir, StringComparison.OrdinalIgnoreCase) && IsUnderUploads(old) && !ExtDev.Projects.Any(x => x != p && string.Equals(x.Folder, old, StringComparison.OrdinalIgnoreCase))
+                        && !KeptList.Items.Any(k => k.Kind == "devbuild" && string.Equals(k.Folder, old, StringComparison.OrdinalIgnoreCase)))   // a removed build kept under Removed still needs it
                         try { Directory.Delete(old, true); } catch { }
                 }
                 var res = await BuildAndRecordAsync(p);
@@ -380,10 +381,10 @@ namespace Recognition.Browser
                 var p = P("ext-dev-remove:"); if (p == null) return;
                 StopWatch(p.Id);
                 if (_extDevRunning == p.Id) await ExtDevUnloadAsync();
-                if (p.Uploaded && IsUnderUploads(p.Folder)) { try { Directory.Delete(p.Folder, true); } catch { } }
+                KeepRemovedDevBuild(p);   // kept under Removed: Add back puts it on the list again, Delete forever deletes an uploaded copy (proposal 0008)
                 ExtDev.Projects.Remove(p); _extDevReports.Remove(p.Id); lock (_extDevChanges) _extDevChanges.Remove(p.Id); SaveExtDev();
                 _actions?.Append("extension.dev_remove", p.Id);
-                ExtReport("removed " + p.Label + " from the developer list" + (p.Uploaded ? " (its uploaded copy was deleted)." : " (your folder was not touched)."));
+                ExtReport("removed " + p.Label + " from the developer list. It is kept under Removed" + (p.Uploaded ? " with its uploaded copy." : " (your folder was not touched)."));
                 SendExtSnapshot(); return;
             }
         }

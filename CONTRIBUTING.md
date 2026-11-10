@@ -1,5 +1,8 @@
 # Contributing
 
+Recognition is source available, not open source (see `LICENSE`). Outside contributions are accepted only by
+arrangement with the author; the steps below are how changes are made and proved.
+
 1. Read `CLAUDE.md` and `docs/canonical/` first. The canonical documents define the role, trust boundaries and schemas; do not change them directly. Put proposed canonical changes under `docs/proposals/`.
 2. Build and prove before opening a pull request (Windows, PowerShell 7, .NET 8 SDK):
 

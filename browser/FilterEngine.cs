@@ -378,7 +378,11 @@ blogspot.co.uk blogspot.de blogspot.fr blogspot.in
         // ---- matching ------------------------------------------------------------------------------------------
         public FilterMatch Match(string? url, string? pageUrl, ResType type)
         {
-            if (string.IsNullOrEmpty(url) || url.Length > MaxUrlLength) return default;
+            if (string.IsNullOrEmpty(url)) return default;
+            // Do not fail open on a very long URL (audit 2026-10-21 F9, fixed 2026-11-04). A tracker padded its address past the
+            // cap to slip a host it is blocked on. The padding sits in the path or query, after the host, so matching a bounded
+            // prefix keeps the full host — host rules (||domain^, hosts lists) still block it — while matching cost stays bounded.
+            if (url.Length > MaxUrlLength) url = url.Substring(0, MaxUrlLength);
             if (!TryParse(url, out var urlL, out var host, out int hostStart, out int hostEnd)) return default;
             string pageHost = "";
             if (!string.IsNullOrEmpty(pageUrl) && TryParse(pageUrl, out _, out var ph, out _, out _)) pageHost = ph;

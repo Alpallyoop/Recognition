@@ -59,7 +59,7 @@ namespace Recognition.Browser
             "ORIGIN_MISMATCH" => "That login is not for this exact site, so SoteriaVault refused it.",
             "TIMEOUT" => "SoteriaVault did not answer in time (nobody allowed or denied the request).",
             "NO_MATCH" => "SoteriaVault has no such login for this site any more.",
-            "BUSY" => "SoteriaVault is waiting for another answer from you. Try again in a moment.",
+            "BUSY" => "SoteriaVault is busy (it is waiting for another answer from you, or got too many requests this minute). Try again in a moment.",
             var t => "SoteriaVault said: " + (t.Length == 0 ? "no answer" : t),
         };
 
