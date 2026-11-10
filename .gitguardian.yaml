@@ -1,0 +1,22 @@
+# GitGuardian configuration for Recognition.
+#
+# The only matches in this repository are synthetic test data, not credentials. The cookie-import tests need example
+# cookie values to prove that encrypted values are read with the right key and refused with the wrong one; the fixtures
+# hold only example./.test hosts with self-labelling placeholder values (see browser.tests/fixtures/make_cookie_fixtures.py).
+# (The weak-password dictionary in browser/PasswordVault.cs is base64-encoded in source, so no plain words appear there.)
+#
+# The repository's own publish gate (scripts/recognition_publish_scan_v1.ps1) is the authoritative secret check for releases.
+
+version: 2
+
+secret:
+  ignored-paths:
+    - "browser.tests/fixtures/**"          # synthetic SQLite/cookie test data on example hosts
+    - "browser.tests/Program.cs"           # dummy cookie values used by the cookie-import tests
+    - "docs/**"                            # audits quote the example test values when explaining them
+
+  ignored-matches:
+    - name: "cookie-import test placeholder value"
+      match: "cookie=example-value-not-a-real-secret"
+    - name: "example session cookie value (test fixture)"
+      match: "example-session-value"

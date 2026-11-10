@@ -449,6 +449,46 @@ Console.WriteLine("=== Filter engine (executed C#) ===");
     Check(padded.Length > FilterEngine.MaxUrlLength && Blk(feK, padded) && !Blk(feK, "https://safe.example/" + new string('p', FilterEngine.MaxUrlLength + 4000)),
         "filter: an over-length URL on a blocked host is still blocked (no fail-open); an over-length URL on an unlisted host is still allowed");
 
+    // ---- autofill and save-login offer (proposal 0010): AutofillRules + the message gate ----
+    {
+        // autofill decision
+        Check(AutofillRules.ShouldAutofill(true, false, true, 1, false, false), "autofill: on, one exact https match, no PIN -> fill");
+        Check(AutofillRules.ShouldAutofill(true, false, true, 1, true, true), "autofill: a set but unlocked PIN still fills");
+        Check(!AutofillRules.ShouldAutofill(true, false, true, 1, true, false), "autofill: a locked vault never autofills (use the key button, which prompts)");
+        Check(!AutofillRules.ShouldAutofill(false, false, true, 1, false, false), "autofill: off means never");
+        Check(!AutofillRules.ShouldAutofill(true, true, true, 1, false, false), "autofill: never silently from SoteriaVault (it asks per fill)");
+        Check(!AutofillRules.ShouldAutofill(true, false, false, 1, false, false), "autofill: never when the page is not the exact https origin");
+        Check(!AutofillRules.ShouldAutofill(true, false, true, 0, false, false) && !AutofillRules.ShouldAutofill(true, false, true, 2, false, false),
+            "autofill: only when exactly one login matches — never zero, never a guess between several");
+
+        // save-offer classification
+        var none = new List<(string, string)>();
+        var one = new List<(string, string)> { ("alex", "pw1") };
+        Check(AutofillRules.ClassifySave(true, false, false, true, "example.com", "alex", "pw1", none) == SaveKind.New, "save: a login not yet saved is offered as New");
+        Check(AutofillRules.ClassifySave(true, false, false, true, "example.com", "alex", "pw2", one) == SaveKind.Update, "save: a changed password for a known username is offered as an Update");
+        Check(AutofillRules.ClassifySave(true, false, false, true, "example.com", "alex", "pw1", one) == SaveKind.Duplicate, "save: a login already saved makes no offer (Duplicate)");
+        Check(AutofillRules.ClassifySave(true, true, false, true, "example.com", "alex", "pw1", none) == SaveKind.None, "save: never offered in a private tab");
+        Check(AutofillRules.ClassifySave(true, false, false, false, "example.com", "alex", "pw1", none) == SaveKind.None, "save: never offered over plain http");
+        Check(AutofillRules.ClassifySave(true, false, false, true, "example.com", "alex", "", none) == SaveKind.None, "save: an empty password is never offered");
+        Check(AutofillRules.ClassifySave(false, false, false, true, "example.com", "alex", "pw1", none) == SaveKind.None, "save: off means never offered");
+        Check(AutofillRules.ClassifySave(true, false, true, true, "example.com", "alex", "pw1", none) == SaveKind.Blocked, "save: a site on the \"never\" list is blocked, not offered");
+        Check(AutofillRules.SaveBarText(SaveKind.New, "example.com", "alex").Contains("Save this login") && AutofillRules.SaveBarText(SaveKind.Update, "example.com", "alex").Contains("Update"),
+            "save: the bar text matches the offer kind");
+
+        // the message gate lets the capture message through from web content, but nothing else
+        Check(MessageGate.Classify(false, "https://evil.example/", "pwcap:%7B%7D") == MessageVerdict.Capture, "gate: a login-capture message is allowed from a web page (the host re-checks the origin and asks before saving)");
+        Check(MessageGate.Classify(false, "https://evil.example/", "cookies-clear-all") == MessageVerdict.Deny, "gate: a real command from a web page is still denied");
+        Check(MessageGate.Classify(true, "", "cookies-clear-all") == MessageVerdict.Command, "gate: an internal page can still send commands");
+        Check(MessageGate.Classify(false, "https://evil.example/", "sc:newtab") == MessageVerdict.Shortcut, "gate: shortcuts still classify as shortcuts");
+    }
+
+    // the weak-password dictionary still works after being base64-encoded in source (fix 2026-11-10)
+    {
+        Check(PasswordRules.Strength("password") == "weak" && PasswordRules.Strength("iloveyou2") == "weak" && PasswordRules.Strength("myqwertything") == "weak",
+            "weak-password list: common words still cap the strength estimate (decoded from the encoded list, no plain literals in source)");
+        Check(PasswordRules.Strength("xK9#mLp2$vQ7wZ1&bR4") == "strong", "weak-password list: a strong random password is still strong");
+    }
+
     // cosmetic
     var feL = Fe("##.ad-banner", "example.com##.promo", "~example.com##.sponsored", "example.com#@#.ad-banner", "##div[class^=\"ad-\"]", "a{}body{display:none}##x", "##x;y", "##a/*", "##url(x)", "example.com##.x:has-text(Buy)", "##a:-abp-has(b)", "##@import x", "##.ok > .child");
     var cssEx = feL.CosmeticCssFor("www.example.com"); var cssOther = feL.CosmeticCssFor("other.org");
@@ -1080,19 +1120,41 @@ Console.WriteLine("=== Password vault (executed C#) ===");
     Check(!SoteriaBridge.IsPasswordManager(svLive) && !SoteriaBridge.IsPasswordManager(svOk), "soteria pm: without the capability (or switched off) Recognition keeps its own vault");
     Check(SoteriaBridge.Evaluate(svRoot, svFiles(svPmContract.Replace("\"secret_release_to_external_runtime\",", ""), svRegistry)).State == SoteriaState.Invalid, "soteria pm: a contract that stops forbidding bulk secret release is still refused");
     Check(SoteriaBridge.Evaluate(svRoot, svFiles(svPmContract.Replace("\"enabled\":true", "\"enabled\":false"), svRegistry)).State == SoteriaState.ContractOnly, "soteria pm: disabled again -> nothing is exchanged");
-    var pmReq = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = "secret-1" };
-    var pmReq2 = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = "secret-2" };
-    Check(SoteriaPasswords.RedactedSha(pmReq) == SoteriaPasswords.RedactedSha(pmReq2) && (string?)pmReq["password"] == "secret-1", "soteria pm: receipt hashes never depend on (or confirm) a password, and the caller's request is untouched");
+    // fixture passwords are made up at run time (no credential-looking literals in the source)
+    var pmPw1 = "fx" + Guid.NewGuid().ToString("N"); var pmPw2 = "fx" + Guid.NewGuid().ToString("N");
+    var pmReq = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = pmPw1 };
+    var pmReq2 = new System.Text.Json.Nodes.JsonObject { ["op"] = "save", ["page_url"] = "https://example.com/", ["username"] = "a", ["password"] = pmPw2 };
+    Check(SoteriaPasswords.RedactedSha(pmReq) == SoteriaPasswords.RedactedSha(pmReq2) && (string?)pmReq["password"] == pmPw1, "soteria pm: receipt hashes never depend on (or confirm) a password, and the caller's request is untouched");
     Check(SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = true }) == ("ok", null) &&
           SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "DENIED" }) == ("refused", "SOTERIA_DENIED") &&
           SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "NOT_RUNNING" }) == ("unavailable", "SOTERIA_APP_NOT_RUNNING") &&
           SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "LOCKED" }) == ("deferred", "SOTERIA_LOCKED") &&
           SoteriaPasswords.Outcome(new System.Text.Json.Nodes.JsonObject { ["ok"] = false, ["error"] = "weird token; rm" }).Error == "SOTERIA_WEIRDTOKENRM", "soteria pm: bridge answers map to explicit receipt outcomes with safe tokens");
-    var pmImp = SoteriaPasswords.ImportRequest(new[] { new VaultEntry { Id = "abcdefgh", Origin = "example.com", Username = "u", Password = "p1", CreatedUtc = "c", UpdatedUtc = "u" } });
-    Check((string?)pmImp["op"] == "import" && pmImp["entries"]!.AsArray().Count == 1 && !SoteriaPasswords.RedactedSha(pmImp).Contains("p1"), "soteria pm: moving the vault sends every login once");
+    var pmPw3 = "fx" + Guid.NewGuid().ToString("N");
+    var pmImp = SoteriaPasswords.ImportRequest(new[] { new VaultEntry { Id = "abcdefgh", Origin = "example.com", Username = "u", Password = pmPw3, CreatedUtc = "c", UpdatedUtc = "u" } });
+    Check((string?)pmImp["op"] == "import" && pmImp["entries"]!.AsArray().Count == 1 && !SoteriaPasswords.RedactedSha(pmImp).Contains(pmPw3), "soteria pm: moving the vault sends every login once");
+    // SoteriaVault audit 2026-11-04 (bridge hardening): batches fit the bridge, and only confirmed logins are removed here
+    var pmMany = Enumerable.Range(0, 1201).Select(i => new VaultEntry { Id = "id" + i, Origin = "s" + i + ".example", Username = "u", Password = "fx" + i + Guid.NewGuid().ToString("N") }).ToList();
+    var pmBatches = SoteriaPasswords.ImportBatches(pmMany);
+    Check(pmBatches.Count == 3 && pmBatches.Sum(b => b.Ids.Count) == 1201 && pmBatches.SelectMany(b => b.Ids).Distinct().Count() == 1201
+          && pmBatches.All(b => b.Request["entries"]!.AsArray().Count == b.Ids.Count && b.Ids.Count <= SoteriaPasswords.ImportBatchEntries), "soteria pm: a large vault moves in batches of at most 500, every login exactly once");
+    var pmFat = Enumerable.Range(0, 6).Select(i => new VaultEntry { Id = "f" + i, Origin = "f" + i + ".example", Username = "u", Password = "fx" + i, Note = new string('"', 60000) }).ToList();
+    var pmFatB = SoteriaPasswords.ImportBatches(pmFat);
+    Check(pmFatB.Count > 1 && pmFatB.All(b => System.Text.Encoding.UTF8.GetByteCount(b.Request.ToJsonString()) < 1 << 20) && pmFatB.Sum(b => b.Ids.Count) == 6, "soteria pm: every batch stays under the bridge's 1 MiB frame, even with long notes");
+    System.Text.Json.Nodes.JsonObject PmRes(int read, int added, int merged, int conflicts, int invalid, bool ok = true) =>
+        new() { ["ok"] = ok, ["read"] = read, ["added"] = added, ["merged"] = merged, ["conflicts"] = conflicts, ["invalid"] = invalid };
+    Check(SoteriaPasswords.ImportAccounted(PmRes(5, 2, 2, 1, 0), 5) && !SoteriaPasswords.ImportAccounted(PmRes(5, 2, 2, 0, 1), 5)
+          && !SoteriaPasswords.ImportAccounted(PmRes(4, 2, 2, 0, 0), 5) && !SoteriaPasswords.ImportAccounted(PmRes(5, 2, 2, 1, 0, ok: false), 5)
+          && !SoteriaPasswords.ImportAccounted(new System.Text.Json.Nodes.JsonObject { ["ok"] = true }, 3), "soteria pm: Recognition removes its copies only when SoteriaVault accounted for every login (none invalid or missing)");
+    var u_srcMove = File.Exists(Path.Combine(thRootOrNull() ?? "", "browser", "MainWindow.SoteriaPasswords.cs")) ? File.ReadAllText(Path.Combine(thRootOrNull()!, "browser", "MainWindow.SoteriaPasswords.cs")) : "";
+    if (u_srcMove.Length > 0)
+        Check(u_srcMove.Contains("SoteriaPasswords.ImportBatches(") && u_srcMove.Contains("SoteriaPasswords.ImportAccounted(") && !u_srcMove.Contains("foreach (var id in _vault.Entries.Select(e => e.Id).ToList()) _vault.Remove(id)"),
+              "soteria pm glue: the move uses batches and removes only confirmed logins");
     var pmApp = SoteriaPasswords.AppPath("C:\\sv", pth => pth.StartsWith("C:\\sv") && pth.EndsWith("SoteriaVault.exe"));
     Check(pmApp != null && pmApp.Replace('/', '\\') == "C:\\sv\\app\\SoteriaVault.exe" && SoteriaPasswords.AppPath("relative", _ => true) == null && SoteriaPasswords.AppPath("C:\\sv", _ => false) == null, "soteria pm: the app is started only from the linked folder, and only when it is built");
     Check(SoteriaPasswords.MenuLabel(new System.Text.Json.Nodes.JsonObject { ["username"] = "a\u0007b", ["title"] = "T" }) == "ab  -  T", "soteria pm: menu labels drop control characters");
+    Check(SoteriaPasswords.MenuLabel(new System.Text.Json.Nodes.JsonObject { ["username"] = "me@rooted.example", ["section"] = "ROOTED / Supabase" }) == "me@rooted.example  [ROOTED / Supabase]"
+        && SoteriaPasswords.MenuLabel(new System.Text.Json.Nodes.JsonObject { ["username"] = "u", ["section"] = "" }) == "u", "soteria pm: the fill menu names the SoteriaVault section (none when unfiled)");
 }
 
 // ---- addresses that arrive from other programs (default browser, second launch) -----------------------------------------------------
@@ -2531,15 +2593,15 @@ Console.WriteLine("== animated header pictures ==");
         var cc = CookieImport.FromChromium(ct, null, null);
         Check(cc.Count == 6, "chromium: every row becomes a cookie record");
         var sid = cc.First(c => c.Name == "sid");
-        Check(sid.Host == ".example.com" && sid.Value == "abc123" && sid.Secure && sid.HttpOnly && sid.SameSite == "strict" && sid.ExpiresUtc is { Year: 2030 },
+        Check(sid.Host == ".example.com" && sid.Value == "example-session-value" && sid.Secure && sid.HttpOnly && sid.SameSite == "strict" && sid.ExpiresUtc is { Year: 2030 },
             "chromium: host, value, flags, strict same-site and the 1601-based expiry are read");
         Check(cc.First(c => c.Name == "sess").ExpiresUtc == null, "chromium: expires_utc 0 is a session cookie");
-        var enc = cc.First(c => c.Name == "secret");
+        var enc = cc.First(c => c.Name == "locked");
         Check(enc.DecryptFailed && !CookieImport.Importable(enc), "chromium: a v10 value with no key is marked unreadable and never imported as blank");
         Check(!CookieImport.Importable(cc.First(c => c.Host == "bad host")), "chromium: a cookie with an invalid host is not importable");
 
         var fc = CookieImport.FromFirefox(ft);
-        Check(fc.Count == 2 && fc[0].Host == ".moz.example" && fc[0].Value == "v1" && fc[0].SameSite == "strict" && fc[0].ExpiresUtc is { Year: 2030 } && fc[1].ExpiresUtc == null,
+        Check(fc.Count == 2 && fc[0].Host == ".moz.example" && fc[0].Value == "example-firefox-value" && fc[0].SameSite == "strict" && fc[0].ExpiresUtc is { Year: 2030 } && fc[1].ExpiresUtc == null,
             "firefox: host, value, same-site and the unix expiry are read; 0 is a session cookie");
 
         var sum = CookieImport.Summarize(cc, new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc));
@@ -2551,12 +2613,12 @@ Console.WriteLine("== animated header pictures ==");
     {
         var key = new byte[32]; for (int i = 0; i < 32; i++) key[i] = (byte)(i * 7 + 1);
         var nonce = new byte[12]; for (int i = 0; i < 12; i++) nonce[i] = (byte)(i + 3);
-        var plain = System.Text.Encoding.UTF8.GetBytes("session=9f8e7d; really-secret");
+        var plain = System.Text.Encoding.UTF8.GetBytes("cookie=example-value-not-a-real-secret");
         var ct = new byte[plain.Length]; var tag = new byte[16];
         using (var gcm = new System.Security.Cryptography.AesGcm(key, 16)) gcm.Encrypt(nonce, plain, ct, tag);
         var blob = new byte[3 + 12 + ct.Length + 16];
         System.Text.Encoding.ASCII.GetBytes("v10").CopyTo(blob, 0); nonce.CopyTo(blob, 3); ct.CopyTo(blob, 15); tag.CopyTo(blob, 15 + ct.Length);
-        Check(CookieImport.DecryptChromiumValue(blob, key, null) == "session=9f8e7d; really-secret", "decrypt: a v10 AES-256-GCM value is read with the right key");
+        Check(CookieImport.DecryptChromiumValue(blob, key, null) == "cookie=example-value-not-a-real-secret", "decrypt: a v10 AES-256-GCM value is read with the right key");
         var wrong = (byte[])key.Clone(); wrong[0] ^= 0xFF;
         Check(CookieImport.DecryptChromiumValue(blob, wrong, null) == null, "decrypt: the wrong key fails closed (no plaintext), never a wrong value");
         Check(CookieImport.DecryptChromiumValue(blob, null, null) == null, "decrypt: no key means the value is skipped");

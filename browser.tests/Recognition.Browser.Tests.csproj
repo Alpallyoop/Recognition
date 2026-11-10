@@ -44,6 +44,7 @@
     <Compile Include="..\browser\Kept.cs" Link="Kept.cs" />
     <Compile Include="..\browser\SqliteReader.cs" Link="SqliteReader.cs" />
     <Compile Include="..\browser\CookieImport.cs" Link="CookieImport.cs" />
+    <Compile Include="..\browser\AutofillRules.cs" Link="AutofillRules.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />
     <Compile Include="..\browser\QrCode.cs" Link="QrCode.cs" />
     <Compile Include="..\browser\ProxyRules.cs" Link="ProxyRules.cs" />

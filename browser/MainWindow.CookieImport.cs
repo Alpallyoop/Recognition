@@ -60,6 +60,7 @@ namespace Recognition.Browser
                 ("Chromium", @"Chromium\User Data"),
                 ("Vivaldi", @"Vivaldi\User Data"),
                 ("Opera", @"..\Roaming\Opera Software\Opera Stable"),
+                ("Opera GX", @"..\Roaming\Opera Software\Opera GX Stable"),
             };
             foreach (var (browser, rel) in chromium)
             {

@@ -11,7 +11,8 @@ namespace Recognition.Browser
 {
     // Passwords page (recognition:passwords). Core rules (storage, validation, exact-origin matching, generator,
     // audit, fill script) live in PasswordVault.cs and are executed by browser.tests; this file is the WPF glue.
-    //  - Nothing is ever auto-filled or auto-saved. Fill / Copy / Reveal are explicit clicks.
+    //  - Autofill and the save offer (proposal 0010, MainWindow.Autofill.cs) are gated and optional (Settings -> Passwords).
+    //    Here Fill / Copy / Reveal remain explicit clicks. Autofill only fills the one exact-origin https match, never submits.
     //  - The list sent to the page never contains passwords. Reveal sends one for a few seconds.
     //  - Receipts (hash-chained) record that an action happened and for which site, never the secret.
     public partial class MainWindow
@@ -228,7 +229,7 @@ namespace Recognition.Browser
         {
             var sb = new StringBuilder(PageHead);
             sb.Append(@"<title>Passwords</title><style>body.locked .tabs a:not(:first-child){display:none}body.locked section.sect:not(:first-child){display:none!important}</style><h1>Passwords</h1>
-<div class='muted'>Logins are stored encrypted for your Windows account (DPAPI). <b>Nothing is filled or saved automatically</b>: you click Fill, Copy or Reveal. Fill only works on a tab that is on <b>exactly</b> the saved site over https (no subdomains, no look-alikes) and never submits the form. Copied passwords are cleared from the clipboard after 30 seconds. Passwords are never included in setup snapshots or receipts. Limit: any program running as you could still ask Windows to decrypt this file.</div>
+<div class='muted'>Logins are stored encrypted for your Windows account (DPAPI). <b>Autofill</b> and <b>offering to save</b> logins are optional (Settings &rsaquo; Passwords) and work only on a tab that is on <b>exactly</b> the saved site over https (no subdomains, no look-alikes, never inside an embedded frame) and <b>never submit the form</b>. Autofill fills only when you have a single saved login for the site, and never while the vault is locked. Here, Fill / Copy / Reveal are always explicit clicks. Copied passwords are cleared from the clipboard after 30 seconds. Passwords are never included in setup snapshots or receipts. Limit: any program running as you could still ask Windows to decrypt this file.</div>
 <div id='svb' class='row' style='display:none;border:1px solid #3a5bd0;background:#151b2e'><div><div class='t'>Your passwords are kept in SoteriaVault</div><div class='u'>New logins you save here go to SoteriaVault, which tells you at once if one is already saved. The key button in the address bar fills from SoteriaVault after you allow it there. The logins listed below are the ones still stored in Recognition itself.</div></div><div class='ts'><a class='btn' onclick=""send('pw-sv-move')"">Move these to SoteriaVault</a><a class='btn ghost' onclick=""send('pw-sv-open')"">Open SoteriaVault</a></div></div>
 <div id='msg' class='u' style='min-height:18px;margin:8px 0'></div>
 

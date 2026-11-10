@@ -65,3 +65,11 @@
 3. The other browser is unchanged (check it still has its cookies). The action ledger has a `cookies.import` entry; no passwords or cookie values are in it.
 4. Firefox: the same, from `cookies.sqlite`. A profile with app-bound (very new Chrome) cookies shows some as "could not be read" and imports the rest.
 5. Import into a private tab is never offered; with only a private tab open, Import says to open a normal tab first.
+
+## BB. Autofill and save logins (proposal 0010)
+1. Settings → Passwords shows "Fill saved logins automatically" and "Offer to save logins", both ON by default.
+2. Save a login on the Passwords page for a site you can reach over https. Open that site in a new tab: the username and password fill on load, and the form is NOT submitted. The action ledger has a `vault.autofill` entry (no secret).
+3. Two saved logins for the same site: autofill does nothing (the key button lets you choose). Set a PIN and lock it: autofill does nothing until you unlock via the key button.
+4. On a site with no saved login, sign in: a bar appears under the toolbar, "Save this login for <site>?" with Save / Never for this site / Not now. Click Save; it appears on the Passwords page. Sign in again with a changed password: the bar offers "Update". Click "Never for this site": no bar there again, and Settings shows a "Clear" for the never list.
+5. Turn both toggles OFF: no autofill, no save bar. A plain http page never autofills and never offers to save. In a private tab, no save bar appears.
+6. With SoteriaVault as the manager: autofill defers to SoteriaVault (no silent fill); the save bar's Save hands the login to SoteriaVault.

@@ -72,6 +72,37 @@ namespace Recognition.Browser
             return new JsonObject { ["op"] = "import", ["entries"] = arr };
         }
 
+        // SoteriaVault's bridge takes at most 10000 logins per import and 1 MiB per frame; batches stay well under both.
+        public const int ImportBatchEntries = 500;
+        public const int ImportBatchBytes = 512 * 1024;
+
+        /// <summary>
+        /// The move split into bridge-sized batches. Each batch carries the ids of the logins in it, so Recognition removes
+        /// only what SoteriaVault confirmed it received (see ImportAccounted).
+        /// </summary>
+        public static List<(JsonObject Request, List<string> Ids)> ImportBatches(IReadOnlyList<VaultEntry> entries)
+        {
+            var batches = new List<(JsonObject, List<string>)>();
+            var cur = new List<VaultEntry>(); int bytes = 0;
+            void Flush() { if (cur.Count == 0) return; batches.Add((ImportRequest(cur), cur.Select(e => e.Id).ToList())); cur = new List<VaultEntry>(); bytes = 0; }
+            foreach (var e in entries)
+            {
+                var size = 160 + Encoding.UTF8.GetByteCount(e.Origin + e.Username + e.Password + e.Note + e.CreatedUtc + e.UpdatedUtc) * 6;   // worst case: every character escaped
+                if (cur.Count > 0 && (cur.Count >= ImportBatchEntries || bytes + size > ImportBatchBytes)) Flush();
+                cur.Add(e); bytes += size;
+            }
+            Flush();
+            return batches;
+        }
+
+        /// <summary>
+        /// Did SoteriaVault account for every login of a batch (read all of them, none invalid, each added, merged or kept
+        /// for review)? Only then may Recognition delete its copies: a login SoteriaVault skipped stays here.
+        /// </summary>
+        public static bool ImportAccounted(JsonObject res, int sent) =>
+            SoteriaBridgeProtocol.Bool(res, "ok") && sent > 0 && JsonNum.Int(res, "read") == sent && JsonNum.Int(res, "invalid") == 0
+            && JsonNum.Int(res, "added") + JsonNum.Int(res, "merged") + JsonNum.Int(res, "conflicts") == sent;
+
         /// <summary>The installed SoteriaVault app inside the linked folder (built there by its Build button), or null.</summary>
         public static string? AppPath(string soteriaRoot, Func<string, bool> exists)
         {
@@ -80,11 +111,13 @@ namespace Recognition.Browser
             return exists(p) ? p : null;
         }
 
-        /// <summary>A short, safe label for a login in a menu.</summary>
+        /// <summary>A short, safe label for a login in a menu, with the SoteriaVault section it is filed under (when any),
+        /// so two accounts on one site (say, a ROOTED one and a personal one) can be told apart.</summary>
         public static string MenuLabel(JsonObject e)
         {
-            var u = SoteriaBridgeProtocol.Str(e, "username"); var t = SoteriaBridgeProtocol.Str(e, "title");
-            var s = (u.Length > 0 ? u : "(no user name)") + (t.Length > 0 && !string.Equals(t, u, StringComparison.OrdinalIgnoreCase) ? "  -  " + t : "");
+            var u = SoteriaBridgeProtocol.Str(e, "username"); var t = SoteriaBridgeProtocol.Str(e, "title"); var sec = SoteriaBridgeProtocol.Str(e, "section");
+            var s = (u.Length > 0 ? u : "(no user name)") + (t.Length > 0 && !string.Equals(t, u, StringComparison.OrdinalIgnoreCase) ? "  -  " + t : "")
+                + (sec.Length > 0 ? "  [" + (sec.Length > 40 ? sec.Substring(0, 40) : sec) + "]" : "");
             s = new string(s.Where(ch => !char.IsControl(ch)).ToArray());
             return s.Length > 80 ? s.Substring(0, 80) + "..." : s;
         }

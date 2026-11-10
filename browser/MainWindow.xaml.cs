@@ -481,6 +481,7 @@ document.addEventListener('keydown',function(e){
             HookExternalUri(web.CoreWebView2, tab);
             ApplyTrackingPrevention(web.CoreWebView2);
             try { await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ShortcutScript); } catch { }
+            try { await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(PwCaptureScript); } catch { }
             try { await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(CloseRules.PageScript); } catch { }   // notes pages with unsaved typing, for the close question
             await RegisterShieldAsync(tab);
             await RegisterPasskeyGuardAsync(tab);
@@ -1687,6 +1688,15 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             var sb = new StringBuilder(PageHead);
             sb.Append("<title>Settings</title><h1>Settings</h1><div class='muted'>Governance is enforced by the runtime laws; a few conveniences are toggleable here.</div>");
 
+            sb.Append("<h1 style='font-size:16px;margin-top:8px'>Passwords</h1>");
+            sb.Append("<div class='row'><div><div class='t'>Fill saved logins automatically</div>" +
+                      "<div class='u'>When a page is on <b>exactly</b> a saved site over https and you have one saved login for it, Recognition fills it on load. It never fills across subdomains or look-alikes, never inside an embedded frame, and never submits the form. Off by default when SoteriaVault is your password manager (it asks you per fill). The key button always works regardless.</div></div>" +
+                      "<div class='ts'><a class='btn" + (_autofillLogins ? "" : " ghost") + "' onclick=\"send('toggle-autofill')\">" + (_autofillLogins ? "ON" : "OFF") + "</a></div></div>");
+            sb.Append("<div class='row'><div><div class='t'>Offer to save logins</div>" +
+                      "<div class='u'>When you sign in to a site, Recognition offers to save or update the login. Nothing is saved until you click Save." +
+                      (_neverSaveOrigins.Count > 0 ? " You have told it never to ask on " + _neverSaveOrigins.Count + " site(s); clearing resets that." : "") + "</div></div>" +
+                      "<div class='ts'>" + (_neverSaveOrigins.Count > 0 ? "<a class='btn ghost' onclick=\"send('clear-neversave')\">Clear \"never\" list</a> " : "") +
+                      "<a class='btn" + (_offerSaveLogins ? "" : " ghost") + "' onclick=\"send('toggle-savelogins')\">" + (_offerSaveLogins ? "ON" : "OFF") + "</a></div></div>");
             sb.Append("<h1 style='font-size:16px;margin-top:8px'>Privacy &amp; tracking</h1>");
             sb.Append("<div class='row'><div><div class='t'>Tracker &amp; ad blocking</div>" +
                       "<div class='u'>Blocks known analytics, ad, and session-replay hosts at the network layer (" + _blockHosts.Count + " rules).</div></div>" +
@@ -1924,6 +1934,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 if (MessageGate.IsTabShortcut(sc)) _lastTabShortcutUtc = DateTime.UtcNow;
                 HandleShortcut(sc); return;
             }
+            if (verdict == MessageVerdict.Capture) { OnPwCapture(tab, msgSource, msg.Substring("pwcap:".Length)); return; }
             if (msg.StartsWith("open:")) { NavigateTab(tab, msg.Substring(5)); return; }
             if (msg.StartsWith("rmbookmark:"))
             {
@@ -1943,6 +1954,18 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 case "toggle-strip":
                     _stripTracking = !_stripTracking; SaveSettings(); _actions?.Append("privacy.strip_params." + (_stripTracking ? "on" : "off"));
                     if (tab.Internal == "settings") LoadInternal(tab, "settings"); break;
+                case "toggle-autofill":
+                    _autofillLogins = !_autofillLogins; SaveSettings();
+                    if (tab.Internal == "settings") LoadInternal(tab, "settings");
+                    Status("autofill saved logins " + (_autofillLogins ? "ON" : "OFF")); break;
+                case "toggle-savelogins":
+                    _offerSaveLogins = !_offerSaveLogins; SaveSettings();
+                    if (tab.Internal == "settings") LoadInternal(tab, "settings");
+                    Status("offer to save logins " + (_offerSaveLogins ? "ON" : "OFF")); break;
+                case "clear-neversave":
+                    _neverSaveOrigins.Clear(); SaveSettings();
+                    if (tab.Internal == "settings") LoadInternal(tab, "settings");
+                    Status("cleared the list of sites Recognition won't offer to save logins for"); break;
                 case "toggle-gpc":
                     _sendGpc = !_sendGpc; SaveSettings(); _actions?.Append("privacy.gpc." + (_sendGpc ? "on" : "off"));
                     if (tab.Internal == "settings") LoadInternal(tab, "settings"); break;
@@ -2285,7 +2308,8 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             tab.Visits.Add((url, title, DateTime.UtcNow));
             if (!tab.Private) { _history.Append(url, title); _actions.Append("navigate", url); _ = SnapshotCookiesAsync(tab, url); ScheduleJumpListUpdate(); }   // private tabs leave no persisted trace
             SetHeader(tab, title);
-            if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); UpdateShield(); Status($"visited {TotalVisits()}: {title}"); }
+            if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); UpdateShield(); Status($"visited {TotalVisits()}: {title}"); SaveBarOnNav(url); }
+            TryAutofill(tab);
         }
 
         private int TotalVisits() { int n = 0; foreach (var t in _tabs) n += t.Visits.Count; return n; }

@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace Recognition.Browser
 {
-    internal enum MessageVerdict { Deny, Shortcut, Command }
+    internal enum MessageVerdict { Deny, Shortcut, Capture, Command }
 
     // Who may talk to the browser's privileged command handlers?
     //
@@ -30,6 +30,7 @@ namespace Recognition.Browser
         {
             if (string.IsNullOrEmpty(message)) return MessageVerdict.Deny;
             if (message.StartsWith("sc:", StringComparison.Ordinal)) return MessageVerdict.Shortcut;   // allowlisted separately, callable from any page
+            if (message.StartsWith("pwcap:", StringComparison.Ordinal)) return MessageVerdict.Capture;  // a login the page submitted, offered for saving (host re-checks the origin and asks before saving)
             return tabIsInternal && !IsWebSource(source) ? MessageVerdict.Command : MessageVerdict.Deny;
         }
 

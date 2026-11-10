@@ -219,6 +219,22 @@
       </Border>
 
       <Grid x:Name="WebHost" Background="{DynamicResource ChromeWin}">
+        <!-- Save-password bar: shown by the host (never a web page) after a login is submitted. -->
+        <Border x:Name="SaveBar" Grid.ColumnSpan="3" Panel.ZIndex="30" VerticalAlignment="Top" Visibility="Collapsed"
+                Background="{DynamicResource ChromeBar}" BorderBrush="{DynamicResource ChromeLine}" BorderThickness="0,0,0,1" Padding="14,9">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="&#xE8D7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource ChromeAccent}"/>
+              <TextBlock x:Name="SaveBarText" VerticalAlignment="Center" Foreground="{DynamicResource ChromeText}" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+              <Button x:Name="SaveBarSave" Content="Save" Click="SaveBarSave_Click" MinWidth="72" Padding="12,5" Margin="8,0,0,0"/>
+              <Button x:Name="SaveBarNever" Content="Never for this site" Click="SaveBarNever_Click" Padding="12,5" Margin="8,0,0,0"/>
+              <Button x:Name="SaveBarDismiss" Content="Not now" Click="SaveBarDismiss_Click" Padding="12,5" Margin="8,0,0,0"/>
+            </StackPanel>
+          </Grid>
+        </Border>
         <Grid x:Name="LoadingCover" Grid.ColumnSpan="3" Panel.ZIndex="20" Background="{DynamicResource ChromeWin}">
           <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock x:Name="LoadingText" Text="Unpacking files..." FontSize="15" Foreground="{DynamicResource ChromeText}" HorizontalAlignment="Center" Margin="0,0,0,6"/>

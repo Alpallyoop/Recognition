@@ -165,9 +165,10 @@ namespace Recognition.Browser
             _nextStart = StartupRules.NormalizeNext(S("next_start"));
             LoadWeatherSettings(r);
             LoadThemeExtraSettings(r);
+            LoadAutofillSettings(r);
         }
 
         private string ExtraSettingsJson() =>
-            J("close_ask") + ":" + J(_closeAsk) + "," + J("next_start") + ":" + J(_nextStart) + "," + WeatherSettingsJson() + ThemeExtraSettingsJson();
+            J("close_ask") + ":" + J(_closeAsk) + "," + J("next_start") + ":" + J(_nextStart) + "," + AutofillSettingsJson() + WeatherSettingsJson() + ThemeExtraSettingsJson();
     }
 }

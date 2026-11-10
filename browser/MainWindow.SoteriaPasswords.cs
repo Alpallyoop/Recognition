@@ -182,16 +182,26 @@ namespace Recognition.Browser
             if (_pin.IsSet && !EnsureUnlocked("Move your saved logins to SoteriaVault.")) return;
             var count = _vault.Entries.Count;
             _svProbe.Forget();
-            var res = await SvRequestAsync(SoteriaPasswords.ImportRequest(_vault.Entries), "import");
-            if (!SoteriaBridgeProtocol.Bool(res, "ok")) { report(SoteriaPasswords.Explain(res)); return; }
-            var added = JsonNum.Int(res, "added"); var merged = JsonNum.Int(res, "merged"); var conflicts = JsonNum.Int(res, "conflicts");
-            var text = $"Moved {count} login(s) to SoteriaVault: {added} new, {merged} already there (merged), {conflicts} with a different password (SoteriaVault asks you to review them).";
-            if (MessageBox.Show(this, text + "\n\nRemove them from Recognition now? SoteriaVault keeps them; Recognition will use SoteriaVault for passwords.",
+            // in bridge-sized batches; only the logins SoteriaVault fully accounted for may be removed here afterwards
+            int added = 0, merged = 0, conflicts = 0, skipped = 0;
+            var moved = new System.Collections.Generic.List<string>();
+            JsonObject? failure = null;
+            foreach (var (req, ids) in SoteriaPasswords.ImportBatches(_vault.Entries.ToList()))
+            {
+                var res = await SvRequestAsync(req, "import");
+                if (!SoteriaBridgeProtocol.Bool(res, "ok")) { failure = res; skipped += ids.Count; continue; }
+                added += JsonNum.Int(res, "added"); merged += JsonNum.Int(res, "merged"); conflicts += JsonNum.Int(res, "conflicts");
+                if (SoteriaPasswords.ImportAccounted(res, ids.Count)) moved.AddRange(ids); else skipped += ids.Count;
+            }
+            if (moved.Count == 0) { report(failure != null ? SoteriaPasswords.Explain(failure) : "SoteriaVault did not accept the logins; nothing was removed from Recognition."); return; }
+            var text = $"Moved {moved.Count} of {count} login(s) to SoteriaVault: {added} new, {merged} already there (merged), {conflicts} with a different password (SoteriaVault asks you to review them)."
+                       + (skipped > 0 ? $" {skipped} were not confirmed by SoteriaVault and stay in Recognition." : "");
+            if (MessageBox.Show(this, text + "\n\nRemove the " + moved.Count + " moved login(s) from Recognition now? SoteriaVault keeps them; Recognition will use SoteriaVault for passwords.",
                     "Recognition - passwords moved", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
-                foreach (var id in _vault.Entries.Select(e => e.Id).ToList()) _vault.Remove(id);
-                _actions?.Append("vault.moved_to_soteriavault", count.ToString());
-                text += " Removed from Recognition.";
+                foreach (var id in moved) _vault.Remove(id);
+                _actions?.Append("vault.moved_to_soteriavault", moved.Count.ToString());
+                text += " Removed them from Recognition.";
             }
             report(text);
             SendPwSnapshot();
