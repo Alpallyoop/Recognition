@@ -207,10 +207,21 @@ namespace Recognition.Browser
             SendPwSnapshot();
         }
 
+        /// <summary>Where SoteriaVault-Setup.exe installed SoteriaVault for this user (its Apps &amp; Features entry), or null.</summary>
+        private static string? SoteriaInstalledRoot()
+        {
+            try
+            {
+                using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\SoteriaVault");
+                return k?.GetValue("InstallLocation") as string;
+            }
+            catch { return null; }
+        }
+
         private void OpenSoteriaApp()
         {
-            var exe = SoteriaPasswords.AppPath(_soteriaRoot, File.Exists);
-            if (exe == null) { Status("SoteriaVault's app is not built in " + _soteriaRoot + " yet (run its Build button)"); return; }
+            var exe = SoteriaPasswords.AppPath(_soteriaRoot, File.Exists, SoteriaInstalledRoot());
+            if (exe == null) { Status("SoteriaVault is not installed and its app is not built in " + _soteriaRoot + " yet (run its Build_and_Install button)"); return; }
             try
             {
                 Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
@@ -250,7 +261,7 @@ namespace Recognition.Browser
             post(new
             {
                 type = "pm", on = _soteriaPasswords, allowed = _svPmStatus != null && SoteriaBridge.IsPasswordManager(_svPmStatus), active, conn,
-                local = _vault.Entries.Count, app = SoteriaPasswords.AppPath(_soteriaRoot, File.Exists) != null,
+                local = _vault.Entries.Count, app = SoteriaPasswords.AppPath(_soteriaRoot, File.Exists, SoteriaInstalledRoot()) != null,
             });
         }
     }

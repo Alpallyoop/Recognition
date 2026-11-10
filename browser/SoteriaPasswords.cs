@@ -103,12 +103,20 @@ namespace Recognition.Browser
             SoteriaBridgeProtocol.Bool(res, "ok") && sent > 0 && JsonNum.Int(res, "read") == sent && JsonNum.Int(res, "invalid") == 0
             && JsonNum.Int(res, "added") + JsonNum.Int(res, "merged") + JsonNum.Int(res, "conflicts") == sent;
 
-        /// <summary>The installed SoteriaVault app inside the linked folder (built there by its Build button), or null.</summary>
-        public static string? AppPath(string soteriaRoot, Func<string, bool> exists)
+        /// <summary>
+        /// The SoteriaVault app to start, or null. The installed copy (SoteriaVault-Setup.exe, its own folder, where the vault
+        /// then lives) comes first; the app built inside the linked folder (its Build button) is the fallback. Either has to
+        /// be an absolute local path and has to exist.
+        /// </summary>
+        public static string? AppPath(string soteriaRoot, Func<string, bool> exists, string? installedRoot = null)
         {
-            if (!SoteriaBridge.IsSafeRoot(soteriaRoot)) return null;
-            var p = Path.Combine(soteriaRoot.Trim(), "app", "SoteriaVault.exe");
-            return exists(p) ? p : null;
+            foreach (var root in new[] { installedRoot, soteriaRoot })
+            {
+                if (root == null || !SoteriaBridge.IsSafeRoot(root)) continue;
+                var p = Path.Combine(root.Trim(), "app", "SoteriaVault.exe");
+                if (exists(p)) return p;
+            }
+            return null;
         }
 
         /// <summary>A short, safe label for a login in a menu, with the SoteriaVault section it is filed under (when any),
