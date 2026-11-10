@@ -30,3 +30,13 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
   length-prefixed JSON). No network.
 - Nothing is auto-filled or auto-saved; Recognition never reads what you type into web pages.
 - Cards and the Recognition PIN are unchanged.
+
+## SoteriaVault side, 2026-11-10 (no change needed in Recognition)
+
+- SoteriaVault can now hold **authenticator-only accounts** (a 2FA key and no password). The bridge never lists them
+  for a page and refuses a fill for an entry without a password, so Recognition's key button only ever shows logins it
+  can fill. Codes are shown and copied in SoteriaVault; nothing is typed into a page.
+- **Site icons** shown in SoteriaVault come from the browsers' own icon caches on this computer, not from Recognition
+  and never from the network; the bridge protocol is unchanged.
+- **Safe copies** (`.svsafe`) and **Sync everything** are SoteriaVault-only; logins saved from Recognition are included
+  in a safe copy like any other item. `SoteriaBridgeProtocol.cs` stays byte-identical.
