@@ -72,11 +72,28 @@ namespace Recognition.Browser
         private static bool Accept(string folder, Func<string, bool> hasFile)
             => NameLooksLikeSoteria(LeafName(folder)) && hasFile(MarkerPath(folder));
 
-        private static string LeafName(string path) => Path.GetFileName(path.TrimEnd('\\', '/'));
+        private static readonly char[] Separators = { '\\', '/' };
+
+        // LeafName and Parent are deliberately pure string operations, not Path.GetFileName /
+        // Path.GetDirectoryName: those rewrite separators to the host OS style (back-slash on Windows),
+        // which silently breaks walking an injected tree whose paths use the other style — the discovery
+        // then behaves differently on Windows than on Linux. Working off the separators actually present
+        // keeps it identical on every OS and whether the caller passes Windows or POSIX paths, while real
+        // Windows paths (all back-slash) still walk up correctly in production.
+        private static string LeafName(string path)
+        {
+            var p = path.TrimEnd('\\', '/');
+            int i = p.LastIndexOfAny(Separators);
+            return i < 0 ? p : p.Substring(i + 1);
+        }
 
         private static string? Parent(string path)
         {
-            try { return Path.GetDirectoryName(path.TrimEnd('\\', '/')); } catch { return null; }
+            var p = path.TrimEnd('\\', '/');
+            int i = p.LastIndexOfAny(Separators);
+            if (i <= 0) return null;                                           // no separator, or only the leading root one
+            var parent = p.Substring(0, i);
+            return parent.Length == 2 && parent[1] == ':' ? null : parent;     // stop at a bare Windows drive root ("C:")
         }
     }
 }
