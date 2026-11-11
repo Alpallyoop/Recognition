@@ -53,3 +53,6 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
   and it now refuses to run unless a browser started it for the pinned extension. Recognition talks to the bridge
   directly, so neither change touches it: same pipe, same protocol, same per-fill approval.
 - Audit report: SoteriaVault `docs\audits\SOTERIAVAULT_AUDIT_2026-11-10.md`.
+- Later still: SoteriaVault's browser extension (1.2.0) is now browser-only and separate from the app. Sync to the
+  app is opt-in and one way, and its helper passes only `status` and `sync_push`. Recognition stays the only program
+  that lists and fills from SoteriaVault through the bridge; nothing changes for it.
