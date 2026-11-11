@@ -643,6 +643,31 @@ Console.WriteLine("=== Setup snapshot (executed C#) ===");
     Check(!SiteBlockRules.IsBlocked("https://example.com/", null) && !SiteBlockRules.IsBlocked("https://example.com/", new HashSet<string>()), "site block: an empty list blocks nothing");
 }
 
+// ---- SoteriaVault discovery in the Constellation tree (dev build, no installer entry) ------------------------------------
+{
+    Check(SoteriaDiscover.NameLooksLikeSoteria("soteria-vault") && SoteriaDiscover.NameLooksLikeSoteria("soteriavault") && SoteriaDiscover.NameLooksLikeSoteria("Soteria_Vault") && !SoteriaDiscover.NameLooksLikeSoteria("observatory") && !SoteriaDiscover.NameLooksLikeSoteria("recognition"), "soteria discover: the name match covers soteria-vault spellings only");
+
+    // a simulated Constellation tree: Recognition and SoteriaVault are siblings two levels under the Constellation root.
+    string Root = "/d/Constellation";
+    var dirs = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        [Root] = new[] { Root + "/_Venture-Systems", Root + "/_Fides-Systems", Root + "/_archive" },
+        [Root + "/_Venture-Systems"] = new[] { Root + "/_Venture-Systems/recognition", Root + "/_Venture-Systems/bountygate" },
+        [Root + "/_Fides-Systems"] = new[] { Root + "/_Fides-Systems/observatory", Root + "/_Fides-Systems/soteria-vault" },
+        [Root + "/_archive"] = new[] { Root + "/_archive/soteria-notes" },   // soteria-named but NO contract -> must be ignored
+    };
+    Func<string, IReadOnlyList<string>> sub = d => dirs.TryGetValue(d, out var v) ? v : Array.Empty<string>();
+    var realMarker = SoteriaDiscover.MarkerPath(Root + "/_Fides-Systems/soteria-vault");
+    Func<string, bool> has = f => f == realMarker;
+
+    var found = SoteriaDiscover.FindDevRoot(Root + "/_Venture-Systems/recognition", has, sub);
+    Check(found == Root + "/_Fides-Systems/soteria-vault", "soteria discover: finds the sibling soteria-vault that publishes the Recognition contract");
+    Check(SoteriaDiscover.FindDevRoot(Root + "/_Venture-Systems/recognition", _ => false, sub) == null, "soteria discover: a soteria-named folder WITHOUT the contract is not accepted");
+    Check(SoteriaDiscover.FindDevRoot(null, has, sub) == null && SoteriaDiscover.FindDevRoot("", has, sub) == null, "soteria discover: no repo root means no result");
+    // doesn't loop forever when walking up past the drive root
+    Check(SoteriaDiscover.FindDevRoot("/nowhere/deep/path", _ => false, _ => Array.Empty<string>()) == null, "soteria discover: an unrelated path returns null without looping");
+}
+
 Console.WriteLine();
 Console.WriteLine("=== Code highlighter (executed C#) ===");
 {

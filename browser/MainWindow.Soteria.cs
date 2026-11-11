@@ -15,10 +15,32 @@ namespace Recognition.Browser
 
         private void MenuSoteria_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("soteria");
 
-        // The folder to read SoteriaVault's connector contract from: the one you chose, or — when you haven't chosen one — SoteriaVault's
-        // own install location (its Apps & Features entry), so an installed SoteriaVault links automatically without typing a path.
+        private string? _soteriaDiscovered;
+        private bool _soteriaDiscoveredDone;
+
+        // The folder to read SoteriaVault's connector contract from, when you haven't chosen one: first SoteriaVault's own install
+        // location (its Apps & Features entry), then — for a dev build with no installer entry — the SoteriaVault repo found in the
+        // Constellation tree next to Recognition (SoteriaDiscover). Cached once per session; "Check again" re-scans.
+        private string DiscoveredSoteriaRoot()
+        {
+            if (_soteriaDiscoveredDone) return _soteriaDiscovered ?? "";
+            _soteriaDiscoveredDone = true;
+            try
+            {
+                _soteriaDiscovered = SoteriaDiscover.FindDevRoot(_repoRoot, File.Exists,
+                    d => { try { return Directory.GetDirectories(d); } catch { return Array.Empty<string>(); } });
+            }
+            catch { _soteriaDiscovered = null; }
+            return _soteriaDiscovered ?? "";
+        }
+
         private string EffectiveSoteriaRoot()
-            => string.IsNullOrWhiteSpace(_soteriaRoot) ? (SoteriaInstalledRoot() ?? "") : _soteriaRoot;
+        {
+            if (!string.IsNullOrWhiteSpace(_soteriaRoot)) return _soteriaRoot;
+            var installed = SoteriaInstalledRoot();
+            if (!string.IsNullOrWhiteSpace(installed)) return installed!;
+            return DiscoveredSoteriaRoot();
+        }
 
         private SoteriaStatus SoteriaCheck()
         {
@@ -55,7 +77,7 @@ namespace Recognition.Browser
             {
                 if (msg.StartsWith("sv-pm-", StringComparison.Ordinal)) { HandleSoteriaPmMessage(msg, PostToSoteriaPage); return; }
                 if (msg == "sv-state") { SendSoteriaSnapshot(false); return; }
-                if (msg == "sv-check") { SendSoteriaSnapshot(true); return; }
+                if (msg == "sv-check") { _soteriaDiscoveredDone = false; SendSoteriaSnapshot(true); return; }   // re-scan on explicit check
                 if (msg == "sv-clear")
                 {
                     _soteriaRoot = ""; SaveSettings(); _actions?.Append("soteria.unlink");

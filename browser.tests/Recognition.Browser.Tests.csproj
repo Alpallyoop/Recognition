@@ -56,6 +56,7 @@
     <Compile Include="..\browser\NativeMessaging.cs" Link="NativeMessaging.cs" />
     <Compile Include="..\browser\AssistantProtocol.cs" Link="AssistantProtocol.cs" />
     <Compile Include="..\browser\SiteBlockRules.cs" Link="SiteBlockRules.cs" />
+    <Compile Include="..\browser\SoteriaDiscover.cs" Link="SoteriaDiscover.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />
     <Compile Include="..\browser\QrCode.cs" Link="QrCode.cs" />
     <Compile Include="..\browser\ProxyRules.cs" Link="ProxyRules.cs" />
