@@ -61,3 +61,13 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
   (`docs\proposals\EXTENSION_TWO_WAY_SYNC_V1.md` in SoteriaVault). Recognition never sends `sync_pull` and is never
   asked; its per-fill approval is unchanged. Linking installs by email through the Constellation account is a
   SoteriaVault design proposal (`CONSTELLATION_EMAIL_LINK_V1.md`) and not built yet.
+## SoteriaVault side, 2026-11-10, latest (one rule for app and extension; ports; Recognition unchanged)
+
+- SoteriaVault's extension (1.5.x) needs no passphrase and no app; sync with the app stays opt-in.
+- The app and the extension now share one rule for 2FA codes (6-10 digits, 10-300 s; out-of-range and hotp links
+  refused), password strength and generated passwords. Cards must pass the Luhn check. Unknown fields in the store
+  are kept. A legacy v1 key profile opens and is upgraded with a `key_upgrade` receipt.
+- SoteriaVault's `ports/` folder has a portable spec, test vectors and SDK + CLI ports in TypeScript, Go, Java and
+  Python (Rust and a Tauri desktop app in progress), all proven against the C# store and the extension.
+- None of this touches Recognition: same bridge pipe and protocol, same per-fill approval; `SoteriaBridgeProtocol.cs`
+  is unchanged.
