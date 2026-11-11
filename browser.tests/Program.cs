@@ -252,6 +252,394 @@ Console.WriteLine("=== Setup snapshot (executed C#) ===");
 
     // reusable: the same snapshot + code opens any number of times (on any device) until it expires
     Check(Enumerable.Range(0, 3).All(i => SetupBlob.Open(blob, code, now.AddMinutes(i * 10)).Ok), "re-apply: the same snapshot and code open repeatedly until expiry");
+
+    // ---- portable "Export for another device" categories: logins, cookies, kept (proposal 0011) --------------------------
+    // Saved logins: invalid origin / empty password never serialized; the origin is normalised on the way out and back.
+    var liB = new List<BundleLogin> { new("Example.com", "me", "pw", "note"), new("not a host", "x", "y", ""), new("s.com", "u", "", "") };
+    var lsB = LoginRules.Serialize(liB);
+    Check(lsB.Count == 1, "bundle logins: a bad origin and an empty password are dropped on serialize");
+    using (var ldoc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(lsB)))
+    {
+        var lp = LoginRules.Parse(ldoc.RootElement, out var lrej);
+        Check(lp.Count == 1 && lp[0].Origin == "example.com" && lp[0].Password == "pw" && lrej == 0, "bundle logins: a valid login roundtrips with its origin normalised");
+    }
+    // ToAdd: the bundle never overwrites a password you already have. Exact (origin,user,pass) duplicates (in the vault or within the
+    // bundle) are skipped and counted; a same (origin,user) with a DIFFERENT password is added as a separate entry.
+    var existingL = new (string, string, string)[] { ("example.com", "me", "pw") };
+    var incomingL = new List<BundleLogin> { new("example.com", "me", "pw", ""), new("example.com", "me", "NEWpw", ""), new("example.com", "me", "NEWpw", ""), new("other.com", "u", "p", "") };
+    var addL = LoginRules.ToAdd(incomingL, existingL, out var dupsL);
+    Check(addL.Count == 2 && dupsL == 2 && addL.Any(x => x.Password == "NEWpw") && addL.Any(x => x.Origin == "other.com"), "bundle logins ToAdd: exact dup skipped, a changed password added as new, a within-bundle dup skipped");
+
+    // Live cookies: expired and malformed cookies are never carried; sameSite is preserved; a cookie that has since expired is dropped
+    // on import even though it was live when the bundle was made.
+    var ckNow = DateTime.Parse("2026-01-01T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime();
+    var cookiesIn = new List<ImportedCookie>
+    {
+        new() { Host = ".x.com", Name = "sid", Value = "v", Path = "/", Secure = true, HttpOnly = true, SameSite = "strict", ExpiresUtc = ckNow.AddDays(1) },
+        new() { Host = "y.com", Name = "session", Value = "v2", Path = "/", SameSite = "lax", ExpiresUtc = null },
+        new() { Host = "z.com", Name = "old", Value = "v3", ExpiresUtc = ckNow.AddDays(-1) },
+        new() { Host = "bad host", Name = "n", Value = "v" },
+    };
+    var ckSer = CookieBundleRules.Serialize(cookiesIn, ckNow);
+    Check(ckSer.Count == 2, "bundle cookies: expired and invalid-host cookies are not serialized");
+    using (var cdoc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(ckSer)))
+    {
+        var cp = CookieBundleRules.Parse(cdoc.RootElement, ckNow, out var crej);
+        Check(cp.Count == 2 && crej == 0 && cp.Any(c => c.Name == "sid" && c.SameSite == "strict" && c.Secure && c.HttpOnly), "bundle cookies: the two live cookies roundtrip with flags and sameSite preserved");
+        var cpLater = CookieBundleRules.Parse(cdoc.RootElement, ckNow.AddDays(2), out _);
+        Check(cpLater.Count == 1, "bundle cookies: a cookie that has since expired is dropped on import");
+    }
+    using (var bdoc = System.Text.Json.JsonDocument.Parse("[{\"host\":\"bad host\",\"name\":\"n\",\"value\":\"v\"},{\"host\":\".x.com\",\"name\":\"a\",\"value\":\"b\",\"samesite\":\"weird\"}]"))
+    {
+        var bp = CookieBundleRules.Parse(bdoc.RootElement, ckNow, out var brej);
+        Check(bp.Count == 1 && brej == 1 && bp[0].SameSite == "lax", "bundle cookies: a bad host is dropped+counted and an unknown sameSite falls back to lax");
+    }
+
+    // Kept manifest: list only, re-validated; a bad id is dropped; an https source is re-installable, a local folder is not.
+    var km = new List<KeptManifestItem> { new("extension", new string('a', 64), "Ext", "1.0", "https://store.example/ext"), new("theme", "shortid", "bad", "", ""), new("devbuild", new string('b', 16), "Dev", "", "C:\\local") };
+    var ksB = KeptManifestRules.Serialize(km);
+    Check(ksB.Count == 2, "bundle kept: an entry with an invalid id is dropped on serialize");
+    using (var kdoc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(ksB)))
+    {
+        var kp = KeptManifestRules.Parse(kdoc.RootElement, out var krej);
+        Check(kp.Count == 2 && krej == 0, "bundle kept: valid items roundtrip");
+        Check(KeptManifestRules.HasReinstallSource(kp.First(x => x.Kind == "extension")) && !KeptManifestRules.HasReinstallSource(kp.First(x => x.Kind == "devbuild")), "bundle kept: an https source is re-installable; a local folder is not");
+    }
+
+    // End-to-end through the sealed bundle + SetupPlan, with hostile rows mixed in — every category is re-validated after decryption.
+    var catsB = new Dictionary<string, object>
+    {
+        ["logins"] = new object[] { new { origin = "Example.com", username = "me", password = "p@ss", note = "n" }, new { origin = "not a host", username = "x", password = "y" }, new { origin = "s.com", username = "u", password = "" } },
+        ["cookies"] = new object[] { new { host = ".example.com", name = "sid", value = "abc", path = "/", secure = true, http_only = true, samesite = "strict", expires = (string?)null }, new { host = "bad host", name = "x", value = "y" } },
+        ["kept"] = new object[] { new { kind = "extension", id = new string('c', 64), name = "Ext", version = "1.0", source = "https://store.example/ext" }, new { kind = "theme", id = "zz", name = "bad" } },
+    };
+    var pbB = SetupPayload.Build("bundle0123456789ab", now, now.AddHours(1), catsB);
+    var cbB = SetupCode.Generate();
+    var planB = SetupPlan.Parse(SetupBlob.Open(SetupBlob.Seal(pbB, cbB, 100_000), cbB, now).PayloadJson);
+    Check(planB.Logins.Count == 1 && planB.Logins[0].Origin == "example.com" && planB.LoginsRejected == 2, "bundle plan: only the valid login survives decryption; the bad origin and empty password are counted");
+    Check(planB.Cookies.Count == 1 && planB.Cookies[0].Name == "sid" && planB.CookiesRejected == 1, "bundle plan: only the valid cookie survives; the bad-host cookie is counted");
+    Check(planB.KeptItems.Count == 1 && planB.KeptRejected == 1 && KeptManifestRules.HasReinstallSource(planB.KeptItems[0]), "bundle plan: only the valid kept item survives; the bad-id one is counted");
+}
+
+// ---- governed agent control: the pure decision core (proposal 0012) --------------------------------------------------------
+{
+    AgentRequest Req(AgentCapability c, string? url = "https://example.com/", bool intern = false, bool priv = false, bool granted = true, bool confirmed = false)
+        => new(c, url, intern, priv, granted, confirmed);
+
+    // master switch: everything is denied until the agent is turned on.
+    Check(AgentRules.Decide(false, false, Req(AgentCapability.GetText)) == AgentVerdict.Deny, "agent: with the master switch off, even a read is denied");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.GetText)) == AgentVerdict.Allow, "agent: with it on and the origin granted, a read is allowed");
+
+    // hard refusals: internal pages, private tabs, file://, and non-web schemes — no mode, no grant overrides them.
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.GetText, "recognition:settings", granted: true)) == AgentVerdict.Deny, "agent: Recognition's own pages are never driven, even granted in dev mode");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.Screenshot, "https://example.com/", intern: true, granted: true)) == AgentVerdict.Deny, "agent: a tab flagged internal is refused whatever its URL");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.GetText, "https://example.com/", priv: true, granted: true)) == AgentVerdict.Deny, "agent: a private tab is never read or acted on");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.Navigate, "file:///C:/secret.txt", granted: true)) == AgentVerdict.Deny, "agent: local files are refused");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.Navigate, "ftp://x/", granted: true)) == AgentVerdict.Deny, "agent: a non-web scheme is refused");
+    Check(AgentRules.IsForbiddenTarget("RECOGNITION:Vault", false, false), "agent: the recognition scheme is refused case-insensitively, even if the internal flag were wrong");
+
+    // per-call confirm: RunScript and FileUpload ask every time, in every mode, even on a granted origin.
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.RunScript, granted: true, confirmed: false)) == AgentVerdict.NeedConsent, "agent: RunScript asks on every call even in dev mode on a granted site");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.RunScript, granted: true, confirmed: true)) == AgentVerdict.Allow, "agent: RunScript runs once this call is confirmed");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.FileUpload, granted: true, confirmed: false)) == AgentVerdict.NeedConsent, "agent: FileUpload asks on every call");
+    Check(AgentRules.NeedsPerCallConfirm(AgentCapability.RunScript) && AgentRules.NeedsPerCallConfirm(AgentCapability.FileUpload), "agent: RunScript and FileUpload are the per-call-confirm capabilities");
+
+    // per-origin grant: an un-granted origin is NeedConsent (not Deny, not Allow) in both modes; dev mode does not invent a grant.
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.Click, granted: false)) == AgentVerdict.NeedConsent, "agent: acting on an un-granted origin needs consent");
+    Check(AgentRules.Decide(true, true, Req(AgentCapability.Click, granted: false)) == AgentVerdict.NeedConsent, "agent: dev mode does not invent a grant for an un-granted origin");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.Click, granted: true)) == AgentVerdict.Allow, "agent: acting on a granted origin is allowed");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.ReadPage, granted: false)) == AgentVerdict.NeedConsent, "agent: even a read needs the origin granted first");
+
+    // window/tab-set actions carry no origin: allowed once the switch is on, but never from a private/internal context.
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.TabsList, url: null, granted: false)) == AgentVerdict.Allow, "agent: listing tabs needs only the master switch");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.TabCreate, url: null, granted: false)) == AgentVerdict.Allow, "agent: creating a tab needs only the master switch");
+    Check(AgentRules.Decide(true, false, Req(AgentCapability.TabClose, url: null, priv: true, granted: false)) == AgentVerdict.Deny, "agent: a window action is still refused from inside a private tab");
+
+    // acting vs reading classification.
+    Check(!AgentRules.IsActing(AgentCapability.GetText) && !AgentRules.IsActing(AgentCapability.Screenshot) && AgentRules.IsActing(AgentCapability.Type) && AgentRules.IsActing(AgentCapability.Navigate), "agent: reads and acts are classified correctly");
+
+    // receipts: capability + origin + outcome only; never content. Window actions have no origin.
+    Check(AgentRules.Receipt(AgentCapability.Type, "https://example.com/login", true) == "agent.type:example.com:ok", "agent receipt: records capability, origin and outcome, nothing typed");
+    Check(AgentRules.Receipt(AgentCapability.TabsList, null, true) == "agent.tabslist:window:ok", "agent receipt: a window action records 'window' as its origin");
+    Check(AgentRules.Receipt(AgentCapability.RunScript, "https://example.com/", false) == "agent.runscript:example.com:fail", "agent receipt: a failed action is recorded as fail");
+}
+
+// ---- agent MCP protocol: tool catalogue, call validation, JSON-RPC shaping (proposal 0012, Phase 2) -------------------------
+{
+    JsonElement Args(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement;
+
+    // catalogue: one tool per capability, unique names, every capability covered.
+    var tools = AgentProtocol.Tools();
+    Check(tools.Select(t => t.Name).Distinct().Count() == tools.Count, "agent protocol: tool names are unique");
+    Check(tools.Select(t => t.Capability).Distinct().Count() == Enum.GetValues(typeof(AgentCapability)).Length, "agent protocol: every capability has exactly one tool");
+    Check(AgentProtocol.TryCapability("recognition_navigate", out var ncap) && ncap == AgentCapability.Navigate, "agent protocol: a tool name maps to its capability");
+    Check(!AgentProtocol.TryCapability("recognition_sudo", out _), "agent protocol: an unknown tool name has no capability");
+
+    // navigate: must be http(s), bounded, present.
+    Check(AgentProtocol.TryParse("recognition_navigate", Args("{\"url\":\"https://example.com/x\"}"), out _, out var pNav, out _) && pNav.Url == "https://example.com/x", "agent protocol: a valid navigate url parses");
+    Check(!AgentProtocol.TryParse("recognition_navigate", Args("{\"url\":\"file:///etc/passwd\"}"), out _, out _, out var eNav) && eNav.Contains("http"), "agent protocol: a non-web navigate url is rejected");
+    Check(!AgentProtocol.TryParse("recognition_navigate", Args("{}"), out _, out _, out _), "agent protocol: navigate without a url is rejected");
+    Check(!AgentProtocol.TryParse("recognition_navigate", Args("{\"url\":\"" + new string('a', 3000) + "\"}"), out _, out _, out _), "agent protocol: an over-length url is rejected");
+
+    // click: integer coords in range.
+    Check(AgentProtocol.TryParse("recognition_click", Args("{\"x\":10,\"y\":20}"), out _, out var pClick, out _) && pClick.X == 10 && pClick.Y == 20, "agent protocol: click coordinates parse");
+    Check(!AgentProtocol.TryParse("recognition_click", Args("{\"x\":10}"), out _, out _, out _), "agent protocol: click without y is rejected");
+    Check(!AgentProtocol.TryParse("recognition_click", Args("{\"x\":-5,\"y\":20}"), out _, out _, out _), "agent protocol: a negative coordinate is rejected");
+    Check(!AgentProtocol.TryParse("recognition_click", Args("{\"x\":\"10\",\"y\":\"20\"}"), out _, out _, out _), "agent protocol: string coordinates are rejected");
+
+    // type allows newlines in its text; selectors/queries reject control characters.
+    Check(AgentProtocol.TryParse("recognition_type", Args("{\"text\":\"line1\\nline2\",\"submit\":true}"), out _, out var pType, out _) && pType.Text == "line1\nline2" && pType.Submit, "agent protocol: type text keeps newlines and reads submit");
+    Check(!AgentProtocol.TryParse("recognition_find", Args("{\"query\":\"a\\u0001b\"}"), out _, out _, out _), "agent protocol: a control character in a query is rejected");
+
+    // run_script / file_upload parse but are gated per-call elsewhere.
+    Check(AgentProtocol.TryParse("recognition_run_script", Args("{\"script\":\"return 1+1\"}"), out var rcap, out var pScript, out _) && rcap == AgentCapability.RunScript && pScript.Script == "return 1+1", "agent protocol: run_script parses its body");
+    Check(AgentProtocol.TryParse("recognition_file_upload", Args("{\"selector\":\"#f\",\"path\":\"C:/u/a.png\"}"), out _, out var pUp, out _) && pUp.Selector == "#f" && pUp.Path == "C:/u/a.png", "agent protocol: file_upload parses selector and path");
+
+    // resize bounds, tab_close id shape, no-arg reads.
+    Check(!AgentProtocol.TryParse("recognition_resize", Args("{\"width\":50,\"height\":50}"), out _, out _, out _), "agent protocol: a too-small window size is rejected");
+    Check(AgentProtocol.TryParse("recognition_resize", Args("{\"width\":1200,\"height\":800}"), out _, out var pSz, out _) && pSz.Width == 1200, "agent protocol: a valid window size parses");
+    Check(!AgentProtocol.TryParse("recognition_tab_close", Args("{\"tab_id\":\"a b\"}"), out _, out _, out _), "agent protocol: a tab id with a space is rejected");
+    Check(AgentProtocol.TryParse("recognition_tabs", Args("{}"), out var tcap, out _, out _) && tcap == AgentCapability.TabsList, "agent protocol: a no-argument read parses");
+    Check(!AgentProtocol.TryParse("recognition_unknown", Args("{}"), out _, out _, out var eUnk) && eUnk.Contains("unknown"), "agent protocol: an unknown tool is an error");
+
+    // JSON-RPC shaping is well-formed and the strings are escaped.
+    using (var d = System.Text.Json.JsonDocument.Parse(AgentProtocol.RpcToolsListResult(1)))
+        Check(d.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength() == tools.Count, "agent protocol: tools/list result lists every tool as valid JSON");
+    using (var d = System.Text.Json.JsonDocument.Parse(AgentProtocol.RpcTextResult(2, "he said \"hi\"\nok", isError: true)))
+        Check(d.RootElement.GetProperty("result").GetProperty("isError").GetBoolean() && d.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString() == "he said \"hi\"\nok", "agent protocol: a text result escapes quotes/newlines and marks errors");
+    using (var d = System.Text.Json.JsonDocument.Parse(AgentProtocol.RpcError(null, -32601, "method not found")))
+        Check(d.RootElement.GetProperty("error").GetProperty("code").GetInt32() == -32601, "agent protocol: an error envelope carries the code with a null id");
+    using (var d = System.Text.Json.JsonDocument.Parse(AgentProtocol.RpcInitializeResult(3)))
+        Check(d.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString() == "recognition", "agent protocol: initialize advertises the server name");
+}
+
+// ---- agent session: token, grants, kill switch, rate limiter (proposal 0012, Phase 2) -------------------------------------
+{
+    // token: 64 hex chars, constant-time compare, mismatch and tamper rejected.
+    var tok = AgentSession.NewToken();
+    Check(tok.Length == 64 && tok.All(Uri.IsHexDigit), "agent session: a token is 256 bits of hex");
+    Check(AgentSession.NewToken() != AgentSession.NewToken(), "agent session: tokens are unique per launch");
+    Check(AgentSession.TokenMatches(tok, tok) && !AgentSession.TokenMatches(tok, tok.Substring(0, 63) + "0") && !AgentSession.TokenMatches(tok, "") && !AgentSession.TokenMatches(tok, null), "agent session: token match accepts the exact token and rejects tamper/empty/null");
+
+    var s = new AgentSession(tok, rateMax: 3, rateWindowSeconds: 60);
+    Check(s.AuthOk(tok) && !s.AuthOk("nope"), "agent session: auth uses the session token");
+
+    // grants are per origin; an un-granted origin is not granted; the kill switch forgets everything.
+    Check(s.Grant("https://Example.com/page") && s.IsGrantedUrl("https://example.com/other"), "agent session: granting an origin covers other paths on it");
+    Check(!s.IsGrantedUrl("https://evil.com/"), "agent session: a different origin is not granted");
+    Check(!s.Grant("not a url"), "agent session: a bad origin cannot be granted");
+    Check(s.Ungrant("https://example.com/") && !s.IsGrantedUrl("https://example.com/"), "agent session: an origin can be ungranted");
+    s.Grant("https://a.com"); s.Grant("https://b.com");
+    s.RevokeAll();
+    Check(!s.IsGrantedUrl("https://a.com/") && !s.IsGrantedUrl("https://b.com/") && s.GrantedOrigins.Count == 0, "agent session: the kill switch revokes every grant");
+
+    // rate limiter: a sliding window per key; the budget refills as the window passes.
+    var agClock = DateTime.Parse("2026-01-01T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime();
+    Check(s.WithinRate("example.com", agClock) && s.WithinRate("example.com", agClock) && s.WithinRate("example.com", agClock), "agent session: actions within budget are allowed");
+    Check(!s.WithinRate("example.com", agClock), "agent session: the fourth action in the window is throttled");
+    Check(s.WithinRate("other.com", agClock), "agent session: the limit is per key");
+    Check(s.WithinRate("example.com", agClock.AddSeconds(61)), "agent session: budget refills after the window passes");
+}
+
+// ---- agent MCP server: JSON-RPC routing over the injected executor (proposal 0012, Phase 2) -------------------------------
+{
+    // a fake executor records what the server asked it to run and returns a canned result.
+    AgentCapability? lastCap = null; AgentCallArgs lastArgs = default;
+    Func<AgentCapability, AgentCallArgs, System.Threading.Tasks.Task<AgentResult>> exec = (c, a) =>
+    { lastCap = c; lastArgs = a; return System.Threading.Tasks.Task.FromResult(c == AgentCapability.Screenshot ? AgentResult.Image("UE5H") : AgentResult.Ok("ran " + c)); };
+    var srv = new AgentServer(new AgentSession(AgentSession.NewToken()), exec);
+
+    // initialize advertises the protocol + server; tools/list lists every tool.
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString() == "recognition", "agent server: initialize is answered");
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength() == AgentProtocol.Tools().Count, "agent server: tools/list returns the catalogue");
+
+    // a notification gets no response body.
+    Check(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}").GetAwaiter().GetResult() == "", "agent server: a notification produces no response");
+
+    // an unknown method is a JSON-RPC method-not-found.
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"evil\"}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("error").GetProperty("code").GetInt32() == -32601, "agent server: an unknown method is refused");
+
+    // tools/call routes to the executor with the parsed capability + args.
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"recognition_navigate\",\"arguments\":{\"url\":\"https://example.com/\"}}}").GetAwaiter().GetResult()))
+        Check(lastCap == AgentCapability.Navigate && lastArgs.Url == "https://example.com/" && d.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString() == "ran Navigate", "agent server: tools/call runs the executor and returns its text");
+
+    // a screenshot comes back as an image content block.
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"recognition_screenshot\",\"arguments\":{}}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("type").GetString() == "image", "agent server: a screenshot returns an image content block");
+
+    // a bad tool argument is a tool-level error (isError), not a transport crash, and never reaches the executor.
+    lastCap = null;
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"recognition_navigate\",\"arguments\":{\"url\":\"file:///x\"}}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("isError").GetBoolean() && lastCap == null, "agent server: an invalid argument is a tool error and never reaches the executor");
+
+    // malformed JSON is a parse error, not a crash.
+    using (var d = System.Text.Json.JsonDocument.Parse(srv.HandleRpcAsync("not json").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("error").GetProperty("code").GetInt32() == -32700, "agent server: malformed JSON is a parse error");
+}
+
+// ---- CDP bridge: WebSocket handshake + the wrapped method map (proposal 0012, Phase 3) ------------------------------------
+{
+    // the RFC 6455 accept-key worked example.
+    Check(WsHandshake.AcceptKey("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", "cdp ws: the accept key matches the RFC 6455 example");
+
+    JsonElement P(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement;
+
+    // classification: metadata is local, the subset is mapped, everything else (raw/low-level CDP) is refused.
+    Check(CdpMap.Classify("Browser.getVersion") == CdpClass.Local && CdpMap.Classify("Target.getTargets") == CdpClass.Local, "cdp map: handshake/metadata methods are answered locally");
+    Check(CdpMap.Classify("Page.navigate") == CdpClass.Mapped && CdpMap.Classify("Runtime.evaluate") == CdpClass.Mapped, "cdp map: the supported subset is mapped to capabilities");
+    Check(CdpMap.Classify("DOM.setAttributeValue") == CdpClass.Refused && CdpMap.Classify("Network.getResponseBody") == CdpClass.Refused && CdpMap.Classify("Storage.getCookies") == CdpClass.Refused, "cdp map: mutating/sensitive CDP methods are refused");
+
+    // mapping translates params to governed capabilities.
+    Check(CdpMap.TryMap("Page.navigate", P("{\"url\":\"https://example.com/\"}"), out var c1, out var a1, out _, out _) && c1 == AgentCapability.Navigate && a1.Url == "https://example.com/", "cdp map: Page.navigate maps to Navigate");
+    Check(!CdpMap.TryMap("Page.navigate", P("{\"url\":\"file:///x\"}"), out _, out _, out _, out var e1) && e1.Contains("http"), "cdp map: a non-web navigate url is refused");
+    Check(CdpMap.TryMap("Runtime.evaluate", P("{\"expression\":\"document.title\"}"), out var c2, out var a2, out _, out _) && c2 == AgentCapability.RunScript && a2.Script == "document.title", "cdp map: Runtime.evaluate maps to the governed RunScript (asks every time)");
+    Check(CdpMap.TryMap("Input.insertText", P("{\"text\":\"hi\"}"), out var c3, out var a3, out _, out _) && c3 == AgentCapability.Type && a3.Text == "hi", "cdp map: Input.insertText maps to Type");
+    Check(CdpMap.TryMap("Input.dispatchMouseEvent", P("{\"type\":\"mouseReleased\",\"x\":5,\"y\":6}"), out var c4, out var a4, out var n4, out _) && c4 == AgentCapability.Click && a4.X == 5 && a4.Y == 6 && !n4, "cdp map: a mouse release becomes a Click");
+    Check(CdpMap.TryMap("Input.dispatchMouseEvent", P("{\"type\":\"mouseWheel\",\"deltaX\":0,\"deltaY\":120}"), out var c5, out var a5, out _, out _) && c5 == AgentCapability.Scroll && a5.Dy == 120, "cdp map: a mouse wheel becomes a Scroll");
+    Check(CdpMap.TryMap("Input.dispatchMouseEvent", P("{\"type\":\"mousePressed\",\"x\":5,\"y\":6}"), out _, out _, out var n6, out _) && n6, "cdp map: a mouse press is a no-op (the click happens on release)");
+
+    // result shaping per capability + envelopes are valid JSON.
+    using (var d = System.Text.Json.JsonDocument.Parse(CdpMap.Result(7, CdpMap.ResultBodyFor(AgentCapability.Screenshot, true, "", "QUJD"))))
+        Check(d.RootElement.GetProperty("result").GetProperty("data").GetString() == "QUJD" && d.RootElement.GetProperty("id").GetInt32() == 7, "cdp map: a screenshot result carries base64 data in a CDP envelope");
+    using (var d = System.Text.Json.JsonDocument.Parse(CdpMap.Result(8, CdpMap.ResultBodyFor(AgentCapability.RunScript, false, "Example", null))))
+        Check(d.RootElement.GetProperty("result").GetProperty("result").GetProperty("value").GetString() == "Example", "cdp map: a Runtime.evaluate result carries the value");
+    using (var d = System.Text.Json.JsonDocument.Parse(CdpMap.Error(9, "method not permitted")))
+        Check(d.RootElement.GetProperty("error").GetProperty("message").GetString() == "method not permitted", "cdp map: a refusal is a CDP error envelope");
+    using (var d = System.Text.Json.JsonDocument.Parse(CdpMap.LocalResultBody("Browser.getVersion")))
+        Check(d.RootElement.GetProperty("product").GetString()!.StartsWith("Recognition"), "cdp map: Browser.getVersion names Recognition");
+
+    // the CDP server routes messages through the SAME executor the MCP server uses.
+    AgentCapability? cdpLast = null;
+    Func<AgentCapability, AgentCallArgs, System.Threading.Tasks.Task<AgentResult>> cexec = (c, a) =>
+    { cdpLast = c; return System.Threading.Tasks.Task.FromResult(c == AgentCapability.Screenshot ? AgentResult.Image("Zm9v") : AgentResult.Ok(c == AgentCapability.RunScript ? "the title" : "ok")); };
+    var cdp = new CdpServer(new AgentSession(AgentSession.NewToken()), cexec);
+
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":1,\"method\":\"Browser.getVersion\"}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("product").GetString()!.StartsWith("Recognition") && cdpLast == null, "cdp server: a metadata method is answered locally without the executor");
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":2,\"method\":\"Page.navigate\",\"params\":{\"url\":\"https://example.com/\"}}").GetAwaiter().GetResult()))
+        Check(cdpLast == AgentCapability.Navigate && d.RootElement.GetProperty("result").GetProperty("frameId").GetString() == "0", "cdp server: Page.navigate runs the governed executor");
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":3,\"method\":\"Runtime.evaluate\",\"params\":{\"expression\":\"document.title\"}}").GetAwaiter().GetResult()))
+        Check(cdpLast == AgentCapability.RunScript && d.RootElement.GetProperty("result").GetProperty("result").GetProperty("value").GetString() == "the title", "cdp server: Runtime.evaluate goes through the governed RunScript");
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":4,\"method\":\"Page.captureScreenshot\",\"params\":{}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("result").GetProperty("data").GetString() == "Zm9v", "cdp server: a screenshot returns base64 data");
+    cdpLast = null;
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":5,\"method\":\"DOM.getDocument\",\"params\":{}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.TryGetProperty("error", out _) && cdpLast == null, "cdp server: a refused method is an error and never reaches the executor");
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":6,\"method\":\"Page.navigate\",\"params\":{\"url\":\"file:///x\"}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.TryGetProperty("error", out _), "cdp server: a non-web navigate is refused as a CDP error");
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("garbage").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("error").GetProperty("message").GetString() == "parse error", "cdp server: malformed JSON is a parse error, not a crash");
+    // a sessionId is echoed back (flat session routing).
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp.HandleCdpMessageAsync("{\"id\":7,\"sessionId\":\"recognition\",\"method\":\"Browser.getVersion\"}").GetAwaiter().GetResult()))
+        Check(d.RootElement.GetProperty("sessionId").GetString() == "recognition", "cdp server: a sessionId is echoed back on the reply");
+}
+
+// ---- CDP widening: key events, Target/session lifecycle, read-only passthrough (proposal 0012, Phase 3 limit fixes) --------
+{
+    JsonElement P(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement;
+
+    // Input.dispatchKeyEvent: printable text → Type; Enter → Type+submit; keyUp/modifier → no-op.
+    Check(CdpMap.TryMap("Input.dispatchKeyEvent", P("{\"type\":\"keyDown\",\"text\":\"a\"}"), out var kc, out var ka, out var kn, out _) && kc == AgentCapability.Type && ka.Text == "a" && !kn, "cdp map: a printable key event types the character");
+    Check(CdpMap.TryMap("Input.dispatchKeyEvent", P("{\"type\":\"keyDown\",\"key\":\"Enter\"}"), out _, out var ea, out _, out _) && ea.Submit, "cdp map: an Enter key event submits");
+    Check(CdpMap.TryMap("Input.dispatchKeyEvent", P("{\"type\":\"keyUp\",\"key\":\"a\"}"), out _, out _, out var kn2, out _) && kn2, "cdp map: a key-up is a no-op");
+
+    // read passthrough classification; sensitive reads stay refused.
+    Check(CdpMap.Classify("DOM.getDocument") == CdpClass.Passthrough && CdpMap.Classify("Accessibility.getFullAXTree") == CdpClass.Passthrough && CdpMap.Classify("Page.getLayoutMetrics") == CdpClass.Passthrough, "cdp map: structure reads are passthrough");
+    Check(CdpMap.Classify("Network.getResponseBody") == CdpClass.Refused && CdpMap.Classify("Storage.getCookies") == CdpClass.Refused && CdpMap.Classify("Page.navigate") == CdpClass.Mapped, "cdp map: body/cookie/storage reads are NOT passthrough; mutations stay mapped");
+
+    // Target lifecycle events are emitted after discovery/attach so a session client can proceed.
+    Check(CdpMap.EventsAfter("Target.setDiscoverTargets").Length == 1 && CdpMap.EventsAfter("Target.setDiscoverTargets")[0].Contains("Target.targetCreated"), "cdp map: discovering targets emits targetCreated");
+    Check(CdpMap.EventsAfter("Target.attachToTarget")[0].Contains("Target.attachedToTarget") && CdpMap.EventsAfter("Browser.getVersion").Length == 0, "cdp map: attaching emits attachedToTarget; ordinary methods emit nothing");
+    Check(CdpServer.EventsFor("{\"id\":1,\"method\":\"Target.setAutoAttach\"}").Length == 1 && CdpServer.EventsFor("not json").Length == 0, "cdp server: EventsFor reads the method safely");
+
+    // the server routes a passthrough method through the injected read delegate and returns its raw body verbatim.
+    string? passMethod = null;
+    Func<string, string, System.Threading.Tasks.Task<AgentResult>> pexec = (m, p) => { passMethod = m; return System.Threading.Tasks.Task.FromResult(AgentResult.Ok("{\"root\":{\"nodeId\":1}}")); };
+    var cdp2 = new CdpServer(new AgentSession(AgentSession.NewToken()), (c, a) => System.Threading.Tasks.Task.FromResult(AgentResult.Ok("x")), pexec);
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp2.HandleCdpMessageAsync("{\"id\":1,\"method\":\"DOM.getDocument\",\"params\":{}}").GetAwaiter().GetResult()))
+        Check(passMethod == "DOM.getDocument" && d.RootElement.GetProperty("result").GetProperty("root").GetProperty("nodeId").GetInt32() == 1, "cdp server: a passthrough read is forwarded and its raw CDP result returned");
+    // with no passthrough delegate wired, a passthrough method is an error, not a crash.
+    var cdp3 = new CdpServer(new AgentSession(AgentSession.NewToken()), (c, a) => System.Threading.Tasks.Task.FromResult(AgentResult.Ok("x")));
+    using (var d = System.Text.Json.JsonDocument.Parse(cdp3.HandleCdpMessageAsync("{\"id\":1,\"method\":\"DOM.getDocument\",\"params\":{}}").GetAwaiter().GetResult()))
+        Check(d.RootElement.TryGetProperty("error", out _), "cdp server: passthrough unavailable is a clean error");
+}
+
+// ---- native-messaging framing (proposal 0012, Phase 4) --------------------------------------------------------------------
+{
+    using var ms = new System.IO.MemoryStream();
+    NativeMessaging.WriteFrame(ms, "{\"a\":1}");
+    NativeMessaging.WriteFrame(ms, "{\"b\":\"two\"}");
+    ms.Position = 0;
+    Check(NativeMessaging.ReadFrame(ms) == "{\"a\":1}" && NativeMessaging.ReadFrame(ms) == "{\"b\":\"two\"}", "native messaging: frames round-trip in sequence");
+    Check(NativeMessaging.ReadFrame(ms) == null, "native messaging: end of stream returns null");
+
+    // a frame whose declared length exceeds the limit is refused (not a huge allocation).
+    using var big = new System.IO.MemoryStream();
+    var hugeLen = BitConverter.GetBytes((uint)(NativeMessaging.MaxMessage + 1));
+    if (!BitConverter.IsLittleEndian) Array.Reverse(hugeLen);
+    big.Write(hugeLen, 0, 4); big.Position = 0;
+    Check(NativeMessaging.ReadFrame(big) == null, "native messaging: an over-length frame is refused");
+
+    // a truncated body returns null rather than throwing.
+    using var trunc = new System.IO.MemoryStream();
+    var len5 = BitConverter.GetBytes((uint)5); if (!BitConverter.IsLittleEndian) Array.Reverse(len5);
+    trunc.Write(len5, 0, 4); trunc.Write(new byte[] { 65, 66 }, 0, 2); trunc.Position = 0;
+    Check(NativeMessaging.ReadFrame(trunc) == null, "native messaging: a truncated body returns null");
+
+    // unicode survives the UTF-8 round-trip.
+    using var uni = new System.IO.MemoryStream();
+    NativeMessaging.WriteFrame(uni, "{\"s\":\"café — 日本\"}"); uni.Position = 0;
+    Check(NativeMessaging.ReadFrame(uni) == "{\"s\":\"café — 日本\"}", "native messaging: UTF-8 content round-trips");
+}
+
+// ---- embedded assistant protocol (proposal 0012, Phase 5) -----------------------------------------------------------------
+{
+    // the Anthropic tools array exposes every governed tool with a valid schema.
+    using (var d = System.Text.Json.JsonDocument.Parse(AssistantProtocol.AnthropicToolsJson()))
+    {
+        Check(d.RootElement.GetArrayLength() == AgentProtocol.Tools().Count, "assistant: the tools array lists every governed tool");
+        Check(d.RootElement[0].TryGetProperty("input_schema", out _) && d.RootElement[0].TryGetProperty("name", out _), "assistant: each tool has a name and input_schema");
+    }
+
+    // reading tool_use and text out of a model response.
+    var resp = System.Text.Json.JsonDocument.Parse("{\"content\":[{\"type\":\"text\",\"text\":\"Let me look.\"},{\"type\":\"tool_use\",\"id\":\"tu_1\",\"name\":\"recognition_get_text\",\"input\":{}},{\"type\":\"tool_use\",\"id\":\"tu_2\",\"name\":\"recognition_navigate\",\"input\":{\"url\":\"https://example.com/\"}}]}").RootElement.GetProperty("content");
+    var uses = AssistantProtocol.ParseToolUses(resp);
+    Check(uses.Count == 2 && uses[0].Id == "tu_1" && uses[0].Name == "recognition_get_text" && uses[1].Input.GetProperty("url").GetString() == "https://example.com/", "assistant: tool_use blocks are parsed with their input");
+    Check(AssistantProtocol.TextFrom(resp) == "Let me look.", "assistant: text blocks are extracted");
+
+    // a tool_use name+input feeds straight into the governed validator (same path the MCP server uses).
+    Check(AgentProtocol.TryParse(uses[1].Name, uses[1].Input, out var acap, out var aargs, out _) && acap == AgentCapability.Navigate && aargs.Url == "https://example.com/", "assistant: a tool_use validates through AgentProtocol before running");
+
+    // tool_result shaping (text + image) is valid JSON with the right ids/flags.
+    using (var d = System.Text.Json.JsonDocument.Parse(AssistantProtocol.ToolResultText("tu_1", "hello", isError: false)))
+        Check(d.RootElement.GetProperty("tool_use_id").GetString() == "tu_1" && !d.RootElement.GetProperty("is_error").GetBoolean() && d.RootElement.GetProperty("content")[0].GetProperty("text").GetString() == "hello", "assistant: a text tool_result carries id and content");
+    using (var d = System.Text.Json.JsonDocument.Parse(AssistantProtocol.ToolResultText("tu_x", "", isError: true)))
+        Check(d.RootElement.GetProperty("is_error").GetBoolean() && d.RootElement.GetProperty("content")[0].GetProperty("text").GetString() == "(no output)", "assistant: an empty error result is marked and still valid");
+    using (var d = System.Text.Json.JsonDocument.Parse(AssistantProtocol.ToolResultImage("tu_s", "QUJD")))
+        Check(d.RootElement.GetProperty("content")[0].GetProperty("source").GetProperty("data").GetString() == "QUJD", "assistant: a screenshot tool_result is an image block");
+
+    Check(AssistantProtocol.IsEndTurn("end_turn") && AssistantProtocol.IsEndTurn(null) && !AssistantProtocol.IsEndTurn("tool_use"), "assistant: the tool loop continues only on stop_reason tool_use");
+}
+
+// ---- user site blocking ---------------------------------------------------------------------------------------------------
+{
+    // CleanEntry normalises what the person types into a storable host, or rejects it.
+    Check(SiteBlockRules.CleanEntry("https://www.Example.com/path?x=1") == "www.example.com", "site block: a pasted URL stores its host, lowercased");
+    Check(SiteBlockRules.CleanEntry("  Example.COM  ") == "example.com", "site block: a bare host is trimmed and lowercased");
+    Check(SiteBlockRules.CleanEntry("example.com:8443") == "example.com" && SiteBlockRules.CleanEntry("user@example.com") == "example.com", "site block: a port or userinfo is dropped");
+    Check(SiteBlockRules.CleanEntry("localhost") == "localhost", "site block: localhost is allowed");
+    Check(SiteBlockRules.CleanEntry("not a host") == null && SiteBlockRules.CleanEntry("nodot") == null && SiteBlockRules.CleanEntry("") == null, "site block: spaces, dot-less names and empties are rejected");
+
+    var set = new HashSet<string>(StringComparer.Ordinal) { "example.com", "ads.test" };
+    Check(SiteBlockRules.IsBlocked("https://example.com/", set), "site block: the exact host is blocked");
+    Check(SiteBlockRules.IsBlocked("https://www.example.com/x", set) && SiteBlockRules.IsBlocked("http://mail.example.com/", set), "site block: subdomains of a blocked host are blocked");
+    Check(!SiteBlockRules.IsBlocked("https://notexample.com/", set), "site block: a look-alike host is NOT blocked");
+    Check(!SiteBlockRules.IsBlocked("https://example.com.evil.com/", set), "site block: a suffix trick (example.com.evil.com) is NOT blocked");
+    Check(!SiteBlockRules.IsBlocked("recognition:settings", set) && !SiteBlockRules.IsBlocked("https://other.org/", set), "site block: internal pages and unlisted hosts are not blocked");
+    Check(!SiteBlockRules.IsBlocked("https://example.com/", null) && !SiteBlockRules.IsBlocked("https://example.com/", new HashSet<string>()), "site block: an empty list blocks nothing");
 }
 
 Console.WriteLine();

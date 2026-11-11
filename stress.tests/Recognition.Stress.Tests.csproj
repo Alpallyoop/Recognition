@@ -25,6 +25,12 @@
     <Compile Include="..\browser\SoteriaBridge.cs" Link="SoteriaBridge.cs" />
     <Compile Include="..\browser\FilterEngine.cs" Link="FilterEngine.cs" />
     <Compile Include="..\browser\SetupSnapshot.cs" Link="SetupSnapshot.cs" />
+    <Compile Include="..\browser\BundleRules.cs" Link="BundleRules.cs" />
+    <Compile Include="..\browser\PasswordVault.cs" Link="PasswordVault.cs" />
+    <Compile Include="..\browser\CookieImport.cs" Link="CookieImport.cs" />
+    <Compile Include="..\browser\SqliteReader.cs" Link="SqliteReader.cs" />
+    <Compile Include="..\browser\Kept.cs" Link="Kept.cs" />
+    <Compile Include="..\browser\ThemeLibrary.cs" Link="ThemeLibrary.cs" />
     <Compile Include="..\browser\Appearance.cs" Link="Appearance.cs" />
     <Compile Include="..\browser\Customize.cs" Link="Customize.cs" />
     <Compile Include="..\browser\StartMotion.cs" Link="StartMotion.cs" />

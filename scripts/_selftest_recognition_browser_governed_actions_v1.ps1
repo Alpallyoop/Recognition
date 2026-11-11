@@ -27,7 +27,11 @@ $setupCore = Get-Content -LiteralPath (Join-Path $bdir "SetupSnapshot.cs") -Raw
 $bad = @()
 foreach($m in [regex]::Matches($pwGlue, '_actions\?\.Append\([^;]*;')){ if($m.Value -match '(?i)\.Password|\bpw\b|secret'){ $bad += ("receipt carries a secret: " + $m.Value) } }
 foreach($m in [regex]::Matches($setupGlue, '_actions\?\.Append\([^;]*;')){ if($m.Value -match '(?i)\bcode\b|\bblob\b|\bpayload\b'){ $bad += ("setup receipt carries code/blob: " + $m.Value) } }
-if($setupGlue -match '_vault|PasswordVault|VaultEntry' -or $setupCore -match '_vault|PasswordVault|VaultEntry'){ $bad += "setup snapshot code must never reference the password vault" }
+# The portable bundle may export/import saved logins and cookies (proposal 0011), but only through the gated path: the pure snapshot
+# core stays free of any vault access, the glue's credential path is unlock-gated, and no receipt ever carries a credential value.
+if($setupCore -match '_vault|PasswordVault|VaultEntry'){ $bad += "SetupSnapshot.cs (pure core) must never reference the password vault" }
+if($setupGlue -match '_vault' -and $setupGlue -notmatch 'EnsureUnlocked'){ $bad += "setup bundle credential export/import must be gated by EnsureUnlocked" }
+foreach($m in [regex]::Matches($setupGlue, '_actions\?\.Append\([^;]*;')){ if($m.Value -match '(?i)\.Password|\bpw\b|\bsecret\b|\bvalue\b'){ $bad += ("setup receipt carries a secret: " + $m.Value) } }
 if($pwGlue -notmatch 'PasswordRules\.MayFill'){ $bad += "Fill must be gated by PasswordRules.MayFill" }
 if(([regex]::Matches($pwGlue, 'MayFill')).Count -lt 2){ $bad += "Fill must re-check the origin at injection time" }
 if($pwGlue -match 'NavigationCompleted|DOMContentLoaded|WebResourceRequested'){ $bad += "vault must not auto-fill on page events" }
@@ -161,7 +165,7 @@ if($navGlue -notmatch '_filters\.Match\('){ $bad += "OnResourceRequested must us
 if($navGlue -notmatch 'RegisterShieldAsync'){ $bad += "every tab must register the fingerprint shield" }
 if($bad.Count -gt 0){ $bad | ForEach-Object { Write-Host ("BROWSER_TESTS_FAIL: " + $_) -ForegroundColor Red }; exit 1 }
 Write-Host "  ok  - static: filter engine is local-only and regex-free; list updater is https-only, size-capped, receipted; shield never uses postMessage"
-Write-Host "  ok  - static: receipts carry no secrets; setup never touches the vault; Fill is origin-gated twice and never event-driven"
+Write-Host "  ok  - static: receipts carry no secrets; setup's pure core never touches the vault and its credential path is unlock-gated; Fill is origin-gated twice and never event-driven"
 # workspace: groups, session, tiles, reader, picture-in-picture, translate, device sync
 $wsr = Get-Content -LiteralPath (Join-Path $bdir "Workspace.cs") -Raw
 $wsw = Get-Content -LiteralPath (Join-Path $bdir "MainWindow.Workspace.cs") -Raw

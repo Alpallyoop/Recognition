@@ -166,9 +166,11 @@ namespace Recognition.Browser
             LoadWeatherSettings(r);
             LoadThemeExtraSettings(r);
             LoadAutofillSettings(r);
+            LoadAgentSettings(r);
+            LoadSiteBlockSettings(r);
         }
 
         private string ExtraSettingsJson() =>
-            J("close_ask") + ":" + J(_closeAsk) + "," + J("next_start") + ":" + J(_nextStart) + "," + AutofillSettingsJson() + WeatherSettingsJson() + ThemeExtraSettingsJson();
+            J("close_ask") + ":" + J(_closeAsk) + "," + J("next_start") + ":" + J(_nextStart) + "," + SiteBlockSettingsJson() + AgentSettingsJson() + AutofillSettingsJson() + WeatherSettingsJson() + ThemeExtraSettingsJson();
     }
 }

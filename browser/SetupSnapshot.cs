@@ -193,6 +193,10 @@ namespace Recognition.Browser
         public string? HomeUrl; public bool? BlockingEnabled;
         public List<(string Url, string Title)> Bookmarks = new(); public int BookmarksRejected;
         public List<(string Key, string Origin, string Value, string Category)> SiteEntries = new(); public int SiteRejected;
+        // Added by proposal 0011 ("Export for another device"): the credential-bearing / heavier categories, re-validated in BundleRules.
+        public List<BundleLogin> Logins = new(); public int LoginsRejected;
+        public List<ImportedCookie> Cookies = new(); public int CookiesRejected;
+        public List<KeptManifestItem> KeptItems = new(); public int KeptRejected;
         public List<string> UnknownCategories = new();
 
         public static SetupPlan Parse(string payloadJson)
@@ -231,6 +235,15 @@ namespace Recognition.Browser
                             if (SetupValidate.IsValidSiteEntry(key, origin, value) && SetupValidate.SiteCategory(key!) == c.Name) plan.SiteEntries.Add((key!, origin!, value!, c.Name));
                             else plan.SiteRejected++;
                         }
+                        break;
+                    case "logins":
+                        plan.Logins = LoginRules.Parse(c.Value, out plan.LoginsRejected);
+                        break;
+                    case "cookies":
+                        plan.Cookies = CookieBundleRules.Parse(c.Value, DateTime.UtcNow, out plan.CookiesRejected);
+                        break;
+                    case "kept":
+                        plan.KeptItems = KeptManifestRules.Parse(c.Value, out plan.KeptRejected);
                         break;
                     default: plan.UnknownCategories.Add(c.Name); break;
                 }

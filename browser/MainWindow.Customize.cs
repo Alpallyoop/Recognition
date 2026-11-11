@@ -154,6 +154,7 @@ namespace Recognition.Browser
             sb.Append(StartSettingsHtml());
             sb.Append("<div class='sec'>Layout</div>");
             sb.Append(FeelSettingsHtml());
+            sb.Append(AgentSettingsHtml());
             sb.Append(ThemeLibrarySectionHtml());
             sb.Append(ThemeHeaderSectionHtml());
             sb.Append("<div class='sec'>Get a theme</div><div class='row'><div><div class='t'>Chrome and Firefox themes</div><div class='u'>Paste a Chrome Web Store, Edge Add-ons or Firefox Add-ons theme link, or choose a theme file you have. Recognition uses the theme's colours, start page picture and, for Firefox themes, the header picture across the top of the window (animated ones play); it does not run the theme as an extension.</div>" +
@@ -170,6 +171,7 @@ namespace Recognition.Browser
             void Note(string t) { Status(t); try { tab.Web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "note", text = t })); } catch { } }
             try
             {
+                if (msg.StartsWith("cz-agent:", StringComparison.Ordinal)) { HandleAgentSetting(tab, msg.Substring("cz-agent:".Length), Note); return; }
                 if (msg.StartsWith("cz-kept-", StringComparison.Ordinal)) { if (tab.Internal == "customize") HandleKeptCustomize(tab, msg, Note); return; }
                 if (msg.StartsWith("cz-top:", StringComparison.Ordinal) || msg == "cz-lib-fetch" || msg.StartsWith("cz-lib-add:", StringComparison.Ordinal) ||
                     msg.StartsWith("cz-mine-", StringComparison.Ordinal) || msg == "cz-pack-import")

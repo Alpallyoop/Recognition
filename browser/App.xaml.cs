@@ -31,6 +31,13 @@ namespace Recognition.Browser
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Native-messaging host mode (proposal 0012, Phase 4): launched by a browser with this switch, Recognition runs the
+            // stdin/stdout bridge to the already-running instance's loopback MCP endpoint and does NOT open a window.
+            if (Array.IndexOf(e.Args, "--agent-native-host") >= 0)
+            {
+                try { Recognition.Browser.NativeHost.RunAsync().GetAwaiter().GetResult(); } catch { }
+                Shutdown(); return;
+            }
             try { SetCurrentProcessExplicitAppUserModelID("Recognition.Browser"); } catch { }
             var url = LaunchArgs.FromArgs(e.Args, File.Exists);
             // the taskbar menu starts the program with one of two fixed switches; nothing else is read from them

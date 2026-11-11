@@ -45,6 +45,17 @@
     <Compile Include="..\browser\SqliteReader.cs" Link="SqliteReader.cs" />
     <Compile Include="..\browser\CookieImport.cs" Link="CookieImport.cs" />
     <Compile Include="..\browser\AutofillRules.cs" Link="AutofillRules.cs" />
+    <Compile Include="..\browser\BundleRules.cs" Link="BundleRules.cs" />
+    <Compile Include="..\browser\AgentRules.cs" Link="AgentRules.cs" />
+    <Compile Include="..\browser\AgentProtocol.cs" Link="AgentProtocol.cs" />
+    <Compile Include="..\browser\AgentSession.cs" Link="AgentSession.cs" />
+    <Compile Include="..\browser\AgentServer.cs" Link="AgentServer.cs" />
+    <Compile Include="..\browser\WsHandshake.cs" Link="WsHandshake.cs" />
+    <Compile Include="..\browser\CdpMap.cs" Link="CdpMap.cs" />
+    <Compile Include="..\browser\CdpServer.cs" Link="CdpServer.cs" />
+    <Compile Include="..\browser\NativeMessaging.cs" Link="NativeMessaging.cs" />
+    <Compile Include="..\browser\AssistantProtocol.cs" Link="AssistantProtocol.cs" />
+    <Compile Include="..\browser\SiteBlockRules.cs" Link="SiteBlockRules.cs" />
     <Compile Include="..\browser\LaunchArgs.cs" Link="LaunchArgs.cs" />
     <Compile Include="..\browser\QrCode.cs" Link="QrCode.cs" />
     <Compile Include="..\browser\ProxyRules.cs" Link="ProxyRules.cs" />

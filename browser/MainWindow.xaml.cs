@@ -263,6 +263,7 @@ document.addEventListener('keydown',function(e){
                 LoadBookmarks();
                 LoadDownloads();
                 LoadSettings();
+                StartAgentIfEnabled();   // if agent control was left on, bring its local endpoint back up (proposal 0012)
                 LoadThemeHeader();
                 ApplyChromeTheme();
                 ShowThemeHeader();
@@ -1498,6 +1499,8 @@ document.addEventListener('keydown',function(e){
             string html = name switch
             {
                 "customize" => CustomizeHtml(),
+                "assistant" => AssistantHtml(),
+                "blocked"   => BlockedHtml(),
                 "overview"  => OverviewHtml(),
                 "history"   => HistoryHtml(),
                 "downloads" => DownloadsHtml(),
@@ -1529,6 +1532,7 @@ document.addEventListener('keydown',function(e){
         {
             if (sender is Button b && b.ContextMenu is ContextMenu cm)
             {
+                try { AgentKillMenu.Visibility = _agentServer is { Running: true } || _agentEnabled ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
                 cm.PlacementTarget = b;
                 cm.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
                 cm.MinWidth = 240;
@@ -1542,6 +1546,8 @@ document.addEventListener('keydown',function(e){
         private void MenuDownloads_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("downloads");
         private void MenuBookmarks_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("bookmarks");
         private void MenuSettings_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("settings");
+        private void MenuAgentKill_Click(object sender, RoutedEventArgs e) => AgentKill();
+        private void MenuAssistant_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("assistant");
         private void MenuZoomIn_Click(object sender, RoutedEventArgs e) => Zoom(+0.1);
         private void MenuZoomOut_Click(object sender, RoutedEventArgs e) => Zoom(-0.1);
         private void MenuZoomReset_Click(object sender, RoutedEventArgs e) => Zoom(0);
@@ -1764,6 +1770,16 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             sb.Append("<h1 style='font-size:16px'>Extensions</h1>");
             sb.Append("<div class='kv'><div class='k'>Chromium extensions</div><div class='v'>" + (_extEnabled ? ("enabled &mdash; " + (_extPaths.Count + _extState.Items.Count) + " configured") : "off") + " &middot; <a class='t' href='recognition:extensions'>manage extensions</a>" + "</div></div>");
             sb.Append("<div class='muted' style='margin:6px 0 18px'>Configured in <code>config\\extensions.v1.json</code>: an unpacked folder, a <code>.zip</code>, or a <code>.crx</code> (universal adapter — all three are normalized to an unpacked folder). Every extension must ALSO pass the governance load gate (<code>recognition_extension_governance_v1.ps1</code>): its current bytes are hashed and checked against a ledger decision an operator recorded explicitly via <code>-Action register</code>. Nothing loads on first sight, on a tamper, or on a review/deny decision &mdash; refusals are receipted like any other action.</div>");
+
+            sb.Append("<h1 style='font-size:16px'>Home page &amp; links</h1>");
+            var homeNow = _homeUrl == StartBackground.StartPage ? "the Recognition start page" : Esc(_homeUrl);
+            var homeVal = _homeUrl == StartBackground.StartPage ? "" : Esc(_homeUrl);
+            sb.Append("<div class='row'><div><div class='t'>Home page</div><div class='u'>Opens with the Home button and new windows. Now: <b>" + homeNow + "</b>.</div>" +
+                      "<div style='margin-top:8px;display:flex;gap:8px'><input id='hm2' class='in' placeholder='example.com' value='" + homeVal + "' style='flex:1'>" +
+                      "<a class='btn' onclick=\"send('home-set:'+encodeURIComponent(document.getElementById('hm2').value))\">Set</a> " +
+                      "<a class='btn ghost' onclick=\"send('home-set:recognition%3Astart')\">Use start page</a></div></div></div>");
+            sb.Append("<div class='muted' style='margin:2px 0 10px'>How links open (new tab on click, scripted pop-ups blocked, link schemes) is under <a class='t' href='recognition:shield'>Shield</a>; making Recognition your default browser is under Web engine above.</div>");
+            sb.Append(BlockedSitesHtml());
 
             sb.Append("<h1 style='font-size:16px'>Site permissions &amp; policy</h1>");
             var curOrigin = (Active != null && !Active.IsInternal) ? TryHost(Active.CurrentUrl) : "";
@@ -2024,6 +2040,8 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             else if (msg.StartsWith("pk-") && tab.Internal == "passkeys") HandlePasskeyMessage(msg);
             else if (msg.StartsWith("ext-") && tab.Internal == "extensions") HandleExtMessage(msg);
             else if (msg.StartsWith("sv-") && tab.Internal == "soteria") HandleSoteriaMessage(msg);
+            else if (msg.StartsWith("asst-") && tab.Internal == "assistant") HandleAssistantMessage(tab, msg);
+            else if (msg.StartsWith("block-") && (tab.Internal == "settings" || tab.Internal == "blocked")) HandleSiteBlockMessage(tab, msg);
             else if (msg.StartsWith("exp-") && tab.Internal == "export") HandleExportMessage(msg);
             else if (msg.StartsWith("exit-") && tab.Internal == "vpn") HandleVpnMessage(msg);
             else if ((msg.StartsWith("home-set:") || msg.StartsWith("bg-")) && (tab.Internal == "settings" || tab.Internal == "customize")) HandleStartPageMessage(tab, msg);
@@ -2254,6 +2272,8 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
                 if (tab.IsInternal) NavigateTab(tab, e.Uri);
                 return;
             }
+            // The person's own blocked-sites list (SiteBlockRules; covers subdomains). Shows the blocked page instead of loading.
+            if (SiteBlockRules.IsBlocked(e.Uri, _blockedSites)) { e.Cancel = true; SiteBlockedNav(tab, e.Uri); return; }
             // HTTPS-only: plain http to anything but loopback is upgraded (host parsed properly, so
             // http://localhost.evil.com is NOT treated as local).
             var upgraded = PrivacyRules.HttpsUpgrade(e.Uri);
@@ -2310,6 +2330,7 @@ else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}});
             SetHeader(tab, title);
             if (ReferenceEquals(tab, Active)) { SetAddress(tab); UpdateStar(tab); UpdateShield(); Status($"visited {TotalVisits()}: {title}"); SaveBarOnNav(url); }
             TryAutofill(tab);
+            AgentOnNavigated(tab);   // if agent control is on, (re)attach console/network capture for this page
         }
 
         private int TotalVisits() { int n = 0; foreach (var t in _tabs) n += t.Visits.Count; return n; }

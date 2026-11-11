@@ -250,6 +250,8 @@ Constellation (`governance.ecosystem-authority`) sits beside this stack as a gov
 - Store submission kits (themeforge.store.kit.v1) and submission to Chrome Web Store, Firefox Add-ons and Edge Add-ons through the owner's own accounts; kits for Opera add-ons and GX.store
 - The append-only store submission log (themeforge.store.submission.v1)
 - Opera wallpaper archives (persona.ini with video or picture) for animated Opera start pages
+- The shared design layer for the owner's UIs (Constellation proposal 0050): design-system specs (themeforge.design_system.v1), the shared 'constellation' system, the eight primitives, and their reproducible outputs for web (CSS variables, components, tokens JSON), Tailwind, iOS (SwiftUI), Android (Compose) and Flutter, with mobile, tablet and desktop previews
+- UI snapshots of the owner's websites and apps (themeforge.ui_snapshot.v1, sources in design/sources.json), the design systems derived from them, and templates (themeforge.ui_template.v1): a measured page's layout rendered in any design system
 
 **Does not own:**
 - Recognition's theme acceptance rules, start page or theme library (recognition)

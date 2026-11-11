@@ -73,3 +73,52 @@
 4. On a site with no saved login, sign in: a bar appears under the toolbar, "Save this login for <site>?" with Save / Never for this site / Not now. Click Save; it appears on the Passwords page. Sign in again with a changed password: the bar offers "Update". Click "Never for this site": no bar there again, and Settings shows a "Clear" for the never list.
 5. Turn both toggles OFF: no autofill, no save bar. A plain http page never autofills and never offers to save. In a private tab, no save bar appears.
 6. With SoteriaVault as the manager: autofill defers to SoteriaVault (no silent fill); the save bar's Save hands the login to SoteriaVault.
+
+## CC. Export for another device — portable bundle (proposal 0011)
+1. Menu → Export session. The evidence packet is unchanged (code, QR, folder). Below it is a new section "Move this setup to another device" with **Export for another device…**; click it — it opens the Setup snapshot page (`recognition:setup`).
+2. The create list now includes **Saved logins**, **Sign-in cookies** and **Kept extensions & themes**, all three OFF by default and labelled sensitive. With none of the credential ones ticked, create as before: a bundle and a code, any expiry up to 7 days.
+3. Tick **Saved logins** and/or **Sign-in cookies**: the 7-day option is refused ("at most 24 hours"). With a PIN set and locked, creating prompts to unlock; cancelling exports nothing. Tick **Sign-in cookies** with no normal tab open: it asks you to open one first.
+4. Create a bundle with logins + cookies on device A. On device B, paste the bundle and code → **Preview**: it lists "N saved login(s) — added to your vault, never overwriting a password you have", "N sign-in cookie(s) across M site(s)", and the kept list as an info line (never a checkbox). Credential rows are unticked by default.
+5. Apply on B (unlock the vault if prompted; have a normal tab open). The logins appear on the Passwords page; a login you already had with the same password is reported as "already saved", not duplicated; reload a site whose cookie came over and you are signed in. The kept extensions/themes are **not** installed automatically — the preview told you to add them from the Extensions and Customize pages.
+6. A bundle with logins/cookies that is older than 24 hours is refused on preview ("expired"). The action ledger has `setup.create` / `setup.apply` entries naming only the categories — no code, blob or password.
+
+## DD. Agent control — hosted MCP server, Phase 2 (proposal 0012)
+1. Customize → Agent control shows "Let Claude drive this browser" OFF by default. Turn it On: the status bar shows an endpoint like `http://127.0.0.1:8766/mcp`. "Reveal token" shows a 64-char bearer token. Restart Recognition with it left on: the endpoint comes back (new token).
+2. Add the endpoint + token to a Claude MCP config (Authorization: Bearer <token>). `tools/list` returns the recognition_* tools. A request with no token or a wrong token is refused (401). A request to a non-loopback address does not reach it.
+3. On a normal https page, ask Claude to read the page (recognition_get_text / recognition_read_page): the first action on that site shows "Allow Claude to act on <site>?" — Allow once, then reads/acts work on that origin without re-asking. Navigate, click (x,y), type, scroll, screenshot, find, form_input all act on the visible page and never submit unless asked.
+4. recognition_run_script and recognition_file_upload ask you to confirm EVERY time, showing the script/path, even on a granted site and even in developer mode. Decline → the tool returns an error and nothing runs.
+5. Try to act on: a private tab, a `recognition:` page (settings/vault/setup), or a `file://` page → refused every time, no prompt offered. Open the Passwords page and confirm no agent tool can read or fill a saved login.
+6. Developer mode ON: a site you already granted this session no longer re-prompts for reads/acts; a site you have NOT granted still prompts; script/upload still confirm every time.
+7. Kill switch (Settings → "Stop now"): agent control turns off, the endpoint closes, and every site grant is forgotten (the next enable + action re-prompts). The action ledger shows `agent.<capability>:<origin>:ok|fail` lines and `agent.server_start` / `agent.kill` — never typed text, a script body, or page content.
+8. Rate limit: a rapid burst of actions on one site is throttled with a "rate limit" error, then resumes.
+
+## EE. Agent control — governed CDP bridge, Phase 3 (proposal 0012)
+1. With agent control ON (section DD), Customize → Agent control → "Reveal token" now also shows a CDP endpoint `ws://127.0.0.1:<port>/cdp?token=...` and discovery at `http://127.0.0.1:<port>/json/version?token=...`. The action ledger shows `agent.cdp_start`.
+2. Discovery: `GET /json/version?token=<token>` returns JSON with `webSocketDebuggerUrl`; the same without the token (or a wrong token) returns 401. `GET /json` lists one page target.
+3. Connect a CDP/WebSocket client to the `ws` URL (token in the query). `Browser.getVersion` returns product "Recognition/agent" with no prompt. `Page.navigate {url:https://…}` navigates the active tab (first use on a site prompts for the grant, shared with the MCP side). `Page.captureScreenshot` returns `data` (base64 PNG). `Input.dispatchMouseEvent` release → a click; `mouseWheel` → a scroll; `Input.insertText` → typing.
+4. `Runtime.evaluate {expression}` runs — and asks you to confirm EVERY time (it is the governed run-a-script), even on a granted site. Decline → a CDP error, nothing runs.
+5. A refused method (`DOM.getDocument`, `Network.getResponseBody`, `Input.dispatchKeyEvent`, `Fetch.enable`, …) returns a CDP error "method not permitted by Recognition's governed CDP bridge" and never touches the page.
+6. Try the CDP bridge against a private tab / a `recognition:` page as the active tab → every mapped action is refused (same rules as the MCP side). Non-loopback address does not reach it.
+7. Kill switch (section DD step 7) closes the CDP socket too; the `ws`/discovery URLs stop answering and grants are revoked.
+
+## FF. Agent control — native-messaging host, Phase 4 (proposal 0012)
+1. Edit `scripts/agent/recognition-agent-host.cmd` to point at your built recognition.exe. Fill in `scripts/agent/com.recognition.agent.template.json` (`path` → the .cmd, allowed origin/extension) and register it per `docs/AGENT_NATIVE_HOST.md` (HKCU NativeMessagingHosts key).
+2. Turn agent control ON in Recognition. Confirm `runtime/agent_native_endpoint.v1.enc` appears; turn it OFF (or use the kill switch) and confirm the file is removed.
+3. From a test extension, `connectNative("com.recognition.agent")` and send `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` framed (4-byte LE length + JSON). The reply lists the recognition_* tools. `tools/call` runs a governed action (first use on a site prompts, shared with the HTTP/CDP grants).
+4. With agent control OFF, the same call returns a clean "agent control is off" error (no crash, no window opens).
+5. The host opens no window and holds no privilege of its own — stopping agent control mid-session makes the next call error without restarting the host.
+
+## GG. Agent control — embedded assistant, Phase 5 (proposal 0012)
+1. Menu → "Claude assistant" opens `recognition:assistant`. With no key, it asks for your Anthropic API key; save it. Confirm `runtime/assistant_key.v1.enc` appears (encrypted). "Remove key" deletes it.
+2. Ask it to do something on the current page ("summarize this page", "click the login button"). It reads/acts via the same tools: the first action on a site prompts for the grant; running a page script or uploading a file asks every time; a screenshot comes back to the model as an image. Tool activity shows as "·" lines.
+3. On a private tab or a `recognition:` page, the assistant's tools are refused exactly as the external adapter's are. It can never read a saved password.
+4. "New conversation" clears the thread; the kill switch / turning agent control off does not remove the key but stops the shared executor (tools error until re-enabled). Set a different model in the Model box.
+5. The key never appears in any receipt, the export packet, or a portable bundle. The assistant's API calls go directly from Recognition to the Anthropic API, not through any page.
+
+## HH. Home page, link defaults, and blocking your own sites
+1. Settings → "Home page & links": the Home page field shows the current home. Type `example.com`, Set → the Home button and new windows open it. "Use start page" resets to the Recognition start page. (The same control is also under Customize.)
+2. The note points to Shield (how links open / pop-ups) and Web engine → Default browser ("Open Windows Default apps"). Confirm both links work.
+3. Settings → "Blocked sites": add `example.com`. Try to visit it (and `www.example.com`, `sub.example.com`): each shows the "Site blocked" page instead of loading; a look-alike like `notexample.com` or `example.com.evil.com` still loads.
+4. On the blocked page, "Unblock example.com" removes it and the site loads next time. In Settings the list shows each blocked host with Remove.
+5. On a normal site, Settings shows a one-click "Block <current host>" button; clicking it blocks that site. The action ledger shows `site.block_add` / `site.block_remove` / `site.blocked` (host only).
+6. Blocks persist across restart (stored in browser_settings.json), apply in normal and private tabs, and never block Recognition's own pages.

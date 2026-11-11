@@ -80,6 +80,7 @@ namespace Recognition.Browser
         {
             try
             {
+                if (msg == "exp-portable") { OpenInternalInActiveTab("setup"); return; }
                 var s = _lastExport; if (s == null) return;
                 var id = PacketId(s.PacketDir);
                 string? text = msg switch
@@ -109,6 +110,7 @@ namespace Recognition.Browser
             if (s == null)
             {
                 sb.Append("<h1>Export session</h1><div class='muted'>Nothing has been exported in this run yet.</div><div style='margin:10px 0'><a class='btn' onclick=\"send('exp-again')\">Export this session</a></div>");
+                sb.Append(PortableBlock());
                 sb.Append(SendScript()).Append(PageFoot); return sb.ToString();
             }
             if (!s.Ok)
@@ -116,6 +118,7 @@ namespace Recognition.Browser
                 sb.Append("<h1>Export failed</h1><div class='muted'>The session could not be written as a governed packet. Nothing was changed.</div>");
                 sb.Append("<pre style='white-space:pre-wrap;color:#e0a0a0;background:#1b1416;padding:10px;border-radius:8px'>" + Esc(s.Error) + "</pre>");
                 sb.Append("<div style='margin:10px 0'><a class='btn' onclick=\"send('exp-again')\">Try again</a></div>");
+                sb.Append(PortableBlock());
                 sb.Append(SendScript()).Append(PageFoot); return sb.ToString();
             }
 
@@ -141,8 +144,18 @@ namespace Recognition.Browser
             sb.Append("<div class='kv'><div class='k'>Contents</div><div class='v'>" + s.Tabs + " tab(s), " + s.Visits + " visit(s), " + s.Blocked + " blocked this session</div></div>");
             sb.Append("<div class='kv'><div class='k'>Evidence chains</div><div class='v'>actions " + (s.ActionsOk ? "verified" : "<b style='color:#e57373'>NOT verified</b>") + " &middot; cookies " + (s.CookiesOk ? "verified" : "<b style='color:#e57373'>NOT verified</b>") + " &middot; site rules " + (s.PolicyOk ? "verified" : "<b style='color:#e57373'>NOT verified</b>") + "</div></div>");
             sb.Append("<div style='display:flex;gap:8px;flex-wrap:wrap;margin:16px 0'><a class='btn' onclick=\"send('exp-open')\">Open folder</a><a class='btn ghost' onclick=\"send('exp-copy-path')\">Copy folder path</a><a class='btn ghost' onclick=\"send('exp-again')\">Export again</a></div>");
+            sb.Append(PortableBlock());
             sb.Append(SendScript()).Append(PageFoot);
             return sb.ToString();
         }
+
+        // The evidence packet above is a forensic record (hashes, not addresses) and is not meant to be re-imported. To MOVE your setup to
+        // another device — and, if you choose, your saved logins, sign-in cookies, bookmarks, and the list of extensions and themes you
+        // kept — use a portable bundle instead, which the other device can take in. (That lives on the Setup snapshot page.)
+        private static string PortableBlock() =>
+            "<div style='border-top:1px solid #262b36;margin:18px 0 0;padding-top:14px'>" +
+            "<div class='u' style='font-weight:600;color:#d8d8d8'>Move this setup to another device</div>" +
+            "<div class='muted' style='margin:4px 0 10px'>The packet above is a sealed record for evidence, not something another browser reads back. To carry your setup to another Recognition — optionally including your saved logins and sign-in cookies in an encrypted, code-locked bundle — use a portable bundle.</div>" +
+            "<a class='btn' onclick=\"send('exp-portable')\">Export for another device&hellip;</a></div>";
     }
 }
