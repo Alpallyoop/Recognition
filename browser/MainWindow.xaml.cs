@@ -155,7 +155,11 @@ document.addEventListener('keydown',function(e){
             SaveSettings();   // keeps the lifetime counters
             CleanupExtensionsOnExit();
             CleanupViewerAll();
-            foreach (var t in _tabs) { if (t.Private) { try { t.Web.Dispose(); } catch { } } }
+            StopAgent();   // close the agent endpoints and remove the endpoint file on exit
+            // Dispose every WebView2 (not just private ones) so the engine closes its controllers cleanly and FLUSHES the cookie store to
+            // the profile folder before the process exits — otherwise persistent cookies written late in the session can be lost, which
+            // looks like "cookies aren't saving" across restarts. Private tabs' envs are then removed with their folder, as before.
+            foreach (var t in _tabs) { try { t.Web.Dispose(); } catch { } }
             if (_privateDir != null) { try { if (Directory.Exists(_privateDir)) Directory.Delete(_privateDir, true); } catch { } }
         }
 

@@ -60,7 +60,7 @@ namespace Recognition.Browser
             byte[]? contract, registry;
             try { contract = read(ContractRel); registry = read(RegistryRel); }
             catch (Exception ex) { return new SoteriaStatus(SoteriaState.Unavailable, "SoteriaVault files could not be read: " + ex.GetType().Name, "", Array.Empty<string>()); }
-            if (contract == null) return new SoteriaStatus(SoteriaState.Unavailable, "SoteriaVault was not found there (no Recognition connector contract).", "", Array.Empty<string>());
+            if (contract == null) return new SoteriaStatus(SoteriaState.Unavailable, "SoteriaVault's connector contract was not found there: the folder must contain " + ContractRel + " (and " + RegistryRel + "). Point the folder at your SoteriaVault install, and make sure SoteriaVault has published its Recognition connector (run Build in SoteriaVault if the app isn't built yet).", "", Array.Empty<string>());
             var sha = Convert.ToHexString(SHA256.HashData(contract)).ToLowerInvariant();
             if (contract.Length > MaxFileBytes || (registry != null && registry.Length > MaxFileBytes))
                 return Bad("A SoteriaVault contract file is too large to be trusted.", sha);
