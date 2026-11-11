@@ -28,7 +28,7 @@ namespace Recognition.Browser
         {
             get
             {
-                if (!_soteriaPasswords || string.IsNullOrEmpty(_soteriaRoot)) return false;
+                if (!_soteriaPasswords || string.IsNullOrEmpty(EffectiveSoteriaRoot())) return false;   // effective = chosen folder, or the install location
                 if (_svPmStatus == null || DateTime.UtcNow - _svPmCheckedUtc > TimeSpan.FromSeconds(20)) { _svPmStatus = SoteriaCheck(); _svPmCheckedUtc = DateTime.UtcNow; }
                 return SoteriaBridge.IsPasswordManager(_svPmStatus);
             }

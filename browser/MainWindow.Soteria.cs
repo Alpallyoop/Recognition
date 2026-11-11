@@ -15,9 +15,14 @@ namespace Recognition.Browser
 
         private void MenuSoteria_Click(object sender, RoutedEventArgs e) => OpenInternalInActiveTab("soteria");
 
+        // The folder to read SoteriaVault's connector contract from: the one you chose, or — when you haven't chosen one — SoteriaVault's
+        // own install location (its Apps & Features entry), so an installed SoteriaVault links automatically without typing a path.
+        private string EffectiveSoteriaRoot()
+            => string.IsNullOrWhiteSpace(_soteriaRoot) ? (SoteriaInstalledRoot() ?? "") : _soteriaRoot;
+
         private SoteriaStatus SoteriaCheck()
         {
-            var root = _soteriaRoot;
+            var root = EffectiveSoteriaRoot();
             return SoteriaBridge.Evaluate(root, rel =>
             {
                 var full = Path.Combine(root, rel);
@@ -39,7 +44,9 @@ namespace Recognition.Browser
             var st = SoteriaCheck();
             if (record && st.State != SoteriaState.NotConfigured) _actions?.Append("soteria.check", st.State + ":" + (st.ContractSha256.Length >= 12 ? st.ContractSha256.Substring(0, 12) : "none"));
             if (record) WriteSoteriaReceipt(st);
-            PostToSoteriaPage(new { type = "snapshot", root = _soteriaRoot, state = st.State.ToString(), reason = st.Reason, sha = st.ContractSha256, caps = st.Capabilities });
+            var shownRoot = EffectiveSoteriaRoot();
+            var autofound = string.IsNullOrWhiteSpace(_soteriaRoot) && shownRoot.Length > 0;
+            PostToSoteriaPage(new { type = "snapshot", root = shownRoot, autofound, state = st.State.ToString(), reason = st.Reason, sha = st.ContractSha256, caps = st.Capabilities });
         }
 
         private void HandleSoteriaMessage(string msg)
@@ -93,7 +100,7 @@ function render(m){
   var i=$('info');i.textContent='';
   i.appendChild(el('div','State: '+(NAMES[m.state]||m.state),'t'));
   i.appendChild(el('div',m.reason,'u'));
-  if(m.root)i.appendChild(el('div','Folder: '+m.root,'u'));
+  if(m.root)i.appendChild(el('div','Folder: '+m.root+(m.autofound?'  (found automatically from your SoteriaVault install)':''),'u'));
   if(m.sha)i.appendChild(el('div','Contract fingerprint (SHA-256): '+m.sha,'u'));
   if(m.caps&&m.caps.length)i.appendChild(el('div','SoteriaVault says it allows now: '+m.caps.join(', '),'u'));
   if(m.root&&!$('p').value)$('p').value=m.root}
