@@ -71,3 +71,7 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
   Python (Rust and a Tauri desktop app in progress), all proven against the C# store and the extension.
 - None of this touches Recognition: same bridge pipe and protocol, same per-fill approval; `SoteriaBridgeProtocol.cs`
   is unchanged.
+- Later: SoteriaVault can now be unlocked with Windows Hello, a security key, Windows sign-in or a combination
+  (Settings -> Ways to unlock), and its extension (1.6.0) with passkeys. The ports are now smaller, with Rust and
+  TypeScript as the main line and Go, Java and Python kept as source-only backups. Recognition is unaffected: it
+  only ever talks to an unlocked SoteriaVault through the bridge, with the same per-fill approval.
