@@ -171,6 +171,9 @@ namespace Recognition.Browser
             try
             {
                 if (!_agentEnabled || _agentSession == null) return AgentResult.Error("agent control is off");
+                // Defence in depth: only an allowlisted read-only CDP method is ever forwarded to the real engine, even though the only
+                // caller (CdpServer) already classifies it. A mapped/refused method must never reach CallDevToolsProtocolMethodAsync here.
+                if (CdpMap.Classify(method) != CdpClass.Passthrough) return AgentResult.Error("method not permitted");
                 var tab = Active; var core = tab?.Web?.CoreWebView2;
                 if (tab == null || core == null) return AgentResult.Error("no active page");
                 var url = tab.CurrentUrl;
