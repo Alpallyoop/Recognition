@@ -102,8 +102,19 @@ function Pull([string]$label,[string]$path){
   if(-not (Test-Path -LiteralPath (Join-Path $path ".git"))){ Row ("update " + $label) "SKIP" "not found at $path"; return }
   $remote = (& git -C $path remote 2>$null) -join ""
   if([string]::IsNullOrWhiteSpace($remote)){ Row ("update " + $label) "SKIP" "no remote configured (local only)"; return }
-  $dirty = (& git -C $path status --porcelain 2>$null) -join ""
-  if($dirty){ Row ("update " + $label) "WARN" "has uncommitted changes - left alone (commit or stash, then run again)"; return }
+  $dirtyLines = @(& git -C $path status --porcelain 2>$null)
+  if($dirtyLines.Count -gt 0){
+    # Doctor/publish append provenance receipts (*.receipts.ndjson) on every run, so by the time we get
+    # here the tree is routinely dirty with just those. Commit those automatically - they ARE the audit
+    # trail, so they belong in git - and carry on. Anything else is real uncommitted work and is still
+    # left alone for the owner to handle. (Disposable health logs are .gitignored, so they never appear.)
+    $changed = $dirtyLines | ForEach-Object { ($_.Substring(3)).Trim('"') }
+    $nonReceipt = $changed | Where-Object { $_ -notmatch 'receipts\.ndjson$' }
+    if($nonReceipt){ Row ("update " + $label) "WARN" "has uncommitted changes - left alone (commit or stash, then run again)"; return }
+    & git -C $path add -- $changed 2>&1 | Out-Null
+    & git -C $path commit --quiet -m "proofs: auto-commit receipts emitted during UPDATE_ALL" 2>&1 | Out-Null
+    Row ("update " + $label) "INFO" ("committed " + $changed.Count + " receipt log(s) emitted this run")
+  }
   & git -C $path fetch --quiet 2>&1 | Out-Null
   if($LASTEXITCODE -ne 0){ Row ("update " + $label) "WARN" "could not reach the remote (offline?) - using what is on disk"; return }
   $behind = [int]((& git -C $path rev-list --count "HEAD..@{u}" 2>$null) -join "")
