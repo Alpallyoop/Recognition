@@ -56,3 +56,8 @@ Status: **adopted — owner decision, 2026-10-22** (recorded on both sides; Sote
 - Later still: SoteriaVault's browser extension (1.2.0) is now browser-only and separate from the app. Sync to the
   app is opt-in and one way, and its helper passes only `status` and `sync_push`. Recognition stays the only program
   that lists and fills from SoteriaVault through the bridge; nothing changes for it.
+- SoteriaVault 1.3.0 of the extension: opt-in two-way sync with the app through a new bridge op, `sync_pull`. It
+  sends copies of website logins only to a program you allowed in a separate one-time question, and it is receipted
+  (`docs\proposals\EXTENSION_TWO_WAY_SYNC_V1.md` in SoteriaVault). Recognition never sends `sync_pull` and is never
+  asked; its per-fill approval is unchanged. Linking installs by email through the Constellation account is a
+  SoteriaVault design proposal (`CONSTELLATION_EMAIL_LINK_V1.md`) and not built yet.
