@@ -1,7 +1,7 @@
 # Recognition — Implementation Status Addendum (v1.1)
 
 **Companion to:** *Recognition: Privacy-Preserving and Cryptographically Verifiable Web
-Interaction Infrastructure*, Version 1.0 (Alec Maiatico, February 17, 2026).
+Interaction Infrastructure*, Version 1.0 (the owner, February 17, 2026).
 
 **Purpose:** the v1.0 paper described the design and a working prototype. This addendum
 records what is **implemented, tested, and reproducible** in the repository as of this
