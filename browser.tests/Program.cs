@@ -419,7 +419,8 @@ Console.WriteLine("=== Setup snapshot (executed C#) ===");
     var tok = AgentSession.NewToken();
     Check(tok.Length == 64 && tok.All(Uri.IsHexDigit), "agent session: a token is 256 bits of hex");
     Check(AgentSession.NewToken() != AgentSession.NewToken(), "agent session: tokens are unique per launch");
-    Check(AgentSession.TokenMatches(tok, tok) && !AgentSession.TokenMatches(tok, tok.Substring(0, 63) + "0") && !AgentSession.TokenMatches(tok, "") && !AgentSession.TokenMatches(tok, null), "agent session: token match accepts the exact token and rejects tamper/empty/null");
+    var tokTamper = tok.Substring(0, 63) + (tok[63] == '0' ? '1' : '0');   // guaranteed to differ from tok whatever its last hex digit is
+    Check(AgentSession.TokenMatches(tok, tok) && !AgentSession.TokenMatches(tok, tokTamper) && !AgentSession.TokenMatches(tok, "") && !AgentSession.TokenMatches(tok, null), "agent session: token match accepts the exact token and rejects tamper/empty/null");
 
     var s = new AgentSession(tok, rateMax: 3, rateWindowSeconds: 60);
     Check(s.AuthOk(tok) && !s.AuthOk("nope"), "agent session: auth uses the session token");
